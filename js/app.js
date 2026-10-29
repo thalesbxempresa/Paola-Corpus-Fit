@@ -51,7 +51,7 @@ const MENU = [
 
 function montarTopo() {
   const pagina = document.body.dataset.pagina;
-  const avisos = [`Frete grátis acima de ${brl(LOJA.freteGratis)}`, `${Math.round(LOJA.pix * 100)}% off no Pix`, `Até ${LOJA.parcelas}x sem juros`, 'Moda praia chegando ☀'];
+  const avisos = [`Frete grátis acima de ${brl(LOJA.freteGratis)}`, 'Errou o tamanho? 1ª troca grátis', `${Math.round(LOJA.pix * 100)}% off no Pix`, `Até ${LOJA.parcelas}x sem juros`, 'Moda praia chegando ☀'];
   $('#topo').innerHTML = `
   <div class="aviso" aria-live="off"><span>${avisos[0]}</span></div>
   <header class="cab">
@@ -72,7 +72,8 @@ function montarTopo() {
     <div class="gaveta-topo"><h2>Menu</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
     <div class="gaveta-corpo">
       <a class="menu-praia" href="moda-praia.html"><span>Lançamento</span><b>Moda Praia</b><span>Entre na lista de espera →</span></a>
-      <nav class="menu-links">${MENU.slice(0, 4).map(([nome, link]) => `<a href="${link}">${nome}${I.seta}</a>`).join('')}<a href="index.html#tamanho">Meu tamanho${I.seta}</a></nav>
+      <button class="menu-teste" type="button" data-teste><b>Qual a minha peça ideal?</b><span>Teste de 1 minuto com o seu tamanho →</span></button>
+      <nav class="menu-links">${MENU.slice(0, 4).map(([nome, link]) => `<a href="${link}">${nome}${I.seta}</a>`).join('')}</nav>
       <div class="menu-contato">
         <a class="btn btn-preto" href="${LOJA.whatsapp}" target="_blank" rel="noopener">${I.whats}Falar no WhatsApp</a>
         <a class="btn btn-claro" href="${LOJA.instagram}" target="_blank" rel="noopener">${I.insta}${LOJA.arroba}</a>
@@ -85,6 +86,7 @@ function montarTopo() {
     <div class="gaveta-pe"></div>
   </aside>
   <div class="modal" id="modal" role="dialog" aria-modal="true"></div>
+  <a class="zap-flutuante" href="${LOJA.whatsapp}" target="_blank" rel="noopener" aria-label="Tirar dúvidas no WhatsApp">${I.whats}<span>Dúvidas?</span></a>
   <div class="toast" role="status" aria-live="polite"></div>`;
 
   let i = 0;
@@ -213,7 +215,7 @@ function desenharSacola() {
     <div class="total-linha"><span>Total</span><span>${brl(sub)}</span></div>
     <div class="total-pix">ou ${brl(pix(sub))} no Pix · ${LOJA.parcelas}x de ${brl(parcela(sub))}</div>
     <button class="btn btn-preto btn-bloco" type="button" data-finalizar>${I.whats}Finalizar pelo WhatsApp</button>
-    <p class="pe-nota">O resumo do pedido vai pronto para a conversa com a Paola.</p>`;
+    <p class="pe-nota">O resumo vai pronto para a conversa com a Paola · 1ª troca de tamanho grátis.</p>`;
 
   $$('.item-sacola', corpo).forEach((linha) => {
     const chave = linha.dataset.chave;
@@ -286,6 +288,96 @@ function abrirMedidor(aoEscolher) {
   $('[data-usar]', m).addEventListener('click', () => { fecharTudo(); if (aoEscolher) aoEscolher(escolhido); });
 }
 
+// ---------------- Teste: qual a peça e o tamanho ideais ----------------
+function abrirTeste() {
+  const r = { obj: null, cm: 76, uso: null };
+  let passo = 1;
+  const m = abrirModal('');
+  const opcoes = (lista, campo) => `<div class="opcoes">${lista.map((o) => `<button class="opcao" type="button" data-v="${o.id}" aria-pressed="${r[campo] === o.id}"><b>${o.nome}</b>${o.dica && campo === 'obj' ? `<small>${o.dica}</small>` : ''}</button>`).join('')}</div>`;
+
+  const desenhar = () => {
+    const topo = `<div class="modal-topo"><h2>${passo < 4 ? `Passo ${passo} de 3` : 'Sua indicação'}</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
+      <div class="progresso"><i style="width:${(Math.min(passo, 3) / 3) * 100}%"></i></div>`;
+    const voltar = passo > 1 ? '<button class="link-tam" type="button" data-voltar>← Voltar</button>' : '';
+
+    if (passo === 1) m.innerHTML = `${topo}<h3 class="teste-q">O que você quer modelar?</h3>${opcoes(OBJETIVOS, 'obj')}`;
+    if (passo === 2) {
+      m.innerHTML = `${topo}<h3 class="teste-q">Qual a medida da sua cintura?</h3><p class="teste-sub">Passe a fita métrica na parte mais fina e arraste até a sua medida.</p>${medidorHTML()}
+        <div class="teste-nav">${voltar}<button class="btn btn-preto" type="button" data-seguir>Continuar</button></div>`;
+      $('.regua', m).value = r.cm;
+      ligarMedidor(m, () => { r.cm = Number($('.regua', m).value); });
+    }
+    if (passo === 3) m.innerHTML = `${topo}<h3 class="teste-q">Quando você vai usar mais?</h3>${opcoes(USOS, 'uso')}<div class="teste-nav">${voltar}</div>`;
+    if (passo === 4) {
+      const it = item(OBJETIVOS.find((o) => o.id === r.obj).produto);
+      const uso = USOS.find((u) => u.id === r.uso);
+      const tam = tamanhoPorCintura(r.cm);
+      const usaTam = precisaTamanho(it);
+      m.innerHTML = `${topo}
+        <div class="resultado-teste">
+          <div class="rt-foto">${midia(it, false)}</div>
+          <div>
+            <span class="selo rosa" style="position:static;display:inline-block">Indicada para você</span>
+            <h3>${it.nome}</h3>
+            ${usaTam ? `<p class="rt-tam">Tamanho <b>${tam.t}</b><small>cintura de ${tam.min} a ${tam.max} cm</small></p>` : ''}
+            <p class="rt-preco"><b>${brl(it.preco)}</b> · ${brl(pix(it.preco))} no Pix</p>
+          </div>
+        </div>
+        <p class="rt-dica">💡 ${uso.dica}</p>
+        <div class="selo-troca">${I.escudo}<span><b>Errou o tamanho?</b> A primeira troca é por nossa conta.</span></div>
+        <div class="teste-acoes">
+          <button class="btn btn-preto btn-bloco" type="button" data-colocar>Adicionar à sacola${usaTam ? ` · ${tam.t}` : ''}</button>
+          <a class="btn btn-claro btn-bloco" href="produto.html?id=${it.id}${usaTam ? `&tam=${tam.t}` : ''}">Ver detalhes da peça</a>
+          <button class="link-tam" type="button" data-refazer>Refazer o teste</button>
+        </div>`;
+      $('[data-colocar]', m).addEventListener('click', () => adicionar(it.id, usaTam ? tam.t : null));
+      $('[data-refazer]', m).addEventListener('click', () => { passo = 1; desenhar(); });
+    }
+
+    $$('.opcao', m).forEach((b) => b.addEventListener('click', () => {
+      if (passo === 1) r.obj = b.dataset.v; else r.uso = b.dataset.v;
+      passo += 1;
+      desenhar();
+    }));
+    $('[data-seguir]', m)?.addEventListener('click', () => { passo = 3; desenhar(); });
+    $('[data-voltar]', m)?.addEventListener('click', () => { passo -= 1; desenhar(); });
+  };
+  desenhar();
+}
+
+// ---------------- Com e sem (comparador) ----------------
+function ligarComparadores() {
+  $$('.antes-depois').forEach((comp) => {
+    const controle = $('input', comp);
+    controle.addEventListener('input', () => comp.style.setProperty('--pos', `${controle.value}%`));
+  });
+}
+
+// ---------------- Avaliações ----------------
+function avaliacoesHTML() {
+  return AVALIACOES.map((a) => `<article class="avaliacao">
+    ${a.foto ? `<img src="${a.foto}" alt="Foto enviada pela cliente" loading="lazy">` : ''}
+    <div class="av-corpo">
+      <div class="av-topo"><span class="estrelas" aria-label="5 de 5 estrelas">★★★★★</span><span class="av-exemplo">Exemplo</span></div>
+      <p>“${a.texto}”</p>
+      <div class="av-quem"><b>${a.nome}</b> · ${a.cidade}</div>
+      <div class="av-compra">Comprou: ${a.produto} · tam. ${a.tam}</div>
+    </div>
+  </article>`).join('');
+}
+
+// Estimativa de entrega pelo CEP (demonstração: prazos por região)
+function prazoPorCep(cep) {
+  const n = Number(cep.slice(0, 2));
+  if (n >= 20 && n <= 28) return [1, 3];
+  if (n <= 19) return [2, 4];
+  if (n <= 39) return [3, 5];
+  if (n <= 65) return [5, 8];
+  if (n >= 70 && n <= 76) return [4, 6];
+  if (n >= 80) return [4, 7];
+  return [6, 10];
+}
+
 // ---------------- Cards ----------------
 function card(it) {
   return `<div class="card">
@@ -327,13 +419,8 @@ function telaInicio() {
   $('#mais-vendidos').innerHTML = PRODUTOS.map(card).join('');
   $('#kits').innerHTML = KITS.map(cardKit).join('');
   $('#praia-pecas').innerHTML = PRAIA.slice(0, 3).map((p) => `<span><img src="${p.img}" alt="${p.nome}" loading="lazy"></span>`).join('');
-
-  const med = $('#medidor-home');
-  med.innerHTML = medidorHTML();
-  ligarMedidor(med, (linha) => {
-    $('#comprar-tamanho').href = `produto.html?id=cinta-ziper-30&tam=${linha.t}`;
-    $('#comprar-tamanho').textContent = `Ver a cinta no tamanho ${linha.t}`;
-  });
+  $('#avaliacoes').innerHTML = avaliacoesHTML();
+  ligarComparadores();
 }
 
 function telaLoja() {
@@ -364,8 +451,10 @@ function telaProduto() {
   let qtd = 1;
   document.title = `${it.nome} | Paola Corpus Fit`;
 
-  const fotos = ehKit ? ['img/kit.webp', ...it.itens.map((i) => item(i).img)] : (it.galeria || [it.img]);
-  const galeria = fotos.map((f) => `<figure><img src="${f}" alt="${it.nome}"></figure>`).join('');
+  const fotos = ehKit
+    ? [{ src: 'img/kit.webp' }, ...it.itens.map((i) => ({ src: item(i).img, txt: nomeCurto(item(i)) }))]
+    : (it.galeria || [{ src: it.img }]);
+  const galeria = fotos.map((f, i) => `<figure><img src="${f.src}" alt="${it.nome}"${i ? ' loading="lazy"' : ''}>${f.txt ? `<figcaption>${f.txt}</figcaption>` : ''}</figure>`).join('');
   const kitJunto = ehKit ? null : KITS.find((k) => k.itens.includes(it.id));
 
   $('#produto').innerHTML = `
@@ -392,9 +481,15 @@ function telaProduto() {
           <button class="btn btn-preto" type="button" id="adicionar">Adicionar à sacola</button>
           <a class="btn btn-claro" href="${LOJA.whatsapp}" target="_blank" rel="noopener">${I.whats}Comprar pelo WhatsApp</a>
         </div>
+        ${usaTam ? `<div class="selo-troca">${I.escudo}<span><b>Errou o tamanho?</b> A primeira troca é por nossa conta.</span></div>` : ''}
+        <form class="frete-cep" id="frete-cep">
+          <label for="cep">${I.caminhao}Calcule o prazo de entrega</label>
+          <div><input id="cep" name="cep" inputmode="numeric" autocomplete="postal-code" placeholder="Seu CEP" maxlength="9"><button class="btn btn-claro" type="submit">OK</button></div>
+          <p class="cep-resultado" aria-live="polite"></p>
+        </form>
         <div class="garantias">
-          <div>${I.caminhao}Frete grátis acima de ${brl(LOJA.freteGratis)} · envio para todo o Brasil</div>
           <div>${I.chat}A Paola tira suas dúvidas no WhatsApp</div>
+          <div>${I.escudo}Pagamento seguro · Pix ou cartão em até ${LOJA.parcelas}x</div>
         </div>
         ${it.pontos ? `<ul class="pontos-prod">${it.pontos.map((p) => `<li>${p}</li>`).join('')}</ul>` : ''}
         ${kitJunto ? `<div class="junto">
@@ -407,6 +502,7 @@ function telaProduto() {
         <div class="detalhes">
           <details open><summary>Descrição</summary><div class="conteudo">${it.desc}</div></details>
           ${it.uso ? `<details><summary>Como usar</summary><div class="conteudo">${it.uso}</div></details>` : ''}
+          ${usaTam ? `<details><summary>Conforto: aperta? marca?</summary><div class="conteudo"><p><b>Aperta demais?</b> Ela segura firme sem cortar a respiração. Se apertar, use a fileira de colchetes mais externa.</p><p style="margin-top:10px"><b>Dá para sentar e comer?</b> Dá. As 30 barbatanas flexíveis acompanham o corpo e a cinta não enrola quando você senta.</p><p style="margin-top:10px"><b>Marca na roupa?</b> Por baixo de blusa e vestido ela fica lisa. Em roupa muito fina, prefira cores escuras.</p><p style="margin-top:10px"><b>Quantas horas por dia?</b> Comece com poucas horas e aumente aos poucos, sempre respeitando o seu conforto.</p></div></details>` : ''}
           ${usaTam ? `<details><summary>Tabela de medidas</summary><div class="conteudo"><table class="tabela-mini" style="margin:0"><thead><tr><th>Tam.</th><th>Cintura</th><th>Calça</th></tr></thead><tbody>${TABELA.map((x) => `<tr><td>${x.t}</td><td>${x.min} a ${x.max} cm</td><td>${x.calca}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
           <details><summary>Entrega e pagamento</summary><div class="conteudo">Enviamos do ${LOJA.cidade} para todo o Brasil. Pix com ${Math.round(LOJA.pix * 100)}% de desconto ou cartão em até ${LOJA.parcelas}x sem juros.</div></details>
         </div>
@@ -415,7 +511,24 @@ function telaProduto() {
 
   // Bloco "no dia a dia" só nas peças de vestir
   $('#dia-a-dia').hidden = !usaTam;
+  $('#avaliacoes').innerHTML = avaliacoesHTML();
   $('#relacionados').innerHTML = [...PRODUTOS, ...KITS].filter((x) => x.id !== it.id).slice(0, 4).map(card).join('');
+
+  // Prazo de entrega pelo CEP
+  const campoCep = $('#cep');
+  campoCep.addEventListener('input', () => {
+    const d = campoCep.value.replace(/\D/g, '').slice(0, 8);
+    campoCep.value = d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
+  });
+  $('#frete-cep').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const cep = campoCep.value.replace(/\D/g, '');
+    const saida = $('.cep-resultado');
+    if (cep.length !== 8) { saida.textContent = 'Digite os 8 números do CEP.'; return; }
+    const [de, ate] = prazoPorCep(cep);
+    const gratis = it.preco >= LOJA.freteGratis;
+    saida.innerHTML = `<b>Chega em ${de} a ${ate} dias úteis</b> · ${gratis ? 'frete grátis' : `frete a partir de ${brl(19.9)}`}<small>Estimativa de demonstração</small>`;
+  });
 
   const marcar = (t) => {
     tamanho = t;
@@ -452,12 +565,52 @@ function telaProduto() {
 
 function telaPraia() {
   $('#praia-vitrine').innerHTML = PRAIA.slice(0, 2).map((p) => `<span><img src="${p.img}" alt="${p.nome}"></span>`).join('');
-  $('#colecao').innerHTML = PRAIA.map((p) => `
-    <div class="peca-praia">
-      <div class="img">${p.selo ? `<span class="selo">${p.selo}</span>` : ''}<img src="${p.img}" alt="${p.nome}" loading="lazy"><a class="avise" href="#espera">Avise-me</a></div>
-      <h3>${p.nome}</h3>
-      <div class="linha-praia"><span class="em-breve">Em breve</span><span class="cores" aria-label="Cores previstas">${p.cores.map((c) => `<i style="background:${c}"></i>`).join('')}</span></div>
-    </div>`).join('');
+
+  // Coleção com filtro pelo que a cliente quer valorizar
+  let foco = 'todos';
+  const desenharColecao = () => {
+    $('#filtros-praia').innerHTML = FOCOS_PRAIA.map(([id, nome]) => `<button class="filtro" type="button" data-foco="${id}" aria-pressed="${id === foco}">${nome}</button>`).join('');
+    $('#colecao').innerHTML = PRAIA.filter((p) => foco === 'todos' || p.foco.includes(foco)).map((p) => `
+      <div class="peca-praia">
+        <div class="img">${p.selo ? `<span class="selo">${p.selo}</span>` : ''}<img src="${p.img}" alt="${p.nome}" loading="lazy"><a class="avise" href="${p.biquini ? '#monte' : '#espera'}" data-escolher="${p.biquini ? p.id : ''}">${p.biquini ? 'Montar o meu' : 'Avise-me'}</a></div>
+        <h3>${p.nome}</h3>
+        <div class="linha-praia"><span class="em-breve">Em breve</span><span class="cores" aria-label="Cores previstas">${p.cores.map((c) => `<i style="background:${c}"></i>`).join('')}</span></div>
+      </div>`).join('');
+    $$('[data-foco]').forEach((b) => b.addEventListener('click', () => { foco = b.dataset.foco; desenharColecao(); }));
+    $$('[data-escolher]').forEach((a) => a.addEventListener('click', () => { if (a.dataset.escolher) montar.modelo = a.dataset.escolher; desenharMonte(); }));
+  };
+
+  // Monte seu biquíni: top e calcinha em tamanhos diferentes
+  const biquinis = PRAIA.filter((p) => p.biquini);
+  const montar = { modelo: biquinis[0].id, cor: 0, top: null, baixo: null };
+  const desenharMonte = () => {
+    const p = PRAIA.find((x) => x.id === montar.modelo);
+    const chips = (parte) => TAMANHOS_PRAIA.map((t) => `<button class="chip" type="button" data-parte="${parte}" data-t="${t}" aria-checked="${montar[parte] === t}">${t}</button>`).join('');
+    $('#monte-caixa').innerHTML = `
+      <div class="monte-foto"><img src="${p.img}" alt="${p.nome}"><span class="selo">Prévia</span></div>
+      <div class="monte-opcoes">
+        <div class="grupo-titulo">1. Modelo</div>
+        <div class="monte-modelos">${biquinis.map((b) => `<button type="button" data-modelo="${b.id}" aria-pressed="${b.id === montar.modelo}"><img src="${b.img}" alt=""><span>${b.nome.replace('Biquíni ', '')}</span></button>`).join('')}</div>
+        <div class="grupo-titulo">2. Cor</div>
+        <div class="cores-escolha">${p.cores.map((c, i) => `<button class="cor" type="button" style="background:${c}" data-cor="${i}" aria-pressed="${i === montar.cor}" aria-label="Cor ${i + 1}"></button>`).join('')}</div>
+        <div class="grupo-titulo">3. Tamanho do top</div>
+        <div class="tamanhos">${chips('top')}</div>
+        <div class="grupo-titulo">4. Tamanho da calcinha</div>
+        <div class="tamanhos">${chips('baixo')}</div>
+        <p class="monte-resumo">${montar.top && montar.baixo ? `<b>${p.nome}</b>: top ${montar.top} + calcinha ${montar.baixo}` : 'Escolha o tamanho do top e da calcinha, podem ser diferentes.'}</p>
+        <button class="btn btn-preto btn-bloco" type="button" id="reservar" ${montar.top && montar.baixo ? '' : 'disabled'}>Reservar para o lançamento</button>
+      </div>`;
+    $$('[data-modelo]').forEach((b) => b.addEventListener('click', () => { montar.modelo = b.dataset.modelo; montar.cor = 0; desenharMonte(); }));
+    $$('[data-cor]').forEach((b) => b.addEventListener('click', () => { montar.cor = Number(b.dataset.cor); desenharMonte(); }));
+    $$('#monte-caixa [data-parte]').forEach((b) => b.addEventListener('click', () => { montar[b.dataset.parte] = b.dataset.t; desenharMonte(); }));
+    $('#reservar').addEventListener('click', () => {
+      toast(`Reservado: ${p.nome}, top ${montar.top} + calcinha ${montar.baixo}`);
+      $('#espera').scrollIntoView({ behavior: 'smooth' });
+      $('#nome')?.focus({ preventScroll: true });
+    });
+  };
+  desenharColecao();
+  desenharMonte();
 
   // Contagem ilustrativa até o lançamento (data de exemplo)
   const lancamento = new Date('2026-12-01T10:00:00-03:00');
@@ -488,10 +641,11 @@ montarRodape();
 ({ inicio: telaInicio, loja: telaLoja, produto: telaProduto, praia: telaPraia })[document.body.dataset.pagina]?.();
 
 document.addEventListener('click', (e) => {
-  const alvo = e.target.closest('[data-abrir], [data-fechar], [data-add], [data-sugestao], [data-finalizar], [data-medidor]');
+  const alvo = e.target.closest('[data-abrir], [data-fechar], [data-add], [data-sugestao], [data-finalizar], [data-medidor], [data-teste]');
   if (e.target.classList.contains('veu')) return fecharTudo();
   if (!alvo) return;
-  if (alvo.dataset.abrir) abrir(alvo.dataset.abrir);
+  if (alvo.hasAttribute('data-teste')) abrirTeste();
+  else if (alvo.dataset.abrir) abrir(alvo.dataset.abrir);
   else if (alvo.hasAttribute('data-fechar')) fecharTudo();
   else if (alvo.dataset.add) {
     const it = item(alvo.dataset.add);

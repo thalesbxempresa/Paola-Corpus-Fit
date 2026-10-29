@@ -24,7 +24,14 @@ const PRODUTOS = [
     preco: 229.9,
     img: 'img/cinta.webp',
     img2: 'img/cinta-detalhe.webp',
-    galeria: ['img/cinta.webp', 'img/cinta-detalhe.webp', 'img/cinta-dia-a-dia.webp'],
+    galeria: [
+      { src: 'img/cinta.webp', txt: 'Modelo veste G' },
+      { src: 'img/cinta-detalhe.webp', txt: 'Zíper + 3 fileiras de colchetes' },
+      { src: 'img/corpo-p.webp', txt: 'Modelo veste P' },
+      { src: 'img/corpo-m.webp', txt: 'Modelo veste M' },
+      { src: 'img/corpo-g.webp', txt: 'Modelo veste GG' },
+      { src: 'img/cinta-dia-a-dia.webp', txt: 'Por cima da regata' },
+    ],
     selo: 'Mais vendida',
     tamanhos: true,
     frase: 'Não sobra, não enrola, não machuca.',
@@ -113,11 +120,37 @@ const TABELA = [
 ];
 
 // Prévia da coleção de moda praia (lançamento)
+// foco = o que a peça resolve (usado nos filtros); biquini = entra no "monte seu biquíni"
 const PRAIA = [
-  { id: 'maio-modelador', nome: 'Maiô Modelador', img: 'img/praia-maio-modelador.webp', selo: 'Destaque', cores: ['#1F1A17', '#B03A5B', '#1D6A86'] },
-  { id: 'biquini-cintura-alta', nome: 'Biquíni Cintura Alta', img: 'img/praia-cintura-alta.webp', selo: 'Segura a barriga', cores: ['#7A1F33', '#1F1A17', '#1D6A86'] },
-  { id: 'biquini-cortininha', nome: 'Biquíni Cortininha', img: 'img/praia-cortininha.webp', cores: ['#E9705E', '#1F1A17', '#F4A259'] },
-  { id: 'maio-tomara-que-caia', nome: 'Maiô Tomara que Caia', img: 'img/praia-tomara-que-caia.webp', cores: ['#1E6B4F', '#1F1A17', '#E9705E'] },
-  { id: 'biquini-hot-pant', nome: 'Biquíni Hot Pant', img: 'img/praia-hot-pant.webp', cores: ['#1F1A17', '#E8A3B4', '#F4A259'] },
-  { id: 'saida-de-praia', nome: 'Saída de Praia', img: 'img/praia-saida.webp', cores: ['#D9622B', '#F7DDE3', '#1F1A17'] },
+  { id: 'maio-modelador', nome: 'Maiô Modelador', img: 'img/praia-maio-modelador.webp', selo: 'Destaque', foco: ['barriga'], cores: ['#1F1A17', '#B03A5B', '#1D6A86'] },
+  { id: 'biquini-cintura-alta', nome: 'Biquíni Cintura Alta', img: 'img/praia-cintura-alta.webp', selo: 'Segura a barriga', foco: ['barriga'], biquini: true, cores: ['#7A1F33', '#1F1A17', '#1D6A86'] },
+  { id: 'biquini-sustenta', nome: 'Biquíni Sustenta Busto', img: 'img/praia-busto.webp', selo: 'Busto grande', foco: ['busto'], biquini: true, cores: ['#1F2F55', '#1F1A17', '#7A1F33'] },
+  { id: 'biquini-asa-delta', nome: 'Biquíni Asa Delta', img: 'img/praia-asa-delta.webp', foco: ['bumbum'], biquini: true, cores: ['#E9705E', '#1F1A17', '#F4A259'] },
+  { id: 'maio-tomara-que-caia', nome: 'Maiô Tomara que Caia', img: 'img/praia-tomara-que-caia.webp', foco: ['barriga'], cores: ['#1E6B4F', '#1F1A17', '#E9705E'] },
+  { id: 'biquini-hot-pant', nome: 'Biquíni Hot Pant', img: 'img/praia-hot-pant.webp', foco: ['barriga', 'bumbum'], biquini: true, cores: ['#1F1A17', '#E8A3B4', '#F4A259'] },
+  { id: 'biquini-cortininha', nome: 'Biquíni Cortininha', img: 'img/praia-cortininha.webp', foco: ['bumbum'], biquini: true, cores: ['#E9705E', '#1F1A17', '#F4A259'] },
+  { id: 'saida-de-praia', nome: 'Saída de Praia', img: 'img/praia-saida.webp', foco: [], cores: ['#D9622B', '#F7DDE3', '#1F1A17'] },
+];
+const FOCOS_PRAIA = [['todos', 'Todos'], ['barriga', 'Segura a barriga'], ['busto', 'Sustenta o busto'], ['bumbum', 'Valoriza o bumbum']];
+const TAMANHOS_PRAIA = ['PP', 'P', 'M', 'G', 'GG', 'XG'];
+
+// Teste "qual a sua peça ideal"
+const OBJETIVOS = [
+  { id: 'barriga', nome: 'Barriga e cintura', dica: 'Afinar a cintura e segurar a barriga', produto: 'cinta-ziper-30' },
+  { id: 'busto', nome: 'Busto e postura', dica: 'Levantar e sustentar o busto', produto: 'sutia-reforcado' },
+  { id: 'completo', nome: 'O contorno todo', dica: 'Cintura, barriga e busto juntos', produto: 'combo-modelagem' },
+  { id: 'tratar', nome: 'Modelar e tratar', dica: 'Cinta + massagem em casa', produto: 'combo-duplo' },
+];
+const USOS = [
+  { id: 'dia', nome: 'No dia a dia', dica: 'Por baixo de calça e blusa ela fica lisinha e ninguém percebe.' },
+  { id: 'justa', nome: 'Com roupa justa', dica: 'Em vestido e roupa colada, a cinta tira as marquinhas da barriga.' },
+  { id: 'festa', nome: 'Em festas e eventos', dica: 'Para a noite toda, feche na regulagem do meio: firme e confortável.' },
+  { id: 'casa', nome: 'Em casa, para tratar', dica: 'Massageie o gel na barriga e vista a cinta em seguida.' },
+];
+
+// Avaliações de EXEMPLO: o espaço será preenchido com avaliações reais das clientes
+const AVALIACOES = [
+  { foto: 'img/cliente-1.webp', nome: 'Cliente de exemplo', cidade: 'Niterói, RJ', tam: 'G', produto: 'Cinta de Zíper 30 Barbatanas', texto: 'Uso por cima da regata e ninguém percebe. Não enrola quando eu sento, que era o que me incomodava nas outras.' },
+  { foto: 'img/cliente-2.webp', nome: 'Cliente de exemplo', cidade: 'São Paulo, SP', tam: 'M', produto: 'Combo Modelagem + Tratamento', texto: 'Fiz o teste do site e acertei o tamanho de primeira. O sutiã também é muito confortável.' },
+  { foto: null, nome: 'Cliente de exemplo', cidade: 'Belo Horizonte, MG', tam: 'GG', produto: 'Cinta de Zíper 30 Barbatanas', texto: 'Chegou rápido e a Paola me ajudou no WhatsApp a escolher. Vestido justo agora sem marquinha.' },
 ];
