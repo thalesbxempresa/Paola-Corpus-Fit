@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Moda Praia | Paola Corpus Fit</title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#F4A259">
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="fonts/figtree.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/estilo.css">
+</head>
+<body data-pagina="praia">
+  <div id="topo"></div>
+
+  <main>
+    <!-- 1. Lançamento -->
+    <section class="praia-hero">
+      <div class="wrap">
+        <div>
+          <span class="sobre">Lançamento · Coleção Verão</span>
+          <h1><span>Paola</span>Moda praia</h1>
+          <p>Maiôs e biquínis que seguram a barriga e marcam a cintura. Do jeito da cinta, agora na praia.</p>
+          <div class="contagem" id="contagem" aria-label="Contagem para o lançamento"></div>
+          <div class="acoes">
+            <a class="btn btn-branco" href="#espera">Quero ser avisada</a>
+            <a class="btn btn-contorno" href="#previa">Ver a prévia</a>
+          </div>
+        </div>
+        <div class="praia-vitrine" id="praia-vitrine"></div>
+      </div>
+      <svg class="onda" viewBox="0 0 1440 40" preserveAspectRatio="none" aria-hidden="true"><path d="M0 22c120-18 240-18 360 0s240 18 360 0 240-18 360 0 240 18 360 0v18H0z" fill="currentColor"/></svg>
+    </section>
+
+    <!-- 2. Prévia da coleção -->
+    <section class="secao" id="previa">
+      <div class="wrap">
+        <div class="titulo-sec"><div><span class="sobre">Prévia da coleção</span><h2 class="titulo">A coleção</h2></div></div>
+        <div class="colecao" id="colecao"></div>
+        <p class="legenda" style="margin-top:22px">Prévia ilustrativa. Modelos, cores e preços serão confirmados no lançamento.</p>
+      </div>
+    </section>
+
+    <!-- 3. O diferencial -->
+    <section class="secao" style="padding-top:0">
+      <div class="wrap">
+        <div class="conceito">
+          <div class="conceito-foto"><img src="img/praia-maio-modelador.webp" alt="Maiô modelador preto na praia" width="896" height="1200" loading="lazy"></div>
+          <div>
+            <span class="sobre">O diferencial Paola</span>
+            <h2 class="titulo">Modela até na praia</h2>
+            <ul>
+              <li><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M6 4v16M10 4v16M14 4v16M18 4v16"/></svg></span><div><b>Forro firme na barriga</b><small>Segura sem apertar</small></div></li>
+              <li><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 15c2.4 0 2.4-2 4.75-2s2.4 2 4.75 2 2.4-2 4.75-2 2.4 2 4.75 2"/><path d="M12 3c2.5 3 4 5 4 6.5a4 4 0 0 1-8 0C8 8 9.5 6 12 3z"/></svg></span><div><b>Tecido que seca rápido</b><small>Do mar para a areia</small></div></li>
+              <li><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="8" width="19" height="8" rx="1.5"/><path d="M6.5 8v3M10.5 8v4M14.5 8v3M18.5 8v4"/></svg></span><div><b>Do PP ao EG</b><small>A mesma tabela das cintas</small></div></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Lista de espera -->
+    <section class="secao" id="espera" style="padding-top:0">
+      <div class="wrap">
+        <div class="espera">
+          <div>
+            <span class="sobre">Lista de espera</span>
+            <h2 class="titulo" style="margin-top:8px">Veja antes de todo mundo</h2>
+            <p style="margin-top:12px;color:var(--tinta-2)">Quem entra na lista recebe a coleção no WhatsApp antes do lançamento.</p>
+          </div>
+          <div id="espera-caixa">
+            <form id="form-espera">
+              <div class="campo"><label for="nome">Seu nome</label><input id="nome" name="nome" autocomplete="given-name" required></div>
+              <div class="campo"><label for="zap">WhatsApp</label><input id="zap" name="zap" inputmode="tel" autocomplete="tel" placeholder="(21) 90000-0000" required></div>
+              <div class="campo"><span class="rotulo">Seus tamanhos</span>
+                <div class="tamanhos" id="espera-tam">
+                  <button class="chip" type="button" aria-checked="false">PP</button><button class="chip" type="button" aria-checked="false">P</button><button class="chip" type="button" aria-checked="false">M</button><button class="chip" type="button" aria-checked="false">G</button><button class="chip" type="button" aria-checked="false">GG</button><button class="chip" type="button" aria-checked="false">XG</button><button class="chip" type="button" aria-checked="false">EG</button>
+                </div>
+              </div>
+              <button class="btn btn-preto btn-bloco" type="submit">Quero ser avisada</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="rodape"></div>
+  <script src="js/dados.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
