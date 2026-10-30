@@ -834,3 +834,24 @@ section[id] { scroll-margin-top: 84px; }
   .prod-info .kit .img { aspect-ratio: 3 / 4; }
   .corpos { grid-template-columns: repeat(5, 1fr); }
 }
+
+/* ============ Fechamento do pedido com a Paola ============ */
+.aviso-real { display: grid; grid-template-columns: 44px 1fr; gap: 12px; align-items: start; padding: 14px; border-radius: 18px; background: var(--rosa-2); }
+.aviso-ico { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--vinho); color: var(--branco); }
+.aviso-ico svg { width: 22px; height: 22px; }
+.aviso-real p { font-size: 15px; line-height: 1.45; }
+.aviso-lista { margin: 16px 0 20px; }
+.aviso-lista li::before { background: var(--ok); }
+.checkout { display: grid; gap: 14px; }
+.ck-total { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 14px; border-radius: 14px; background: var(--branco); }
+.ck-total b { font-size: 20px; font-weight: 900; }
+.checkout .btn-pedir svg { width: 22px; height: 22px; }
+.pedido-num { margin: -4px 0 14px; padding: 10px 14px; border-radius: 12px; background: var(--rosa-2); font-size: 14px; }
+.ultimo-pedido { display: grid; gap: 2px; justify-items: center; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--areia-3); }
+.ultimo-pedido small { font-size: 12px; color: var(--tinta-2); }
+.ck-sub { margin-top: 6px; font-size: 13px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; color: var(--vinho); }
+.ck-linha { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ck-cidade { grid-template-columns: 1fr 76px; }
+.ck-linha .campo input { min-width: 0; width: 100%; }
+.ck-status { font-size: 13px; color: var(--tinta-2); }
+.ck-status:empty { display: none; }

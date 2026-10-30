@@ -221,7 +221,10 @@ function desenharSacola() {
   const pe = $('#g-sacola .gaveta-pe');
 
   if (!s.length) {
-    corpo.innerHTML = `<div class="sacola-vazia">${I.sacola}<b>Seu pedido está vazio</b><p style="color:var(--tinta-2)">Escolha o kit e o número da calça. Leva 1 minuto.</p><a class="btn btn-preto" href="index.html#comprar" data-fechar>Fazer meu pedido</a></div>`;
+    const ultimo = lerPedidos()[0];
+    corpo.innerHTML = `<div class="sacola-vazia">${I.sacola}<b>Seu pedido está vazio</b><p style="color:var(--tinta-2)">Escolha o kit e o número da calça. Leva 1 minuto.</p><a class="btn btn-preto" href="index.html#comprar" data-fechar>Fazer meu pedido</a>
+      ${ultimo ? `<div class="ultimo-pedido"><small>Seu último pedido</small><b>${ultimo.numero} · ${brl(ultimo.total)}</b><button class="link-tam" type="button" data-reenviar>Enviar de novo para a Paola</button></div>` : ''}</div>`;
+    $('[data-reenviar]', corpo)?.addEventListener('click', () => enviarWhatsApp(textoPedido(ultimo), 'A Paola confere seu tamanho e te envia o link de pagamento', ultimo.numero));
     pe.innerHTML = '';
     pe.hidden = true;
     return;
@@ -273,19 +276,123 @@ function trocar(chave) {
   if (x) abrirOpcoes(SOBE[x.id][0], { calca: x.calca, qtd: x.qtd, trocar: chave });
 }
 
-const textoPedido = (s) => `Oi, Paola! Quero fazer este pedido:\n${s.map((x) => `• ${x.qtd}x ${nomeLinha(x)}${x.calca ? ` · tam. ${tamanhoPorCalca(x.calca).t} (calça ${x.calca})` : ''}`).join('\n')}\nTotal: ${brl(subtotal(s))}\nPosso te mandar uma foto de frente para você confirmar o meu tamanho.`;
+// ---------------- Registro do pedido ----------------
+// Provisório até ter pagamento no site: o pedido ganha número, fica salvo neste aparelho
+// e vai organizado para a Paola no WhatsApp; ela responde com o link de pagamento.
+const lerJSON = (chave, padrao) => { try { return JSON.parse(localStorage.getItem(chave)) || padrao; } catch (e) { return padrao; } };
+const gravarJSON = (chave, valor) => { try { localStorage.setItem(chave, JSON.stringify(valor)); } catch (e) { /* ok */ } };
+const lerPedidos = () => lerJSON('pcf-pedidos', []);
 
-// Envio: com o número da Paola o texto já vai pronto; sem ele, a mensagem é copiada e a tela explica o que fazer
-const finalizar = () => enviarWhatsApp(textoPedido(lerSacola()), 'A Paola confirma seu tamanho e o pagamento com você');
+function registrarPedido(s, dados) {
+  const agora = new Date();
+  const dois = (n) => String(n).padStart(2, '0');
+  const numero = `PCF-${dois(agora.getDate())}${dois(agora.getMonth() + 1)}-${Math.floor(1000 + Math.random() * 9000)}`;
+  const pedido = { ...dados, numero, data: agora.toISOString(), itens: s, total: subtotal(s) };
+  gravarJSON('pcf-pedidos', [pedido, ...lerPedidos()].slice(0, 10));
+  return pedido;
+}
 
-function enviarWhatsApp(texto, depois) {
+// Mensagem no formato que a Paola lê de uma vez (negrito do WhatsApp com *)
+function textoPedido(p) {
+  const itens = p.itens.map((x) => `• ${x.qtd}x ${nomeLinha(x)}${x.calca ? `\n   Tamanho ${tamanhoPorCalca(x.calca).t} (veste calça ${x.calca})` : ''}`).join('\n');
+  return `*Pedido ${p.numero}*\nOi, Paola! Quero finalizar este pedido:\n\n${itens}\n\n*Total:* ${brl(p.total)} (${brl(pix(p.total))} no Pix)\n\n*Meus dados*\nNome: ${p.nome}\nPagamento: ${p.pagamento}\n\n*Entrega*\n${p.rua ? `${p.rua}, ${p.num}${p.complemento ? ` - ${p.complemento}` : ''}\n${p.bairro} - ${p.cidade}/${p.uf}\n` : ''}CEP: ${p.cep}\n\nPode me mandar o link de pagamento? Se precisar, te mando uma foto de frente para confirmar o tamanho.`;
+}
+
+// Antes do WhatsApp: explica por que a compra fecha com uma pessoa e pede só o essencial
+function finalizar() {
+  const s = lerSacola();
+  if (!s.length) return;
+  const cliente = lerJSON('pcf-cliente', {});
+  let pagamento = cliente.pagamento || 'Pix';
+  const m = abrirModal(`
+    <div class="modal-topo"><h2>Você vai finalizar com a Paola</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
+    <div class="aviso-real">
+      <span class="aviso-ico">${I.chat}</span>
+      <p><b>Cinta só modela no tamanho certo.</b> Por isso, quem fecha o seu pedido é a própria Paola, pelo WhatsApp: uma pessoa de verdade, não um robô.</p>
+    </div>
+    <ul class="espera-lista aviso-lista">
+      <li>Ela confere seu tamanho antes de enviar e, se precisar, pede uma foto de frente</li>
+      <li>Você recebe dela o link de pagamento: Pix com 5% de desconto ou cartão em até ${LOJA.parcelas}x</li>
+      <li>Nada é cobrado agora</li>
+    </ul>
+    <form class="checkout" id="form-checkout" novalidate>
+      <div class="campo"><label for="ck-nome">Seu nome</label><input id="ck-nome" name="nome" autocomplete="name" required></div>
+      <h3 class="ck-sub">Onde entregar</h3>
+      <div class="campo"><label for="ck-cep">CEP</label><input id="ck-cep" name="cep" inputmode="numeric" autocomplete="postal-code" placeholder="00000-000" maxlength="9" required><small class="ck-status" data-status></small></div>
+      <div class="campo"><label for="ck-rua">Rua</label><input id="ck-rua" name="rua" autocomplete="address-line1" required></div>
+      <div class="ck-linha">
+        <div class="campo"><label for="ck-num">Número</label><input id="ck-num" name="num" inputmode="numeric" required></div>
+        <div class="campo"><label for="ck-comp">Complemento</label><input id="ck-comp" name="complemento" autocomplete="address-line2" placeholder="Opcional"></div>
+      </div>
+      <div class="campo"><label for="ck-bairro">Bairro</label><input id="ck-bairro" name="bairro" required></div>
+      <div class="ck-linha ck-cidade">
+        <div class="campo"><label for="ck-cidade">Cidade</label><input id="ck-cidade" name="cidade" autocomplete="address-level2" required></div>
+        <div class="campo"><label for="ck-uf">UF</label><input id="ck-uf" name="uf" autocomplete="address-level1" maxlength="2" required></div>
+      </div>
+      <div class="campo"><span class="rotulo">Como prefere pagar?</span>
+        <div class="tamanhos" role="radiogroup" aria-label="Forma de pagamento">${['Pix', 'Cartão'].map((f) => `<button class="chip" type="button" role="radio" data-pag="${f}" aria-checked="${f === pagamento}">${f === 'Pix' ? 'Pix (5% off)' : `Cartão em até ${LOJA.parcelas}x`}</button>`).join('')}</div>
+      </div>
+      <div class="ck-total"><span>Total do pedido</span><b>${brl(subtotal(s))}</b></div>
+      <p class="dica-tam erro" data-erro hidden></p>
+      <button class="btn btn-preto btn-bloco btn-pedir" type="submit">${I.whats}Continuar no WhatsApp</button>
+    </form>`);
+  const form = $('#form-checkout', m);
+  const CAMPOS = ['nome', 'cep', 'rua', 'num', 'complemento', 'bairro', 'cidade', 'uf'];
+  CAMPOS.forEach((c) => { form[c].value = cliente[c] || ''; });
+  // Pelo CEP, o endereço se preenche sozinho (ViaCEP, serviço público e gratuito); se falhar, ela digita
+  const status = $('[data-status]', m);
+  let ultimoCep = '';
+  form.cep.addEventListener('input', async () => {
+    const d = form.cep.value.replace(/\D/g, '').slice(0, 8);
+    form.cep.value = d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
+    if (d.length !== 8 || d === ultimoCep) return;
+    ultimoCep = d;
+    status.textContent = 'Buscando endereço…';
+    try {
+      const r = await fetch(`https://viacep.com.br/ws/${d}/json/`).then((x) => x.json());
+      if (r.erro) throw new Error('CEP não encontrado');
+      form.rua.value = r.logradouro || form.rua.value;
+      form.bairro.value = r.bairro || form.bairro.value;
+      form.cidade.value = r.localidade || '';
+      form.uf.value = r.uf || '';
+      status.textContent = '';
+      (r.logradouro ? form.num : form.rua).focus();
+    } catch (e) {
+      status.textContent = 'Não achamos esse CEP. Preencha o endereço abaixo.';
+    }
+  });
+  $$('[data-pag]', m).forEach((b) => b.addEventListener('click', () => {
+    pagamento = b.dataset.pag;
+    $$('[data-pag]', m).forEach((c) => c.setAttribute('aria-checked', c === b));
+  }));
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const d = Object.fromEntries(CAMPOS.map((c) => [c, form[c].value.trim()]));
+    d.uf = d.uf.toUpperCase();
+    const erro = $('[data-erro]', m);
+    const falta = (!d.nome && ['nome', 'Escreva seu nome.'])
+      || (d.cep.replace(/\D/g, '').length !== 8 && ['cep', 'Digite os 8 números do CEP.'])
+      || (!d.rua && ['rua', 'Escreva a rua.'])
+      || (!d.num && ['num', 'Escreva o número da casa ou prédio.'])
+      || (!d.bairro && ['bairro', 'Escreva o bairro.'])
+      || ((!d.cidade || d.uf.length !== 2) && ['cidade', 'Escreva a cidade e a UF (ex.: RJ).']);
+    if (falta) { erro.hidden = false; erro.textContent = falta[1]; form[falta[0]].focus(); return; }
+    gravarJSON('pcf-cliente', { ...d, pagamento });
+    const pedido = registrarPedido(s, { ...d, pagamento });
+    gravarSacola([]);
+    enviarWhatsApp(textoPedido(pedido), 'A Paola confere seu tamanho e te envia o link de pagamento', pedido.numero);
+  });
+}
+
+function enviarWhatsApp(texto, depois, numero) {
   if (LOJA.whatsappNumero) {
     window.open(`https://wa.me/${LOJA.whatsappNumero}?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
-    return;
+    if (!numero) return;
   }
   // A tela abre na hora; a cópia vem depois (alguns navegadores demoram ou pedem permissão)
   const m = abrirModal(`
-    <div class="modal-topo"><h2>Falta só enviar</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
+    <div class="modal-topo"><h2>${numero ? 'Pedido registrado' : 'Falta só enviar'}</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
+    ${numero ? `<p class="pedido-num">Nº <b>${numero}</b> · Agora é só enviar para a Paola.</p>` : ''}
     <ol class="envio-passos">
       <li><b>1</b><span>Toque em <strong>Abrir WhatsApp</strong></span></li>
       <li><b>2</b><span data-copia>Copie a mensagem abaixo, cole na conversa e envie.</span></li>
