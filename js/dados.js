@@ -1,8 +1,8 @@
 // =============================================================
 // Paola Corpus Fit — dados do protótipo
-// Produtos, combos, tabela de medidas, WhatsApp e Instagram são os
-// da marca. Preços das peças avulsas são ilustrativos; os dos combos
-// são os divulgados no Instagram. A moda praia é uma prévia de lançamento.
+// Produtos, preços e combos passados pela Paola (áudios de 29/10/2026).
+// Sutiã, gel e creme ainda não têm preço avulso: aparecem só nos combos.
+// A moda praia é uma prévia de lançamento.
 // =============================================================
 
 const LOJA = {
@@ -19,105 +19,135 @@ const LOJA = {
 const PRODUTOS = [
   {
     id: 'cinta-ziper-30',
-    nome: 'Cinta de Zíper 30 Barbatanas',
+    nome: 'Cinta Faixa de Zíper 30 Barbatanas',
+    curto: 'Cinta 30 Barbatanas',
     cat: 'cintas',
-    preco: 229.9,
-    img: 'img/cinta.webp',
-    img2: 'img/cinta-detalhe.webp',
+    barbatanas: 30,
+    de: 650,
+    preco: 369.99,
+    img: 'img/real-cinta.webp',
+    img2: 'img/real-cinta-costas.webp',
     galeria: [
-      { src: 'img/cinta.webp', txt: 'Modelo veste G' },
-      { src: 'img/cinta-detalhe.webp', txt: 'Zíper + 3 fileiras de colchetes' },
-      { src: 'img/corpo-p.webp', txt: 'Modelo veste P' },
-      { src: 'img/corpo-m.webp', txt: 'Modelo veste M' },
-      { src: 'img/corpo-g.webp', txt: 'Modelo veste GG' },
-      { src: 'img/cinta-dia-a-dia.webp', txt: 'Por cima da regata' },
+      { src: 'img/real-cinta.webp', txt: 'Zíper na frente' },
+      { src: 'img/real-cinta-detalhe.webp', txt: 'Zíper + 2 regulagens de colchete por dentro' },
+      { src: 'img/real-cinta-curvas.webp', txt: 'Barbatanas na frente e nas laterais' },
+      { src: 'img/real-cinta-costas.webp', txt: 'Não dobra e não enrola' },
+      { src: 'img/real-cinta-fechando.webp', txt: 'Fecha em segundos' },
     ],
-    selo: 'Mais vendida',
+    selo: 'A melhor',
     tamanhos: true,
-    frase: 'Não sobra, não enrola, não machuca.',
-    desc: 'A queridinha da Paola. Fecha com zíper e colchetes e tem 30 barbatanas que seguram a cinta no lugar o dia todo, sem enrolar. Modela a cintura e segura a barriga.',
-    pontos: ['Zíper + 3 fileiras de colchetes', '30 barbatanas flexíveis', 'Do abaixo do busto até o quadril'],
-    uso: 'Nos primeiros dias, feche na regulagem de colchetes mais externa. Quando o corpo acostumar, passe para a do meio.',
+    frase: 'Não dobra, não enrola, não machuca.',
+    desc: 'A cinta da Paola, com 30 barbatanas na frente e nas laterais. São elas que apertam, modelam e não deixam a peça dobrar nem enrolar. Tecido cetinete pós-cirúrgico e antialérgico, 4 camadas, 2 regulagens de colchete por dentro e zíper na frente para comprimir ainda mais.',
+    pontos: ['30 barbatanas: não dobra, não enrola', 'Zíper + 2 regulagens de colchete', '4 camadas de tecido cetinete', 'Pós-cirúrgica e antialérgica'],
+    uso: 'Use no dia a dia e na atividade física. Comece pela regulagem mais folgada e passe para a mais justa quando o corpo acostumar.',
+  },
+  {
+    id: 'cinta-ziper-20',
+    nome: 'Cinta Faixa de Zíper 20 Barbatanas',
+    curto: 'Cinta 20 Barbatanas',
+    cat: 'cintas',
+    barbatanas: 20,
+    de: 500,
+    preco: 279.99,
+    img: 'img/real-cinta-20.webp',
+    img2: 'img/real-cinta-detalhe.webp',
+    galeria: [
+      { src: 'img/real-cinta-20.webp', txt: 'Mesma modelagem da cinta de 30' },
+      { src: 'img/real-cinta-detalhe.webp', txt: 'Zíper + 2 regulagens de colchete por dentro' },
+      { src: 'img/real-cinta-costas.webp', txt: 'Não dobra e não enrola' },
+    ],
+    tamanhos: true,
+    frase: 'A mesma cinta, com 20 barbatanas.',
+    desc: 'Mesma modelagem, mesmo tecido cetinete pós-cirúrgico e antialérgico e o mesmo fechamento da cinta de 30: zíper na frente e 2 regulagens de colchete por dentro. A única diferença é ter 20 barbatanas em vez de 30.',
+    pontos: ['20 barbatanas: não dobra, não enrola', 'Zíper + 2 regulagens de colchete', '4 camadas de tecido cetinete', 'Pós-cirúrgica e antialérgica'],
+    uso: 'Use no dia a dia e na atividade física. Comece pela regulagem mais folgada e passe para a mais justa quando o corpo acostumar.',
   },
   {
     id: 'sutia-reforcado',
     nome: 'Sutiã Reforçado',
+    curto: 'Sutiã reforçado',
+    plural: 'Sutiãs reforçados',
     cat: 'sutias',
-    preco: 139.9,
-    img: 'img/sutia.webp',
-    tamanhos: true,
-    frase: 'Sustenta, levanta e não marca o ombro.',
-    desc: 'Sustenta e levanta o busto com alças largas que não marcam o ombro. Combina com a cinta para um contorno completo.',
-    pontos: ['Alças largas e acolchoadas', 'Levanta e sustenta', 'Combina com a cinta'],
-    uso: 'Use junto com a cinta para o contorno ficar completo, do busto ao quadril.',
+    preco: null,
+    img: 'img/real-sutia.webp',
+    galeria: [
+      { src: 'img/real-sutia.webp' },
+      { src: 'img/real-sutia-detalhe.webp', txt: 'Fechamento na frente' },
+    ],
+    frase: 'Sustenta o busto e completa o contorno.',
+    desc: 'Sutiã reforçado com fechamento na frente. Completa o contorno junto com a cinta e vem nos combos.',
+    pontos: ['Fechamento na frente', '2 unidades no Combo Adeus Pochete', 'Opção no Combo Duplo'],
   },
   {
     id: 'gel-pimenta',
-    nome: 'Gel Termo Ativo Pimenta Negra 200 g',
-    curto: 'Gel Pimenta Negra',
+    nome: 'Gel Termoativo Pimenta Negra 200 g',
+    curto: 'Gel termoativo',
     cat: 'tratamento',
-    preco: 59.9,
-    img: 'img/gel.webp',
-    frase: 'Massagem que aquece antes da cinta.',
-    desc: 'Gel termo ativo da Néctar. Massageie na barriga antes de colocar a cinta: aquece a região e completa a rotina de modelagem.',
-    pontos: ['Aquece a região', 'Massagem antes da cinta', 'Tubo de 200 g'],
+    preco: null,
+    img: 'img/real-gel.webp',
+    frase: 'Auxilia na redução de medidas e celulite.',
+    desc: 'Gel termoativo de pimenta negra da Néctar, de rápida absorção. Auxilia na redução de medidas e celulite e é perfeito para usar junto com a cinta.',
+    pontos: ['Tubo de 200 g', 'Rápida absorção', 'Para usar com a cinta'],
     uso: 'Aplique na barriga e nas laterais, massageie até absorver e vista a cinta em seguida.',
   },
   {
     id: 'creme-pimenta',
-    nome: 'Creme de Massagem Pimenta Negra',
-    curto: 'Creme Pimenta Negra',
+    nome: 'Creme para Massagem Pimenta Negra',
+    curto: 'Creme de massagem',
     cat: 'tratamento',
-    preco: 49.9,
-    img: 'img/creme.webp',
-    frase: 'O tratamento em casa, todo dia.',
-    desc: 'Creme para massagem modeladora. Use com a cinta para completar o tratamento em casa.',
-    pontos: ['Massagem modeladora', 'Pote de 200 g', 'Uso diário'],
-    uso: 'Massageie com movimentos de baixo para cima, de preferência todos os dias.',
+    preco: null,
+    img: 'img/real-creme.webp',
+    frase: 'A massagem modeladora em casa.',
+    desc: 'Creme para massagem de pimenta negra da Rhenuks, de uso profissional. Vem no Combo Adeus Pochete.',
+    pontos: ['Rhenuks, uso profissional', 'Massagem modeladora', 'Vem no Combo Adeus Pochete'],
   },
 ];
 
+// Combos: o de 5 produtos é o que mais sai e fica sempre em destaque
 const KITS = [
   {
-    id: 'combo-modelagem',
-    nome: 'Combo Modelagem + Tratamento',
+    id: 'combo-5',
+    nome: 'Combo Adeus Pochete',
+    chamada: 'Adeus, pochete!',
+    sub: 'Leve 5 produtos',
     cat: 'kits',
     selo: 'O que mais sai',
-    itens: ['cinta-ziper-30', 'sutia-reforcado', 'gel-pimenta'],
-    de: 910,
-    preco: 410,
-    desc: 'O combo que mais sai: cinta, sutiã reforçado e o gel para a massagem.',
-  },
-  {
-    id: 'combao',
-    nome: 'Combão Completo',
-    cat: 'kits',
-    itens: ['cinta-ziper-30', 'sutia-reforcado', 'gel-pimenta', 'creme-pimenta'],
-    de: 980,
-    preco: 449,
-    desc: 'Tudo para modelar e tratar: cinta, sutiã, gel e creme de massagem.',
+    img: 'img/real-combo-5.webp',
+    itens: ['cinta-ziper-30', 'sutia-reforcado', 'sutia-reforcado', 'gel-pimenta', 'creme-pimenta'],
+    de: 1089,
+    preco: 479,
+    frase: 'O combo mais completo da Paola.',
+    desc: 'O combo que mais sai: a cinta de 30 barbatanas, 2 sutiãs reforçados, o gel termoativo e o creme para massagem.',
   },
   {
     id: 'combo-duplo',
-    nome: 'Combo Duplo Barriga',
+    nome: 'Combo Duplo',
+    sub: 'Você escolhe: gel ou sutiã',
     cat: 'kits',
-    itens: ['cinta-ziper-30', 'gel-pimenta'],
-    de: 289.8,
-    preco: 259.9,
-    desc: 'Cinta e gel para tratar a área abdominal.',
+    selo: 'Você escolhe',
+    img: 'img/real-combo-duplo.webp',
+    itens: ['cinta-ziper-30'],
+    escolha: ['gel-pimenta', 'sutia-reforcado'],
+    de: 750,
+    preco: 399.99,
+    frase: 'Só R$ 30 a mais que a cinta sozinha.',
+    gancho: 'Só R$ 30 a mais que a cinta sozinha',
+    desc: 'A cinta de 30 barbatanas + o gel termoativo ou o sutiã reforçado, você escolhe. Sai só R$ 30 a mais que a cinta sozinha.',
   },
 ];
 
-// Tabela de medidas oficial (medida da cintura)
+// Tamanho pelo número de calça/short (a cinta estica, então medida em cm não ajuda).
+// Faixas montadas a partir dos exemplos da Paola (P veste 38/40, G veste 42/44, XGG até 52):
+// confirmar a tabela oficial com ela.
 const TABELA = [
-  { t: 'PP', min: 58, max: 64, calca: '34 a 36' },
-  { t: 'P', min: 65, max: 72, calca: '38 a 40' },
-  { t: 'M', min: 73, max: 80, calca: '40 a 42' },
-  { t: 'G', min: 81, max: 88, calca: '44' },
-  { t: 'GG', min: 89, max: 98, calca: '46 a 48' },
-  { t: 'XG', min: 99, max: 110, calca: '50 a 52' },
-  { t: 'EG', min: 111, max: 130, calca: '54 ou mais' },
+  { t: 'P', calca: [36, 38] },
+  { t: 'M', calca: [40] },
+  { t: 'G', calca: [42, 44] },
+  { t: 'GG', calca: [46] },
+  { t: 'XG', calca: [48] },
+  { t: 'XGG', calca: [50, 52] },
 ];
+const NUMEROS = TABELA.flatMap((x) => x.calca);
 
 // Prévia da coleção de moda praia (lançamento)
 // foco = o que a peça resolve (usado nos filtros); biquini = entra no "monte seu biquíni"
@@ -132,25 +162,25 @@ const PRAIA = [
   { id: 'saida-de-praia', nome: 'Saída de Praia', img: 'img/praia-saida.webp', foco: [], cores: ['#D9622B', '#F7DDE3', '#1F1A17'] },
 ];
 const FOCOS_PRAIA = [['todos', 'Todos'], ['barriga', 'Segura a barriga'], ['busto', 'Sustenta o busto'], ['bumbum', 'Valoriza o bumbum']];
-const TAMANHOS_PRAIA = ['PP', 'P', 'M', 'G', 'GG', 'XG'];
+const TAMANHOS_PRAIA = TABELA.map((x) => x.t);
 
 // Teste "qual a sua peça ideal"
 const OBJETIVOS = [
-  { id: 'barriga', nome: 'Barriga e cintura', dica: 'Afinar a cintura e segurar a barriga', produto: 'cinta-ziper-30' },
-  { id: 'busto', nome: 'Busto e postura', dica: 'Levantar e sustentar o busto', produto: 'sutia-reforcado' },
-  { id: 'completo', nome: 'O contorno todo', dica: 'Cintura, barriga e busto juntos', produto: 'combo-modelagem' },
-  { id: 'tratar', nome: 'Modelar e tratar', dica: 'Cinta + massagem em casa', produto: 'combo-duplo' },
+  { id: 'completo', nome: 'O tratamento completo', dica: 'Cinta, 2 sutiãs, gel e creme', produto: 'combo-5' },
+  { id: 'extra', nome: 'A cinta + um extra', dica: 'Gel ou sutiã por só R$ 30 a mais', produto: 'combo-duplo' },
+  { id: 'cinta', nome: 'Só a cinta, a melhor', dica: '30 barbatanas: não dobra, não enrola', produto: 'cinta-ziper-30' },
+  { id: 'economia', nome: 'Começar gastando menos', dica: 'A cinta de 20 barbatanas', produto: 'cinta-ziper-20' },
 ];
 const USOS = [
-  { id: 'dia', nome: 'No dia a dia', dica: 'Por baixo de calça e blusa ela fica lisinha e ninguém percebe.' },
-  { id: 'justa', nome: 'Com roupa justa', dica: 'Em vestido e roupa colada, a cinta tira as marquinhas da barriga.' },
-  { id: 'festa', nome: 'Em festas e eventos', dica: 'Para a noite toda, feche na regulagem do meio: firme e confortável.' },
-  { id: 'casa', nome: 'Em casa, para tratar', dica: 'Massageie o gel na barriga e vista a cinta em seguida.' },
+  { id: 'dia', nome: 'No dia a dia', dica: 'Por baixo da roupa ela fica lisinha e não marca.' },
+  { id: 'justa', nome: 'Com roupa justa', dica: 'Com roupa justa, a cinta segura a barriga e marca a cintura.' },
+  { id: 'treino', nome: 'Na atividade física', dica: 'Pode treinar com ela: as barbatanas não deixam a cinta dobrar.' },
+  { id: 'casa', nome: 'Em casa, para tratar', dica: 'Massageie o gel termoativo na barriga e vista a cinta em seguida.' },
 ];
 
-// Avaliações de EXEMPLO: o espaço será preenchido com avaliações reais das clientes
+// Avaliações de EXEMPLO: o espaço será preenchido com os antes e depois reais das clientes
 const AVALIACOES = [
-  { foto: 'img/cliente-1.webp', nome: 'Cliente de exemplo', cidade: 'Niterói, RJ', tam: 'G', produto: 'Cinta de Zíper 30 Barbatanas', texto: 'Uso por cima da regata e ninguém percebe. Não enrola quando eu sento, que era o que me incomodava nas outras.' },
-  { foto: 'img/cliente-2.webp', nome: 'Cliente de exemplo', cidade: 'São Paulo, SP', tam: 'M', produto: 'Combo Modelagem + Tratamento', texto: 'Fiz o teste do site e acertei o tamanho de primeira. O sutiã também é muito confortável.' },
-  { foto: null, nome: 'Cliente de exemplo', cidade: 'Belo Horizonte, MG', tam: 'GG', produto: 'Cinta de Zíper 30 Barbatanas', texto: 'Chegou rápido e a Paola me ajudou no WhatsApp a escolher. Vestido justo agora sem marquinha.' },
+  { foto: 'img/cliente-1.webp', nome: 'Cliente de exemplo', cidade: 'Niterói, RJ', tam: 'G', produto: 'Cinta 30 Barbatanas', texto: 'Uso o dia todo e ninguém percebe. Não enrola quando eu sento, que era o que me incomodava nas outras.' },
+  { foto: 'img/cliente-2.webp', nome: 'Cliente de exemplo', cidade: 'São Paulo, SP', tam: 'M', produto: 'Combo Adeus Pochete', texto: 'Escolhi pelo número da calça e a Paola confirmou comigo no WhatsApp. Veio certinho.' },
+  { foto: null, nome: 'Cliente de exemplo', cidade: 'Belo Horizonte, MG', tam: 'GG', produto: 'Combo Duplo', texto: 'Peguei com o gel por só R$ 30 a mais. A cinta não dobra nem na academia.' },
 ];
