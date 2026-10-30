@@ -652,6 +652,26 @@ function telaProduto() {
 function telaPraia() {
   $('#praia-vitrine').innerHTML = PRAIA.slice(0, 2).map((p) => `<span><img src="${p.img}" alt="${p.nome}"></span>`).join('');
 
+  // Foto fixa: conforme a página sobe, ela fica fosca e some no fundo (uma conta por quadro, só opacidade)
+  const fundo = $('.praia-fundo');
+  if (fundo && !semMovimento) {
+    const topo = $('.praia-hero');
+    let agendado = false;
+    const entre = (v) => Math.min(1, Math.max(0, v));
+    const atualizar = () => {
+      agendado = false;
+      const h = Math.max(1, topo.offsetHeight);
+      // O desfoque só começa quando o título já saiu da tela; o clareamento vem por último (texto branco legível)
+      const p = entre((scrollY - h * 0.25) / (h * 0.55));
+      fundo.style.setProperty('--p', entre(scrollY / h).toFixed(3));
+      fundo.style.setProperty('--fosca', entre(p * 1.5).toFixed(3));
+      fundo.style.setProperty('--vidro', (entre((p - 0.35) / 0.65) * 0.9).toFixed(3));
+    };
+    addEventListener('scroll', () => { if (!agendado) { agendado = true; requestAnimationFrame(atualizar); } }, { passive: true });
+    addEventListener('resize', atualizar);
+    atualizar();
+  }
+
   // Coleção com filtro pelo que a cliente quer valorizar
   let foco = 'todos';
   const desenharColecao = () => {

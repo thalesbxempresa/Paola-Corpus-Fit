@@ -745,25 +745,28 @@ section[id] { scroll-margin-top: 84px; }
 /* Só posição: se a animação não rodar (aba em segundo plano), o texto continua visível */
 @keyframes entrada-texto { from { transform: translateY(18px); } to { transform: none; } }
 
-/* ============ Moda praia: topo vivo ============ */
-.praia-hero { background: var(--mar); }
-.praia-fundo { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(31, 26, 23, .25) 0%, rgba(31, 26, 23, .08) 35%, rgba(29, 106, 134, .6) 100%), url('../img/praia-saida.webp') center 30% / cover no-repeat; transform-origin: 60% 40%; animation: praia-zoom 18s ease-in-out infinite alternate; }
+/* ============ Moda praia: foto fixa que vira vidro fosco ao rolar ============ */
+/* A página sobe por cima da foto. O JS só troca a transparência das camadas (nada de desfoque ao vivo). */
+.praia-hero { padding-bottom: 36px; background: none; }
+.praia-fundo { position: fixed; top: 0; left: 0; right: 0; height: 100vh; height: 100lvh; z-index: -1; overflow: hidden; pointer-events: none; }
+.praia-fundo > div { position: absolute; inset: 0; }
+.pf-nitida { background: linear-gradient(180deg, rgba(31, 26, 23, .25) 0%, rgba(31, 26, 23, .08) 35%, rgba(29, 106, 134, .55) 100%), url('../img/praia-saida.webp') center 30% / cover no-repeat; transform: scale(calc(1 + var(--p, 0) * .06)); }
+.pf-fosca { background: url('../img/praia-saida-fosca.webp') center 30% / cover no-repeat; transform: scale(1.12); opacity: var(--fosca, 0); }
+.pf-vidro { background: linear-gradient(180deg, rgba(246, 240, 234, .55), var(--areia) 70%); opacity: var(--vidro, 0); }
 .praia-hero::before { z-index: 1; animation: praia-sol 5s ease-in-out infinite alternate; }
+/* Com "reduzir animações" a foto rola junto com o topo, sem efeito */
+@media (prefers-reduced-motion: reduce) { .praia-fundo { position: absolute; } .pf-fosca, .pf-vidro { display: none; } }
 .praia-hero .wrap { z-index: 2; }
 .praia-hero h1 { font-size: clamp(2.6rem, 12.5vw, 6.2rem); line-height: .9; }
 .praia-hero h1 span { margin-bottom: 10px; font-size: clamp(1.7rem, 7vw, 2.6rem); }
 .praia-txt { animation: entrada-texto .9s .2s cubic-bezier(.2, .7, .2, 1) both; }
 .praia-link { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; font-size: 14px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--branco); text-decoration: underline; text-underline-offset: 4px; }
-.praia-vitrine span { animation: praia-sobe .9s cubic-bezier(.2, .7, .2, 1) both, praia-flutua 5s ease-in-out 1.2s infinite alternate; }
+.praia-vitrine span { border-radius: 26px; box-shadow: 0 24px 40px -24px rgba(31, 26, 23, .6); animation: praia-sobe .9s cubic-bezier(.2, .7, .2, 1) both, praia-flutua 5s ease-in-out 1.2s infinite alternate; }
 .praia-vitrine span:nth-child(2) { animation-delay: .25s, 2s; }
-.mar { position: relative; z-index: 2; height: 40px; margin-top: -1px; overflow: hidden; color: var(--areia); }
-.mar svg { display: block; width: 200%; height: 100%; animation: praia-ondas 14s linear infinite; }
-@keyframes praia-zoom { from { transform: scale(1); } to { transform: scale(1.09); } }
 @keyframes praia-sol { from { opacity: .35; transform: scale(.94); } to { opacity: .75; transform: scale(1.06); } }
 @keyframes praia-sobe { from { transform: translateY(60px); } to { transform: none; } }
 @keyframes praia-flutua { from { translate: 0 0; } to { translate: 0 -8px; } }
-@keyframes praia-ondas { to { transform: translateX(-50%); } }
-@media (prefers-reduced-motion: reduce) { .praia-fundo, .praia-hero::before, .praia-vitrine span, .mar svg { animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { .praia-hero::before, .praia-vitrine span { animation: none !important; } }
 
 /* Moda praia: lista de espera e cinta */
 .espera-lista { list-style: none; display: grid; gap: 12px; margin: 18px 0 0; padding: 0; }
