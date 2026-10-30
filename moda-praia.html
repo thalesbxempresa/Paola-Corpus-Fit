@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Moda Praia | Paola Corpus Fit</title>
+  <meta name="description" content="Moda praia Paola: maiôs e biquínis de cintura alta que seguram a barriga. Top e calcinha em tamanhos diferentes, do P ao XGG. Entre na lista e veja primeiro.">
   <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#F4A259">
   <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
@@ -14,26 +15,56 @@
   <div id="topo"></div>
 
   <main>
-    <!-- 1. Lançamento -->
+    <!-- 1. A promessa, em uma olhada -->
     <section class="praia-hero">
+      <div class="praia-fundo" aria-hidden="true"></div>
       <div class="wrap">
-        <div>
+        <div class="praia-txt">
           <span class="sobre">Lançamento · Coleção Verão</span>
-          <h1><span>Paola</span>Moda praia</h1>
-          <p>Maiôs e biquínis que seguram a barriga e marcam a cintura. Do jeito da cinta, agora na praia.</p>
-          <div class="contagem" id="contagem" aria-label="Contagem para o lançamento"></div>
+          <h1><span>Moda praia Paola</span>Verão sem esconder a barriga</h1>
+          <p>Maiôs e biquínis de cintura alta que seguram a barriga e marcam a cintura. Do jeito da cinta, agora na praia.</p>
+          <div class="contagem" id="contagem" aria-label="Contagem para o lançamento" hidden></div>
           <div class="acoes">
-            <a class="btn btn-branco" href="#espera">Quero ser avisada</a>
-            <a class="btn btn-contorno" href="#previa">Ver a prévia</a>
+            <a class="btn btn-branco" href="#espera">Quero ver a coleção primeiro</a>
+            <a class="praia-link" href="#previa">Ver a prévia ↓</a>
           </div>
         </div>
         <div class="praia-vitrine" id="praia-vitrine"></div>
       </div>
-      <svg class="onda" viewBox="0 0 1440 40" preserveAspectRatio="none" aria-hidden="true"><path d="M0 22c120-18 240-18 360 0s240 18 360 0 240-18 360 0 240 18 360 0v18H0z" fill="currentColor"/></svg>
+      <div class="mar" aria-hidden="true">
+        <svg viewBox="0 0 2880 40" preserveAspectRatio="none"><path d="M0 22c120-18 240-18 360 0s240 18 360 0 240-18 360 0 240 18 360 0 240-18 360 0 240 18 360 0 240-18 360 0 240 18 360 0v18H0z" fill="currentColor"/></svg>
+      </div>
     </section>
 
-    <!-- 2. Prévia da coleção -->
-    <section class="secao" id="previa">
+    <!-- 2. Por que é diferente -->
+    <section class="secao" id="diferenca">
+      <div class="wrap">
+        <div class="titulo-sec"><div><span class="sobre">Feita para quem usa cinta</span><h2 class="titulo">Biquíni que não marca a barriga</h2></div></div>
+        <p class="sec-intro">Quem cuida da cintura o ano todo não quer passar o verão escondida na canga. A coleção da Paola foi pensada para isso.</p>
+        <div class="versus-tab">
+          <div class="vt-col vt-outras">
+            <h3>Moda praia comum</h3>
+            <ul>
+              <li>Calcinha baixa que marca a barriga</li>
+              <li>Top e calcinha presos no mesmo tamanho</li>
+              <li>Você escolhe sozinha, pela foto</li>
+            </ul>
+          </div>
+          <div class="vt-col vt-paola">
+            <h3>Moda praia Paola</h3>
+            <ul>
+              <li>Cintura alta e maiôs que seguram a barriga</li>
+              <li>Top e calcinha em tamanhos diferentes</li>
+              <li>Do P ao XGG, a mesma tabela da cinta</li>
+              <li>A Paola te ajuda a escolher no WhatsApp</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Prévia da coleção -->
+    <section class="secao" id="previa" style="padding-top:0">
       <div class="wrap">
         <div class="titulo-sec"><div><span class="sobre">Prévia da coleção</span><h2 class="titulo">O que você quer valorizar?</h2></div></div>
         <div class="filtros filtros-praia" id="filtros-praia"></div>
@@ -42,15 +73,15 @@
       </div>
     </section>
 
-    <!-- 3. Monte seu biquíni -->
+    <!-- 4. Monte seu biquíni -->
     <section class="secao secao-branca" id="monte" style="background:#fff">
       <div class="wrap">
-        <div class="titulo-sec"><div><span class="sobre">Exclusivo Paola</span><h2 class="titulo">Monte seu biquíni</h2><p class="sub-sec">Top de um tamanho, calcinha de outro. Do jeito do seu corpo.</p></div></div>
+        <div class="titulo-sec"><div><span class="sobre">Só na Paola</span><h2 class="titulo">Monte seu biquíni</h2><p class="sub-sec">Top de um tamanho, calcinha de outro. Do jeito do seu corpo.</p></div></div>
         <div class="monte" id="monte-caixa"></div>
       </div>
     </section>
 
-    <!-- 4. Kit verão -->
+    <!-- 5. Kit verão -->
     <section class="secao" style="padding-bottom:0">
       <div class="wrap">
         <div class="kit-verao">
@@ -58,53 +89,55 @@
           <div class="kv-txt">
             <span class="sobre">Kit Verão</span>
             <h2 class="titulo">Maiô modelador + saída de praia</h2>
-            <p>O look completo do mar à areia, com preço especial de lançamento para quem está na lista.</p>
-            <a class="btn btn-preto" href="#espera">Quero o kit no lançamento</a>
+            <p>O look completo do mar à areia: o maiô segura a barriga e a saída completa o visual.</p>
+            <a class="btn btn-preto" href="#espera" data-reserva="Kit Verão (maiô modelador + saída de praia)">Quero o kit no lançamento</a>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- 5. O diferencial -->
-    <section class="secao" style="padding-top:0">
-      <div class="wrap">
-        <div class="conceito">
-          <div class="conceito-foto"><img src="img/praia-maio-modelador.webp" alt="Maiô modelador preto na praia" width="896" height="1200" loading="lazy"></div>
-          <div>
-            <span class="sobre">O diferencial Paola</span>
-            <h2 class="titulo">Modela até na praia</h2>
-            <ul>
-              <li><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M6 4v16M10 4v16M14 4v16M18 4v16"/></svg></span><div><b>Forro firme na barriga</b><small>Segura sem apertar</small></div></li>
-              <li><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 15c2.4 0 2.4-2 4.75-2s2.4 2 4.75 2 2.4-2 4.75-2 2.4 2 4.75 2"/><path d="M12 3c2.5 3 4 5 4 6.5a4 4 0 0 1-8 0C8 8 9.5 6 12 3z"/></svg></span><div><b>Tecido que seca rápido</b><small>Do mar para a areia</small></div></li>
-              <li><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="8" width="19" height="8" rx="1.5"/><path d="M6.5 8v3M10.5 8v4M14.5 8v3M18.5 8v4"/></svg></span><div><b>Do P ao XGG</b><small>A mesma tabela das cintas</small></div></li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 4. Lista de espera -->
-    <section class="secao" id="espera" style="padding-top:0">
+    <!-- 6. Lista de espera pelo WhatsApp -->
+    <section class="secao" id="espera">
       <div class="wrap">
         <div class="espera">
           <div>
             <span class="sobre">Lista de espera</span>
-            <h2 class="titulo" style="margin-top:8px">Veja antes de todo mundo</h2>
-            <p style="margin-top:12px;color:var(--tinta-2)">Quem entra na lista recebe a coleção no WhatsApp antes do lançamento.</p>
+            <h2 class="titulo" style="margin-top:8px">Veja a coleção antes de todo mundo</h2>
+            <ul class="espera-lista">
+              <li>Você recebe a coleção no WhatsApp antes do lançamento</li>
+              <li>Escolhe seu modelo e seu tamanho primeiro</li>
+              <li>A Paola te ajuda a montar o biquíni ideal</li>
+            </ul>
           </div>
           <div id="espera-caixa">
             <form id="form-espera">
+              <p class="reserva" id="reserva" hidden></p>
               <div class="campo"><label for="nome">Seu nome</label><input id="nome" name="nome" autocomplete="given-name" required></div>
-              <div class="campo"><label for="zap">WhatsApp</label><input id="zap" name="zap" inputmode="tel" autocomplete="tel" placeholder="(21) 90000-0000" required></div>
-              <div class="campo"><span class="rotulo">Seus tamanhos</span>
+              <div class="campo"><span class="rotulo">Seus tamanhos (pode marcar mais de um)</span>
                 <div class="tamanhos" id="espera-tam">
                   <button class="chip" type="button" aria-checked="false">P</button><button class="chip" type="button" aria-checked="false">M</button><button class="chip" type="button" aria-checked="false">G</button><button class="chip" type="button" aria-checked="false">GG</button><button class="chip" type="button" aria-checked="false">XG</button><button class="chip" type="button" aria-checked="false">XGG</button>
                 </div>
               </div>
-              <button class="btn btn-preto btn-bloco" type="submit">Quero ser avisada</button>
+              <button class="btn btn-preto btn-bloco" type="submit"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2z"/></svg>Entrar na lista pelo WhatsApp</button>
+              <p class="pedido-nota" style="margin-top:4px">Sem custo e sem compromisso.</p>
             </form>
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- 7. Enquanto o verão não chega: a cinta -->
+    <section class="secao" style="padding-top:0">
+      <div class="wrap">
+        <a class="praia-cinta" href="index.html#comprar">
+          <span class="pc-foto"><img src="img/real-combo-5.webp" alt="Kit Completo da Paola: cinta, sutiãs, gel e creme" loading="lazy"></span>
+          <span class="pc-txt">
+            <span class="sobre">Enquanto o verão não chega</span>
+            <b class="titulo">Comece pela cinta</b>
+            <span>O Kit Completo modela a cintura desde já: cinta de 30 barbatanas, 2 sutiãs, gel e creme.</span>
+            <span class="btn btn-preto">Quero meu kit · R$ 479</span>
+          </span>
+        </a>
       </div>
     </section>
   </main>

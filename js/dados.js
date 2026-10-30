@@ -9,6 +9,8 @@ const LOJA = {
   whatsapp: 'https://wa.me/message/KA2EJDP4FVMGD1',
   // Com o número da Paola (só dígitos, ex.: 5521999999999) o pedido já abre escrito na conversa
   whatsappNumero: '',
+  // Data real do lançamento da moda praia (ex.: '2026-12-01T10:00:00-03:00'). Vazia: a contagem não aparece
+  lancamentoPraia: '',
   instagram: 'https://www.instagram.com/paolacorpusfit/',
   antesDepois: 'https://www.instagram.com/stories/highlights/18047489036211417/',
   arroba: '@paolacorpusfit',

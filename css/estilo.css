@@ -742,7 +742,45 @@ section[id] { scroll-margin-top: 84px; }
 .hero-foto img { animation: entrada-foto 1.4s cubic-bezier(.2, .7, .2, 1) both; }
 .hero-sobre, .hero-painel { animation: entrada-texto .9s .25s cubic-bezier(.2, .7, .2, 1) both; }
 @keyframes entrada-foto { from { transform: scale(1.06); } to { transform: none; } }
-@keyframes entrada-texto { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+/* Só posição: se a animação não rodar (aba em segundo plano), o texto continua visível */
+@keyframes entrada-texto { from { transform: translateY(18px); } to { transform: none; } }
+
+/* ============ Moda praia: topo vivo ============ */
+.praia-hero { background: var(--mar); }
+.praia-fundo { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(31, 26, 23, .25) 0%, rgba(31, 26, 23, .08) 35%, rgba(29, 106, 134, .6) 100%), url('../img/praia-saida.webp') center 30% / cover no-repeat; transform-origin: 60% 40%; animation: praia-zoom 18s ease-in-out infinite alternate; }
+.praia-hero::before { z-index: 1; animation: praia-sol 5s ease-in-out infinite alternate; }
+.praia-hero .wrap { z-index: 2; }
+.praia-hero h1 { font-size: clamp(2.6rem, 12.5vw, 6.2rem); line-height: .9; }
+.praia-hero h1 span { margin-bottom: 10px; font-size: clamp(1.7rem, 7vw, 2.6rem); }
+.praia-txt { animation: entrada-texto .9s .2s cubic-bezier(.2, .7, .2, 1) both; }
+.praia-link { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; font-size: 14px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--branco); text-decoration: underline; text-underline-offset: 4px; }
+.praia-vitrine span { animation: praia-sobe .9s cubic-bezier(.2, .7, .2, 1) both, praia-flutua 5s ease-in-out 1.2s infinite alternate; }
+.praia-vitrine span:nth-child(2) { animation-delay: .25s, 2s; }
+.mar { position: relative; z-index: 2; height: 40px; margin-top: -1px; overflow: hidden; color: var(--areia); }
+.mar svg { display: block; width: 200%; height: 100%; animation: praia-ondas 14s linear infinite; }
+@keyframes praia-zoom { from { transform: scale(1); } to { transform: scale(1.09); } }
+@keyframes praia-sol { from { opacity: .35; transform: scale(.94); } to { opacity: .75; transform: scale(1.06); } }
+@keyframes praia-sobe { from { transform: translateY(60px); } to { transform: none; } }
+@keyframes praia-flutua { from { translate: 0 0; } to { translate: 0 -8px; } }
+@keyframes praia-ondas { to { transform: translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) { .praia-fundo, .praia-hero::before, .praia-vitrine span, .mar svg { animation: none !important; } }
+
+/* Moda praia: lista de espera e cinta */
+.espera-lista { list-style: none; display: grid; gap: 12px; margin: 18px 0 0; padding: 0; }
+.espera-lista li { position: relative; padding-left: 30px; font-size: 15px; line-height: 1.4; }
+.espera-lista li::before { content: '✓'; position: absolute; left: 0; top: 0; display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; background: var(--coral); color: var(--branco); font-size: 12px; font-weight: 900; }
+.reserva { padding: 12px 14px; border-radius: 14px; background: #FFF1E6; font-size: 14px; }
+.reserva[hidden] { display: none; }
+.espera .btn svg { width: 20px; height: 20px; }
+.praia-cinta { display: grid; overflow: hidden; border-radius: 30px; background: var(--branco); }
+.pc-foto { aspect-ratio: 16 / 10; overflow: hidden; }
+.pc-foto img { width: 100%; height: 100%; object-fit: cover; object-position: center 25%; transition: transform .6s ease; }
+.praia-cinta:hover .pc-foto img { transform: scale(1.04); }
+.pc-txt { display: grid; gap: 10px; justify-items: start; padding: 24px 22px 28px; }
+.pc-txt .titulo { display: block; font-size: clamp(1.9rem, 8vw, 3rem); }
+.pc-txt > span:not(.sobre):not(.btn) { color: var(--tinta-2); }
+.pc-txt .btn { margin-top: 6px; }
+@media (min-width: 900px) { .praia-cinta { grid-template-columns: .9fr 1.1fr; align-items: center; } .pc-foto { aspect-ratio: 4 / 3.4; height: 100%; } .pc-txt { padding: 48px; } }
 
 /* Barra fixa da página inicial no celular */
 .zap-flutuante { transition: bottom .3s ease; }

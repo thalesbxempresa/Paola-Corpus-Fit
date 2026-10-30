@@ -275,28 +275,31 @@ function trocar(chave) {
 
 const textoPedido = (s) => `Oi, Paola! Quero fazer este pedido:\n${s.map((x) => `• ${x.qtd}x ${nomeLinha(x)}${x.calca ? ` · tam. ${tamanhoPorCalca(x.calca).t} (calça ${x.calca})` : ''}`).join('\n')}\nTotal: ${brl(subtotal(s))}\nPosso te mandar uma foto de frente para você confirmar o meu tamanho.`;
 
-// Envio: com o número da Paola o texto já vai pronto; sem ele, o pedido é copiado e a tela explica o que fazer
-async function finalizar() {
-  const texto = textoPedido(lerSacola());
+// Envio: com o número da Paola o texto já vai pronto; sem ele, a mensagem é copiada e a tela explica o que fazer
+const finalizar = () => enviarWhatsApp(textoPedido(lerSacola()), 'A Paola confirma seu tamanho e o pagamento com você');
+
+function enviarWhatsApp(texto, depois) {
   if (LOJA.whatsappNumero) {
     window.open(`https://wa.me/${LOJA.whatsappNumero}?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
     return;
   }
-  let copiou = false;
-  try { await navigator.clipboard.writeText(texto); copiou = true; } catch (e) { /* sem permissão */ }
+  // A tela abre na hora; a cópia vem depois (alguns navegadores demoram ou pedem permissão)
   const m = abrirModal(`
     <div class="modal-topo"><h2>Falta só enviar</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
     <ol class="envio-passos">
       <li><b>1</b><span>Toque em <strong>Abrir WhatsApp</strong></span></li>
-      <li><b>2</b><span>${copiou ? 'Cole a mensagem na conversa e envie. Seu pedido já está copiado.' : 'Copie o pedido abaixo, cole na conversa e envie.'}</span></li>
-      <li><b>3</b><span>A Paola confirma seu tamanho e o pagamento com você</span></li>
+      <li><b>2</b><span data-copia>Copie a mensagem abaixo, cole na conversa e envie.</span></li>
+      <li><b>3</b><span>${depois}</span></li>
     </ol>
     <pre class="envio-texto"></pre>
     <a class="btn btn-preto btn-bloco" href="${LOJA.whatsapp}" target="_blank" rel="noopener">${I.whats}Abrir WhatsApp</a>
-    <button class="link-tam envio-copiar" type="button" data-copiar>Copiar o pedido de novo</button>`);
+    <button class="link-tam envio-copiar" type="button" data-copiar>Copiar a mensagem de novo</button>`);
   $('.envio-texto', m).textContent = texto;
+  navigator.clipboard?.writeText(texto).then(() => {
+    $('[data-copia]', m).textContent = 'Cole a mensagem na conversa e envie. Ela já está copiada.';
+  }).catch(() => { /* sem permissão: o texto continua na tela para copiar */ });
   $('[data-copiar]', m).addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(texto); toast('Pedido copiado'); } catch (e) { toast('Selecione o texto e copie'); }
+    try { await navigator.clipboard.writeText(texto); toast('Mensagem copiada'); } catch (e) { toast('Selecione o texto e copie'); }
   });
 }
 
@@ -681,40 +684,60 @@ function telaPraia() {
         <div class="grupo-titulo">4. Tamanho da calcinha</div>
         <div class="tamanhos">${chips('baixo')}</div>
         <p class="monte-resumo">${montar.top && montar.baixo ? `<b>${p.nome}</b>: top ${montar.top} + calcinha ${montar.baixo}` : 'Escolha o tamanho do top e da calcinha, podem ser diferentes.'}</p>
-        <button class="btn btn-preto btn-bloco" type="button" id="reservar" ${montar.top && montar.baixo ? '' : 'disabled'}>Reservar para o lançamento</button>
+        <button class="btn btn-preto btn-bloco" type="button" id="reservar" ${montar.top && montar.baixo ? '' : 'disabled'}>Quero esse no lançamento</button>
       </div>`;
     $$('[data-modelo]').forEach((b) => b.addEventListener('click', () => { montar.modelo = b.dataset.modelo; montar.cor = 0; desenharMonte(); }));
     $$('[data-cor]').forEach((b) => b.addEventListener('click', () => { montar.cor = Number(b.dataset.cor); desenharMonte(); }));
     $$('#monte-caixa [data-parte]').forEach((b) => b.addEventListener('click', () => { montar[b.dataset.parte] = b.dataset.t; desenharMonte(); }));
-    $('#reservar').addEventListener('click', () => {
-      toast(`Reservado: ${p.nome}, top ${montar.top} + calcinha ${montar.baixo}`);
-      $('#espera').scrollIntoView({ behavior: 'smooth' });
-      $('#nome')?.focus({ preventScroll: true });
-    });
+    $('#reservar').addEventListener('click', () => marcarReserva(`${p.nome}, top ${montar.top} + calcinha ${montar.baixo}`, [montar.top, montar.baixo]));
   };
   desenharColecao();
   desenharMonte();
 
-  // Contagem ilustrativa até o lançamento (data de exemplo)
-  const lancamento = new Date('2026-12-01T10:00:00-03:00');
-  const contar = () => {
-    const ms = Math.max(0, lancamento - Date.now());
-    const d = Math.floor(ms / 864e5);
-    const h = Math.floor(ms / 36e5) % 24;
-    const m = Math.floor(ms / 6e4) % 60;
-    const s = Math.floor(ms / 1e3) % 60;
-    $('#contagem').innerHTML = [[d, 'dias'], [h, 'horas'], [m, 'min'], [s, 'seg']].map(([v, r]) => `<div><b>${String(v).padStart(2, '0')}</b><small>${r}</small></div>`).join('');
+  // O que ela escolheu (biquíni montado ou Kit Verão) já vai junto na mensagem da lista
+  let reserva = null;
+  const marcarReserva = (txt, tamanhos = []) => {
+    const aviso = $('#reserva');
+    if (!aviso) return;
+    reserva = txt;
+    aviso.hidden = false;
+    aviso.innerHTML = '<b>Você escolheu:</b> ';
+    aviso.append(txt);
+    $$('#espera-tam .chip').forEach((c) => { if (tamanhos.includes(c.textContent)) c.setAttribute('aria-checked', 'true'); });
+    $('#espera').scrollIntoView({ behavior: 'smooth' });
+    $('#nome').focus({ preventScroll: true });
   };
-  contar();
-  setInterval(contar, 1000);
+  $$('[data-reserva]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); marcarReserva(a.dataset.reserva); }));
+
+  // Contagem só com data real de lançamento (urgência inventada não entra)
+  const lancamento = LOJA.lancamentoPraia && new Date(LOJA.lancamentoPraia);
+  if (lancamento) {
+    const caixa = $('#contagem');
+    caixa.hidden = false;
+    const contagem = () => {
+      const ms = Math.max(0, lancamento - Date.now());
+      const d = Math.floor(ms / 864e5);
+      const h = Math.floor(ms / 36e5) % 24;
+      const m = Math.floor(ms / 6e4) % 60;
+      const s = Math.floor(ms / 1e3) % 60;
+      caixa.innerHTML = [[d, 'dias'], [h, 'horas'], [m, 'min'], [s, 'seg']].map(([v, r]) => `<div><b>${String(v).padStart(2, '0')}</b><small>${r}</small></div>`).join('');
+    };
+    contagem();
+    setInterval(contagem, 1000);
+  }
 
   $$('#espera-tam .chip').forEach((c) => c.addEventListener('click', () => {
     c.setAttribute('aria-checked', c.getAttribute('aria-checked') !== 'true');
   }));
+  // Lista de espera pelo WhatsApp: só nome e tamanhos, o número ela já tem
   $('#form-espera').addEventListener('submit', (e) => {
     e.preventDefault();
-    const nome = e.target.nome.value.trim().split(' ')[0] || 'linda';
-    $('#espera-caixa').innerHTML = `<div class="espera-ok"><span class="check">${I.ok}</span><b>Pronto, ${nome}!</b><p style="color:var(--tinta-2)">Você vai receber a coleção no WhatsApp antes de todo mundo.</p><a class="btn btn-claro" href="loja.html">Enquanto isso, ver as cintas</a></div>`;
+    const nomeCompleto = e.target.nome.value.trim();
+    const tamanhos = $$('#espera-tam .chip[aria-checked="true"]').map((c) => c.textContent);
+    const texto = `Oi, Paola! Quero entrar na lista da moda praia.\nNome: ${nomeCompleto}${tamanhos.length ? `\nMeus tamanhos: ${tamanhos.join(', ')}` : ''}${reserva ? `\nQuero no lançamento: ${reserva}` : ''}`;
+    enviarWhatsApp(texto, 'A Paola te avisa assim que a coleção chegar');
+    $('#espera-caixa').innerHTML = `<div class="espera-ok"><span class="check">${I.ok}</span><b>Pronto, <span data-nome></span>!</b><p style="color:var(--tinta-2)">Assim que sua mensagem chegar, a Paola te coloca na lista.</p><a class="btn btn-claro" href="index.html#comprar">Enquanto isso, ver a cinta</a></div>`;
+    $('[data-nome]').textContent = nomeCompleto.split(' ')[0] || 'linda';
   });
 }
 
@@ -724,7 +747,8 @@ const semMovimento = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const GRUPOS_ANIMA = [
   ['.titulo-sec, .sec-intro, .com-sem-txt, .teste-banner, .praia-banner, .dia-a-dia', 'anima'],
   ['.beneficios .benef, .vt-outras li, .vt-paola li, .avaliacao, .teste-passos li, .numeros > div, .pontos-cinta li, .corpos figure, .faq details, #relacionados .card, #grade-loja .card', 'anima'],
-  ['.antes-depois, .anatomia-foto', 'anima anima-zoom'],
+  ['.peca-praia, .espera-lista li, .kit-verao, .espera, .praia-cinta', 'anima'],
+  ['.antes-depois, .anatomia-foto, .monte-foto', 'anima anima-zoom'],
   ['.anatomia-foto .pino', 'anima-pino'],
 ];
 
