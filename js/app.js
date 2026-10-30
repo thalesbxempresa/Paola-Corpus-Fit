@@ -1,5 +1,6 @@
 // =============================================================
-// Paola Corpus Fit — protótipo: topo, sacola, vitrines e telas
+// Paola Corpus Fit — protótipo: topo, pedido, sacola e telas
+// Caminho de compra único: escolher o kit → número da calça → WhatsApp
 // =============================================================
 const $ = (sel, raiz = document) => raiz.querySelector(sel);
 const $$ = (sel, raiz = document) => [...raiz.querySelectorAll(sel)];
@@ -14,6 +15,18 @@ const tamanhoPorCalca = (n) => TABELA.find((x) => x.calca.includes(Number(n)));
 const faixaCalca = (x) => x.calca.join(' e ');
 const kitsCom = (id) => KITS.filter((k) => k.itens.includes(id) || k.escolha?.includes(id));
 
+// O número da calça é perguntado uma vez só e vale para o site todo
+let calcaMemoria = null;
+function lerCalca() {
+  let n = calcaMemoria;
+  try { n = Number(localStorage.getItem('pcf-calca')) || n; } catch (e) { /* sem armazenamento */ }
+  return tamanhoPorCalca(n) ? Number(n) : null;
+}
+function gravarCalca(n) {
+  calcaMemoria = n;
+  try { localStorage.setItem('pcf-calca', n); } catch (e) { /* ok */ }
+}
+
 // Itens de um combo agrupados ("2 Sutiãs reforçados") + a escolha, quando houver
 function listaItens(k) {
   const conta = {};
@@ -23,11 +36,18 @@ function listaItens(k) {
   return linhas;
 }
 
+// As 3 opções do pedido; o kit completo vem marcado, como a Paola recomenda
+const OPCOES = [
+  { id: 'combo-5', titulo: 'Kit Completo', selo: 'Mais escolhido', sub: 'Cinta de 30 barbatanas + 2 sutiãs + gel + creme' },
+  { id: 'combo-duplo', titulo: 'Combo Duplo', sub: 'Cinta de 30 barbatanas + gel ou sutiã, você escolhe', nota: 'Só R$ 30 a mais que a cinta sozinha' },
+  { id: 'cinta', titulo: 'Só a cinta', sub: 'Com 30 ou 20 barbatanas' },
+];
+
 // Sempre um passo acima: cinta 20 → cinta 30 → combo duplo → combo de 5
 const SOBE = {
   'cinta-ziper-20': ['cinta-ziper-30', 'Leve a de 30 barbatanas, a melhor'],
   'cinta-ziper-30': ['combo-duplo', 'Leve também o gel ou o sutiã'],
-  'combo-duplo': ['combo-5', 'Leve o combo completo, com 5 produtos'],
+  'combo-duplo': ['combo-5', 'Leve o kit completo, com 5 produtos'],
 };
 
 // ---------------- Ícones ----------------
@@ -39,7 +59,6 @@ const I = {
   mais: svg('<path d="M12 5v14M5 12h14"/>'),
   seta: svg('<path d="M5 12h14M13 6l6 6-6 6"/>'),
   regua: svg('<rect x="2.5" y="8" width="19" height="8" rx="1.5"/><path d="M6.5 8v3M10.5 8v4M14.5 8v3M18.5 8v4"/>'),
-  caminhao: svg('<path d="M3 6h11v10H3zM14 10h4l3 3v3h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17.5" cy="17.5" r="1.8"/>'),
   chat: svg('<path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3.5 20.5l1.4-4.8A8.5 8.5 0 1 1 21 11.5z"/>'),
   escudo: svg('<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>'),
   ok: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 'stroke-width="3"'),
@@ -55,16 +74,16 @@ function midia(it, lazy = true) {
 
 // ---------------- Topo, menu e rodapé ----------------
 const MENU = [
-  ['Combos', 'loja.html#kits'],
-  ['Cintas', 'loja.html#cintas'],
-  ['Sutiã', 'loja.html#sutias'],
-  ['Tratamento', 'loja.html#tratamento'],
+  ['Comprar', 'index.html#comprar'],
+  ['Como funciona', 'index.html#como-funciona'],
+  ['Todos os produtos', 'loja.html'],
+  ['Dúvidas', 'index.html#duvidas'],
   ['Moda Praia', 'moda-praia.html', true],
 ];
 
 function montarTopo() {
   const pagina = document.body.dataset.pagina;
-  const avisos = [`${KITS[0].sub} por ${brl(KITS[0].preco)}`, 'A Paola confirma seu tamanho no WhatsApp', `Frete grátis acima de ${brl(LOJA.freteGratis)}`, `${Math.round(LOJA.pix * 100)}% off no Pix`, `Até ${LOJA.parcelas}x sem juros`, 'Moda praia chegando ☀'];
+  const avisos = [`${KITS[0].sub} por ${brl(KITS[0].preco)}`, 'A Paola confirma seu tamanho no WhatsApp', `Frete grátis acima de ${brl(LOJA.freteGratis)}`];
   $('#topo').innerHTML = `
   <div class="aviso" aria-live="off"><span>${avisos[0]}</span></div>
   <header class="cab">
@@ -76,7 +95,7 @@ function montarTopo() {
       </nav>
       <div class="cab-dir">
         <a class="zap-topo" href="${LOJA.whatsapp}" target="_blank" rel="noopener">${I.whats}WhatsApp</a>
-        <button class="ico-btn" type="button" data-abrir="sacola" aria-label="Abrir sacola">${I.sacola}<span class="conta-sacola" hidden>0</span></button>
+        <button class="ico-btn" type="button" data-abrir="sacola" aria-label="Abrir seu pedido">${I.sacola}<span class="conta-sacola" hidden>0</span></button>
       </div>
     </div>
   </header>
@@ -84,17 +103,17 @@ function montarTopo() {
   <aside class="gaveta esq" id="g-menu" aria-label="Menu">
     <div class="gaveta-topo"><h2>Menu</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
     <div class="gaveta-corpo">
+      <a class="btn btn-preto btn-bloco" href="index.html#comprar" data-fechar>Fazer meu pedido</a>
+      <nav class="menu-links" style="margin-top:14px">${MENU.slice(1, 4).map(([nome, link]) => `<a href="${link}" data-fechar>${nome}${I.seta}</a>`).join('')}</nav>
       <a class="menu-praia" href="moda-praia.html"><span>Lançamento</span><b>Moda Praia</b><span>Entre na lista de espera →</span></a>
-      <button class="menu-teste" type="button" data-teste><b>Qual o meu combo ideal?</b><span>Teste de 1 minuto com o seu tamanho →</span></button>
-      <nav class="menu-links">${MENU.slice(0, 4).map(([nome, link]) => `<a href="${link}">${nome}${I.seta}</a>`).join('')}</nav>
       <div class="menu-contato">
-        <a class="btn btn-preto" href="${LOJA.whatsapp}" target="_blank" rel="noopener">${I.whats}Falar no WhatsApp</a>
+        <a class="btn btn-claro" href="${LOJA.whatsapp}" target="_blank" rel="noopener">${I.whats}Falar com a Paola</a>
         <a class="btn btn-claro" href="${LOJA.instagram}" target="_blank" rel="noopener">${I.insta}${LOJA.arroba}</a>
       </div>
     </div>
   </aside>
-  <aside class="gaveta dir" id="g-sacola" aria-label="Sacola">
-    <div class="gaveta-topo"><h2>Sua sacola</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
+  <aside class="gaveta dir" id="g-sacola" aria-label="Seu pedido">
+    <div class="gaveta-topo"><h2>Seu pedido</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
     <div class="gaveta-corpo"></div>
     <div class="gaveta-pe"></div>
   </aside>
@@ -103,7 +122,7 @@ function montarTopo() {
   <div class="toast" role="status" aria-live="polite"></div>`;
 
   let i = 0;
-  setInterval(() => { i = (i + 1) % avisos.length; $('.aviso').innerHTML = `<span>${avisos[i]}</span>`; }, 3500);
+  setInterval(() => { i = (i + 1) % avisos.length; $('.aviso').innerHTML = `<span>${avisos[i]}</span>`; }, 4000);
   desenharSacola();
 }
 
@@ -118,7 +137,7 @@ function montarRodape() {
         </div>
         <div><h4>Loja</h4><ul>${MENU.map(([nome, link]) => `<li><a href="${link}">${nome}</a></li>`).join('')}</ul></div>
         <div><h4>Ajuda</h4><ul>
-          <li><a href="index.html#tamanho">Descobrir meu tamanho</a></li>
+          <li><a href="index.html#comprar">Descobrir meu tamanho</a></li>
           <li><a href="index.html#duvidas">Dúvidas frequentes</a></li>
           <li><a href="${LOJA.whatsapp}" target="_blank" rel="noopener">Atendimento no WhatsApp</a></li>
         </ul></div>
@@ -166,7 +185,7 @@ function toast(msg) {
   tempoToast = setTimeout(() => t.classList.remove('ver'), 2400);
 }
 
-// ---------------- Sacola ----------------
+// ---------------- Sacola ("Seu pedido") ----------------
 // Cada linha: { chave, id, calca, extra, qtd } — o tamanho sai do número da calça
 let sacolaMemoria = [];
 function lerSacola() {
@@ -201,7 +220,7 @@ function desenharSacola() {
   const pe = $('#g-sacola .gaveta-pe');
 
   if (!s.length) {
-    corpo.innerHTML = `<div class="sacola-vazia">${I.sacola}<b>Sua sacola está vazia</b><p style="color:var(--tinta-2)">Comece pelo combo que mais sai.</p><a class="btn btn-preto" href="produto.html?id=combo-5">Ver o Combo Adeus Pochete</a></div>`;
+    corpo.innerHTML = `<div class="sacola-vazia">${I.sacola}<b>Seu pedido está vazio</b><p style="color:var(--tinta-2)">Escolha o kit e o número da calça. Leva 1 minuto.</p><a class="btn btn-preto" href="index.html#comprar" data-fechar>Fazer meu pedido</a></div>`;
     pe.innerHTML = '';
     pe.hidden = true;
     return;
@@ -232,8 +251,8 @@ function desenharSacola() {
   pe.innerHTML = `
     <div class="total-linha"><span>Total</span><span>${brl(sub)}</span></div>
     <div class="total-pix">ou ${brl(pix(sub))} no Pix · ${LOJA.parcelas}x de ${brl(parcela(sub))}</div>
-    <button class="btn btn-preto btn-bloco" type="button" data-finalizar>${I.whats}Finalizar pelo WhatsApp</button>
-    <p class="pe-nota">O resumo vai pronto para a conversa. A Paola confirma seu tamanho com você antes de enviar.</p>`;
+    <button class="btn btn-preto btn-bloco" type="button" data-finalizar>${I.whats}Enviar pedido pelo WhatsApp</button>
+    <p class="pe-nota">A Paola confirma seu tamanho e o pagamento com você na conversa.</p>`;
 
   $$('.item-sacola', corpo).forEach((linha) => {
     const chave = linha.dataset.chave;
@@ -247,23 +266,41 @@ function desenharSacola() {
   });
 }
 
-// Troca a linha da sacola pelo degrau de cima, mantendo a calça
+// Troca a linha do pedido pelo degrau de cima, mantendo a calça
 function trocar(chave) {
-  const s = lerSacola();
-  const x = s.find((y) => y.chave === chave);
-  if (!x) return;
-  abrirOpcoes(SOBE[x.id][0], { calca: x.calca, qtd: x.qtd, trocar: chave });
+  const x = lerSacola().find((y) => y.chave === chave);
+  if (x) abrirOpcoes(SOBE[x.id][0], { calca: x.calca, qtd: x.qtd, trocar: chave });
 }
 
+const textoPedido = (s) => `Oi, Paola! Quero fazer este pedido:\n${s.map((x) => `• ${x.qtd}x ${nomeLinha(x)}${x.calca ? ` · tam. ${tamanhoPorCalca(x.calca).t} (calça ${x.calca})` : ''}`).join('\n')}\nTotal: ${brl(subtotal(s))}\nPosso te mandar uma foto de frente para você confirmar o meu tamanho.`;
+
+// Envio: com o número da Paola o texto já vai pronto; sem ele, o pedido é copiado e a tela explica o que fazer
 async function finalizar() {
-  const s = lerSacola();
-  const texto = `Oi, Paola! Quero fazer este pedido:\n${s.map((x) => `• ${x.qtd}x ${nomeLinha(x)}${x.calca ? ` · tam. ${tamanhoPorCalca(x.calca).t} (calça ${x.calca})` : ''}`).join('\n')}\nTotal: ${brl(subtotal(s))}\nPosso te mandar uma foto de frente para você confirmar o meu tamanho.`;
-  try { await navigator.clipboard.writeText(texto); toast('Resumo copiado. É só colar na conversa.'); } catch (e) { /* sem permissão */ }
-  setTimeout(() => window.open(LOJA.whatsapp, '_blank', 'noopener'), 600);
+  const texto = textoPedido(lerSacola());
+  if (LOJA.whatsappNumero) {
+    window.open(`https://wa.me/${LOJA.whatsappNumero}?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
+    return;
+  }
+  let copiou = false;
+  try { await navigator.clipboard.writeText(texto); copiou = true; } catch (e) { /* sem permissão */ }
+  const m = abrirModal(`
+    <div class="modal-topo"><h2>Falta só enviar</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
+    <ol class="envio-passos">
+      <li><b>1</b><span>Toque em <strong>Abrir WhatsApp</strong></span></li>
+      <li><b>2</b><span>${copiou ? 'Cole a mensagem na conversa e envie. Seu pedido já está copiado.' : 'Copie o pedido abaixo, cole na conversa e envie.'}</span></li>
+      <li><b>3</b><span>A Paola confirma seu tamanho e o pagamento com você</span></li>
+    </ol>
+    <pre class="envio-texto"></pre>
+    <a class="btn btn-preto btn-bloco" href="${LOJA.whatsapp}" target="_blank" rel="noopener">${I.whats}Abrir WhatsApp</a>
+    <button class="link-tam envio-copiar" type="button" data-copiar>Copiar o pedido de novo</button>`);
+  $('.envio-texto', m).textContent = texto;
+  $('[data-copiar]', m).addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(texto); toast('Pedido copiado'); } catch (e) { toast('Selecione o texto e copie'); }
+  });
 }
 
 // ---------------- Tamanho pelo número da calça ----------------
-function calcaHTML(sel) {
+function calcaHTML(sel = lerCalca()) {
   const linha = sel && tamanhoPorCalca(sel);
   return `<div class="calca-ui">
     <div class="tamanhos calcas" role="radiogroup" aria-label="Número da calça ou short">${NUMEROS.map((n) => `<button class="chip" type="button" role="radio" data-calca="${n}" aria-checked="${n === Number(sel)}">${n}</button>`).join('')}</div>
@@ -275,6 +312,7 @@ function ligarCalca(raiz, aoMudar) {
   $$('[data-calca]', raiz).forEach((b) => b.addEventListener('click', () => {
     const n = Number(b.dataset.calca);
     const linha = tamanhoPorCalca(n);
+    gravarCalca(n);
     $$('[data-calca]', raiz).forEach((c) => c.setAttribute('aria-checked', c === b));
     const res = $('.tam-res', raiz);
     res.hidden = false;
@@ -286,7 +324,7 @@ function ligarCalca(raiz, aoMudar) {
 }
 const tabelaHTML = () => `<table class="tabela-mini"><thead><tr><th>Tamanho</th><th>Calça e short</th></tr></thead>
   <tbody>${TABELA.map((x) => `<tr data-linha="${x.t}"><td>${x.t}</td><td>${faixaCalca(x)}</td></tr>`).join('')}</tbody></table>`;
-const confirmaHTML = () => `<div class="selo-troca">${I.chat}<span><b>Sem medo de errar:</b> depois do pedido, a Paola confirma seu tamanho com você pelo WhatsApp.</span></div>`;
+const notaPedido = () => `<p class="pedido-nota">${I.chat}A Paola confirma seu tamanho pelo WhatsApp antes de enviar.</p>`;
 
 function abrirTabela(aoEscolher) {
   let escolhido = null;
@@ -295,7 +333,7 @@ function abrirTabela(aoEscolher) {
     <p style="color:var(--tinta-2);margin-bottom:16px">Marque o número da calça ou short que você veste. A cinta estica, então medida em centímetros não ajuda.</p>
     ${calcaHTML(null)}
     ${tabelaHTML()}
-    ${confirmaHTML()}
+    ${notaPedido()}
     ${aoEscolher ? '<button class="btn btn-preto btn-bloco" type="button" data-usar style="margin-top:18px" disabled>Usar este tamanho</button>' : ''}`);
   ligarCalca(m, (n, linha) => {
     escolhido = n;
@@ -316,10 +354,10 @@ function ligarEscolha(raiz, aoMudar) {
   }));
 }
 
-// Antes de ir para a sacola: pede o que faltar (escolha do combo e/ou calça)
+// Atalho dos cards (+): pede só o que faltar (escolha do combo e/ou calça)
 function abrirOpcoes(id, pre = {}) {
   const it = item(id);
-  const sel = { calca: pre.calca || null, extra: pre.extra || null };
+  const sel = { calca: pre.calca || lerCalca(), extra: pre.extra || null };
   const usaTam = precisaTamanho(it);
   const pronto = () => (!usaTam || sel.calca) && (!it.escolha || sel.extra);
   const concluir = () => {
@@ -334,9 +372,9 @@ function abrirOpcoes(id, pre = {}) {
     <p style="font-weight:700">${it.nome} · ${brl(it.preco)}</p>
     ${it.escolha ? `<div class="grupo"><div class="grupo-titulo">Escolha o 2º produto</div>${escolhaHTML(it, sel.extra)}</div>` : ''}
     ${usaTam ? `<div class="grupo"><div class="grupo-titulo">Número da calça ou short</div>${calcaHTML(sel.calca)}</div>` : ''}
-    ${usaTam ? confirmaHTML() : ''}
     <p class="dica-tam erro" data-erro hidden></p>
-    <button class="btn btn-preto btn-bloco" type="button" data-confirmar style="margin-top:16px">Adicionar à sacola</button>`);
+    <button class="btn btn-preto btn-bloco" type="button" data-confirmar style="margin-top:16px">Colocar no pedido</button>
+    ${usaTam ? notaPedido() : ''}`);
   if (it.escolha) ligarEscolha(m, (v) => { sel.extra = v; });
   if (usaTam) ligarCalca(m, (n) => { sel.calca = n; });
   $('[data-confirmar]', m).addEventListener('click', () => {
@@ -347,57 +385,69 @@ function abrirOpcoes(id, pre = {}) {
   });
 }
 
-// ---------------- Teste: qual o combo e o tamanho ideais ----------------
-function abrirTeste() {
-  const r = { obj: null, calca: null, uso: null };
-  let passo = 1;
-  const m = abrirModal('');
-  const opcoes = (lista, campo) => `<div class="opcoes">${lista.map((o) => `<button class="opcao" type="button" data-v="${o.id}" aria-pressed="${r[campo] === o.id}"><b>${o.nome}</b>${o.dica && campo === 'obj' ? `<small>${o.dica}</small>` : ''}</button>`).join('')}</div>`;
+// ---------------- Pedido em 2 passos (página inicial) ----------------
+function montarPedido(raiz) {
+  const p = { opcao: 'combo-5', extra: null, versao: 'cinta-ziper-30' };
+  const produto = () => item(p.opcao === 'cinta' ? p.versao : p.opcao);
+  const resumo = () => {
+    const it = produto();
+    const calca = lerCalca();
+    const nome = `${OPCOES.find((o) => o.id === p.opcao).titulo}${p.opcao === 'cinta' ? ` · ${it.barbatanas} barbatanas` : ''}${p.extra ? ` + ${nomeCurto(item(p.extra))}` : ''}`;
+    return `<div><small>Seu pedido</small><b>${nome}</b><small>${calca ? `Tamanho ${tamanhoPorCalca(calca).t} · calça ${calca}` : 'Falta o número da calça'}</small></div>
+      <div class="total">${brl(it.preco)}<small>${brl(pix(it.preco))} no Pix</small></div>`;
+  };
+  const atualizar = () => {
+    $('.pedido-resumo', raiz).innerHTML = resumo();
+    $('[data-erro]', raiz).hidden = true;
+  };
+  const subOpcao = (o) => {
+    if (o.id === 'combo-duplo') return `<div class="kit-op-sub" id="pedido-escolha"><small>Qual você quer junto?</small>${escolhaHTML(item('combo-duplo'), p.extra)}</div>`;
+    return `<div class="kit-op-sub"><div class="versoes">${PRODUTOS.filter((x) => x.cat === 'cintas').map((x) => `<button type="button" data-versao="${x.id}" aria-pressed="${x.id === p.versao}"><b>${x.barbatanas} barbatanas</b><small>${x.selo ? `${x.selo} · ` : ''}${brl(x.preco)}</small></button>`).join('')}</div></div>`;
+  };
 
   const desenhar = () => {
-    const topo = `<div class="modal-topo"><h2>${passo < 4 ? `Passo ${passo} de 3` : 'Sua indicação'}</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
-      <div class="progresso"><i style="width:${(Math.min(passo, 3) / 3) * 100}%"></i></div>`;
-    const voltar = passo > 1 ? '<button class="link-tam" type="button" data-voltar>← Voltar</button>' : '';
+    raiz.innerHTML = `
+      <div class="passo"><span class="passo-n">1</span><h3>O que você quer levar?</h3></div>
+      <div class="kits-opcoes" role="radiogroup" aria-label="O que você quer levar">${OPCOES.map((o) => {
+        const it = item(o.id === 'cinta' ? p.versao : o.id);
+        const marcado = p.opcao === o.id;
+        return `<button class="kit-op" type="button" role="radio" aria-checked="${marcado}" data-opcao="${o.id}">
+          <span class="kit-op-foto"><img src="${it.img}" alt="" loading="lazy"></span>
+          <span class="kit-op-txt">${o.selo ? `<span class="kit-op-selo">${o.selo}</span>` : ''}<b>${o.titulo}</b><small>${o.sub}</small>
+            <span class="kit-op-preco"><s>${brl(it.de)}</s> <strong>${brl(it.preco)}</strong></span>${o.nota ? `<em>${o.nota}</em>` : ''}</span>
+          <span class="kit-op-radio" aria-hidden="true"></span>
+        </button>${marcado && o.id !== 'combo-5' ? subOpcao(o) : ''}`;
+      }).join('')}</div>
+      <div class="passo" id="passo-calca"><span class="passo-n">2</span><h3>Qual número de calça você usa?</h3></div>
+      ${calcaHTML()}
+      <div class="pedido-resumo">${resumo()}</div>
+      <p class="dica-tam erro" data-erro hidden></p>
+      <button class="btn btn-preto btn-bloco btn-pedir" type="button" data-pedir>Fazer meu pedido</button>
+      ${notaPedido()}`;
+    const foto = $('#comprar-foto');
+    if (foto) foto.src = produto().img;
 
-    if (passo === 1) m.innerHTML = `${topo}<h3 class="teste-q">O que você procura?</h3>${opcoes(OBJETIVOS, 'obj')}`;
-    if (passo === 2) {
-      m.innerHTML = `${topo}<h3 class="teste-q">Qual número de calça você veste?</h3><p class="teste-sub">Pode ser o número do short também.</p>${calcaHTML(r.calca)}
-        <div class="teste-nav">${voltar}<button class="btn btn-preto" type="button" data-seguir ${r.calca ? '' : 'disabled'}>Continuar</button></div>`;
-      ligarCalca(m, (n) => { r.calca = n; $('[data-seguir]', m).disabled = false; });
-    }
-    if (passo === 3) m.innerHTML = `${topo}<h3 class="teste-q">Quando você vai usar mais?</h3>${opcoes(USOS, 'uso')}<div class="teste-nav">${voltar}</div>`;
-    if (passo === 4) {
-      const it = item(OBJETIVOS.find((o) => o.id === r.obj).produto);
-      const uso = USOS.find((u) => u.id === r.uso);
-      const tam = tamanhoPorCalca(r.calca);
-      m.innerHTML = `${topo}
-        <div class="resultado-teste">
-          <div class="rt-foto">${midia(it, false)}</div>
-          <div>
-            <span class="selo rosa" style="position:static;display:inline-block">Indicado para você</span>
-            <h3>${it.nome}</h3>
-            <p class="rt-tam">Tamanho <b>${tam.t}</b><small>pela calça ${r.calca}</small></p>
-            <p class="rt-preco"><b>${brl(it.preco)}</b> · ${brl(pix(it.preco))} no Pix</p>
-          </div>
-        </div>
-        <p class="rt-dica">💡 ${uso.dica}</p>
-        ${confirmaHTML()}
-        <div class="teste-acoes">
-          <button class="btn btn-preto btn-bloco" type="button" data-colocar>Adicionar à sacola · ${tam.t}</button>
-          <a class="btn btn-claro btn-bloco" href="produto.html?id=${it.id}&calca=${r.calca}">Ver detalhes</a>
-          <button class="link-tam" type="button" data-refazer>Refazer o teste</button>
-        </div>`;
-      $('[data-colocar]', m).addEventListener('click', () => abrirOpcoes(it.id, { calca: r.calca }));
-      $('[data-refazer]', m).addEventListener('click', () => { passo = 1; desenhar(); });
-    }
-
-    $$('.opcao', m).forEach((b) => b.addEventListener('click', () => {
-      if (passo === 1) r.obj = b.dataset.v; else r.uso = b.dataset.v;
-      passo += 1;
+    $$('[data-opcao]', raiz).forEach((b) => b.addEventListener('click', () => {
+      p.opcao = b.dataset.opcao;
+      if (p.opcao !== 'combo-duplo') p.extra = null;
       desenhar();
     }));
-    $('[data-seguir]', m)?.addEventListener('click', () => { passo = 3; desenhar(); });
-    $('[data-voltar]', m)?.addEventListener('click', () => { passo -= 1; desenhar(); });
+    $$('[data-versao]', raiz).forEach((b) => b.addEventListener('click', () => { p.versao = b.dataset.versao; desenhar(); }));
+    if (p.opcao === 'combo-duplo') ligarEscolha(raiz, (v) => { p.extra = v; atualizar(); });
+    ligarCalca(raiz, atualizar);
+    $('[data-pedir]', raiz).addEventListener('click', () => {
+      const calca = lerCalca();
+      const falta = (p.opcao === 'combo-duplo' && !p.extra && ['#pedido-escolha', 'Escolha o gel ou o sutiã.'])
+        || (!calca && ['#passo-calca', 'Marque o número da sua calça.']);
+      if (falta) {
+        const erro = $('[data-erro]', raiz);
+        erro.hidden = false;
+        erro.textContent = falta[1];
+        $(falta[0], raiz).scrollIntoView({ block: 'center', behavior: 'smooth' });
+        return;
+      }
+      adicionar(produto().id, { calca, extra: p.extra });
+    });
   };
   desenhar();
 }
@@ -423,18 +473,6 @@ function avaliacoesHTML() {
   </article>`).join('');
 }
 
-// Estimativa de entrega pelo CEP (demonstração: prazos por região)
-function prazoPorCep(cep) {
-  const n = Number(cep.slice(0, 2));
-  if (n >= 20 && n <= 28) return [1, 3];
-  if (n <= 19) return [2, 4];
-  if (n <= 39) return [3, 5];
-  if (n <= 65) return [5, 8];
-  if (n >= 70 && n <= 76) return [4, 6];
-  if (n >= 80) return [4, 7];
-  return [6, 10];
-}
-
 // ---------------- Cards ----------------
 function card(it) {
   const preco = temPreco(it)
@@ -446,7 +484,7 @@ function card(it) {
       <a class="img" href="produto.html?id=${it.id}" aria-label="${it.nome}">
         ${it.selo ? `<span class="selo ${it.itens ? 'rosa' : ''}">${it.selo}</span>` : ''}${midia(it)}
       </a>
-      ${temPreco(it) ? `<button class="btn-add" type="button" data-add="${it.id}" aria-label="Adicionar ${it.nome} à sacola">${I.mais}</button>` : ''}
+      ${temPreco(it) ? `<button class="btn-add" type="button" data-add="${it.id}" aria-label="Colocar ${it.nome} no pedido">${I.mais}</button>` : ''}
     </div>
     <a href="produto.html?id=${it.id}"><h3>${it.nome}</h3></a>
     ${preco}
@@ -461,65 +499,17 @@ function cardKit(k) {
       <p class="itens">${listaItens(k).join(' + ')}</p>
       <div class="precos"><span class="de">${brl(k.de)}</span><span class="por">${brl(k.preco)}</span></div>
       <span class="economia">${k.gancho || `Economize ${brl(k.de - k.preco)}`}</span><br>
-      <button class="btn btn-preto" type="button" data-add="${k.id}">Quero o combo</button>
+      <button class="btn btn-preto" type="button" data-add="${k.id}">Quero este</button>
     </div>
   </div>`;
-}
-
-// Combo de 5 produtos: o destaque da loja
-function comboDestaque(k) {
-  return `<div class="combo-top">
-    <a class="img" href="produto.html?id=${k.id}"><span class="selo rosa">${k.selo}</span><img src="${k.img}" alt="${k.nome}: ${listaItens(k).join(', ')}" loading="lazy"></a>
-    <div class="combo-top-txt">
-      <span class="sobre">${k.sub}</span>
-      <h3>${k.chamada}</h3>
-      <ul class="combo-itens">${listaItens(k).map((t) => `<li>${I.ok}${t}</li>`).join('')}</ul>
-      <div class="precos"><span class="de">de ${brl(k.de)}</span><span class="por">${brl(k.preco)}</span></div>
-      <span class="parc">${LOJA.parcelas}x de ${brl(parcela(k.preco))} sem juros · ${brl(pix(k.preco))} no Pix</span>
-      <span class="economia">Economize ${brl(k.de - k.preco)}</span>
-      <button class="btn btn-rosa btn-bloco" type="button" data-add="${k.id}">Quero o combo</button>
-    </div>
-  </div>`;
-}
-
-// Cinta de 30 x cinta de 20, lado a lado
-function cintasHTML() {
-  return PRODUTOS.filter((p) => p.cat === 'cintas').map((p) => `<a class="versus-card${p.selo ? ' top' : ''}" href="produto.html?id=${p.id}">
-    <span class="img"><img src="${p.img}" alt="${p.nome}" loading="lazy">${p.selo ? `<span class="selo rosa">${p.selo}</span>` : ''}</span>
-    <span class="versus-num"><b>${p.barbatanas}</b>barbatanas</span>
-    <span class="versus-preco"><s>${brl(p.de)}</s><b>${brl(p.preco)}</b></span>
-    <span class="versus-nota">${p.selo ? 'Mais barbatanas, mais firmeza' : 'Para começar gastando menos'}</span>
-  </a>`).join('');
 }
 
 // ---------------- Telas ----------------
 function telaInicio() {
-  const cats = [
-    { nome: 'Combos', link: 'loja.html#kits', img: 'img/real-combo-5.webp' },
-    { nome: 'Cintas', link: 'loja.html#cintas', img: 'img/real-cinta.webp' },
-    { nome: 'Sutiã', link: 'loja.html#sutias', img: 'img/real-sutia.webp' },
-    { nome: 'Tratamento', link: 'loja.html#tratamento', img: 'img/real-gel.webp' },
-    { nome: 'Moda Praia', link: 'moda-praia.html', img: 'img/praia-cintura-alta.webp', praia: true },
-  ];
-  const [destaque, ...outros] = KITS;
-  $('#combo-top').innerHTML = comboDestaque(destaque);
-  $('#kits').innerHTML = outros.map(cardKit).join('');
-  $('#cintas').innerHTML = cintasHTML();
-  $('#categorias').innerHTML = cats.map((c) => `<a class="cat" href="${c.link}"><span class="img">${c.praia ? '<span class="novo">Novo</span>' : ''}<img src="${c.img}" alt="" loading="lazy"></span><b>${c.nome}</b></a>`).join('');
-  $('#tratamento').innerHTML = PRODUTOS.filter((p) => !temPreco(p)).map(card).join('');
+  montarPedido($('#pedido'));
   $('#praia-pecas').innerHTML = PRAIA.slice(0, 3).map((p) => `<span><img src="${p.img}" alt="${p.nome}" loading="lazy"></span>`).join('');
   $('#avaliacoes').innerHTML = avaliacoesHTML();
   ligarComparadores();
-
-  // Tamanho na própria página: marcou a calça, já leva para o combo no tamanho certo
-  const caixa = $('#tam-inline');
-  caixa.innerHTML = calcaHTML(null);
-  ligarCalca(caixa, (n, linha) => {
-    const ir = $('#tam-ir');
-    ir.hidden = false;
-    ir.href = `produto.html?id=${destaque.id}&calca=${n}`;
-    ir.textContent = `Ver o combo no tamanho ${linha.t}`;
-  });
 }
 
 function telaLoja() {
@@ -548,9 +538,9 @@ function telaProduto() {
   const ehKit = !!it.itens;
   const vende = temPreco(it);
   const usaTam = vende && precisaTamanho(it);
-  let calca = tamanhoPorCalca(busca.get('calca')) ? Number(busca.get('calca')) : null;
+  if (tamanhoPorCalca(busca.get('calca'))) gravarCalca(Number(busca.get('calca')));
+  let calca = lerCalca();
   let extra = it.escolha?.includes(busca.get('extra')) ? busca.get('extra') : null;
-  let qtd = 1;
   document.title = `${it.nome} | Paola Corpus Fit`;
 
   const pecas = ehKit ? [...new Set([...it.itens, ...(it.escolha || [])])] : [];
@@ -561,7 +551,7 @@ function telaProduto() {
   const cat = ({ cintas: 'Cintas', sutias: 'Sutiã', tratamento: 'Tratamento', kits: 'Combos' })[it.cat];
 
   const versoes = it.cat === 'cintas' ? `<div class="grupo"><div class="grupo-titulo">Versão</div>
-    <div class="versoes">${PRODUTOS.filter((p) => p.cat === 'cintas').map((p) => `<a href="produto.html?id=${p.id}${calca ? `&calca=${calca}` : ''}" aria-current="${p.id === it.id}"><b>${p.barbatanas} barbatanas</b><small>${p.selo ? `${p.selo} · ` : ''}${brl(p.preco)}</small></a>`).join('')}</div></div>` : '';
+    <div class="versoes">${PRODUTOS.filter((p) => p.cat === 'cintas').map((p) => `<a href="produto.html?id=${p.id}" aria-current="${p.id === it.id}"><b>${p.barbatanas} barbatanas</b><small>${p.selo ? `${p.selo} · ` : ''}${brl(p.preco)}</small></a>`).join('')}</div></div>` : '';
 
   const precoHTML = vende ? `<div class="preco-bloco">
       <div class="linha1">${it.de ? `<span class="de">${brl(it.de)}</span>` : ''}<span class="por">${brl(it.preco)}</span>${it.de ? `<span class="economia">-${Math.round((1 - it.preco / it.de) * 100)}%</span>` : ''}</div>
@@ -580,7 +570,7 @@ function telaProduto() {
       <div class="junto-pecas"><span class="mini">${midia(sobe)}</span></div>
       <b>${sobeTxt}</b>
       <div class="precos"><s>${brl(sobe.de)}</s> por <strong>${brl(sobe.preco)}</strong></div>
-      <a class="btn btn-preto btn-bloco" href="produto.html?id=${sobe.id}${calca ? `&calca=${calca}` : ''}">Ver ${sobe.nome}</a>
+      <a class="btn btn-preto btn-bloco" href="produto.html?id=${sobe.id}">Ver ${sobe.nome}</a>
     </div>` : '';
 
   $('#produto').innerHTML = `
@@ -594,28 +584,15 @@ function telaProduto() {
         ${precoHTML}
         ${vemNoKit}
         ${versoes}
-        ${vende && it.escolha ? `<div class="grupo" id="escolha"><div class="grupo-titulo">Escolha o 2º produto</div>${escolhaHTML(it, extra)}</div>` : ''}
+        ${vende && it.escolha ? `<div class="grupo" id="escolha"><div class="grupo-titulo">Qual você quer junto?</div>${escolhaHTML(it, extra)}</div>` : ''}
         ${usaTam ? `<div class="grupo" id="tamanho">
           <div class="grupo-titulo">Número da calça ou short <button class="link-tam" type="button" data-tabela>${I.regua}Tabela</button></div>
           ${calcaHTML(calca)}
         </div>` : ''}
         ${vende ? `<p class="dica-tam erro" id="erro-compra" hidden></p>
-        <div class="compra-acoes">
-          <div class="qtd"><button type="button" data-q="-1" aria-label="Diminuir">−</button><span>1</span><button type="button" data-q="1" aria-label="Aumentar">+</button></div>
-          <button class="btn btn-preto" type="button" id="adicionar">Adicionar à sacola</button>
-          <a class="btn btn-claro" href="${LOJA.whatsapp}" target="_blank" rel="noopener">${I.whats}Comprar pelo WhatsApp</a>
-        </div>` : `<div class="grupo"><div class="grupo-titulo">Leve nos combos</div><div class="kits">${kitsCom(it.id).map(cardKit).join('')}</div></div>
+        <button class="btn btn-preto btn-bloco btn-pedir" type="button" id="adicionar">Fazer meu pedido</button>
+        ${usaTam ? notaPedido() : ''}` : `<div class="grupo"><div class="grupo-titulo">Leve nos combos</div><div class="kits">${kitsCom(it.id).map(cardKit).join('')}</div></div>
         <a class="btn btn-claro btn-bloco" href="${LOJA.whatsapp}" target="_blank" rel="noopener" style="margin-top:14px">${I.whats}Perguntar no WhatsApp</a>`}
-        ${usaTam ? confirmaHTML() : ''}
-        ${vende ? `<form class="frete-cep" id="frete-cep">
-          <label for="cep">${I.caminhao}Calcule o prazo de entrega</label>
-          <div><input id="cep" name="cep" inputmode="numeric" autocomplete="postal-code" placeholder="Seu CEP" maxlength="9"><button class="btn btn-claro" type="submit">OK</button></div>
-          <p class="cep-resultado" aria-live="polite"></p>
-        </form>` : ''}
-        <div class="garantias">
-          <div>${I.chat}A Paola tira suas dúvidas no WhatsApp</div>
-          <div>${I.escudo}Pagamento seguro · Pix ou cartão em até ${LOJA.parcelas}x</div>
-        </div>
         ${it.pontos ? `<ul class="pontos-prod">${it.pontos.map((p) => `<li>${p}</li>`).join('')}</ul>` : ''}
         ${junto}
         <div class="detalhes">
@@ -623,7 +600,7 @@ function telaProduto() {
           ${it.uso ? `<details><summary>Como usar</summary><div class="conteudo">${it.uso}</div></details>` : ''}
           ${usaTam ? `<details><summary>Dobra? Marca? Machuca?</summary><div class="conteudo"><p><b>Dobra ou enrola?</b> Não. As barbatanas mantêm a cinta no lugar, mesmo sentada ou treinando.</p><p style="margin-top:10px"><b>Quantas regulagens?</b> Duas regulagens de colchete por dentro e mais o zíper por fora, na frente.</p><p style="margin-top:10px"><b>Marca na roupa?</b> Não marca por baixo da roupa.</p><p style="margin-top:10px"><b>Machuca?</b> O tecido cetinete é pós-cirúrgico e antialérgico. Comece com poucas horas por dia e aumente aos poucos.</p></div></details>` : ''}
           ${usaTam ? `<details><summary>Tabela de medidas</summary><div class="conteudo">${tabelaHTML()}<p style="margin-top:10px">A cinta estica, então o que vale é o número da calça ou short, não a medida em centímetros.</p></div></details>` : ''}
-          <details><summary>Entrega e pagamento</summary><div class="conteudo">Enviamos do ${LOJA.cidade} para todo o Brasil. Pix com ${Math.round(LOJA.pix * 100)}% de desconto ou cartão em até ${LOJA.parcelas}x sem juros.</div></details>
+          <details><summary>Entrega e pagamento</summary><div class="conteudo">Enviamos do ${LOJA.cidade} para todo o Brasil. Pix com ${Math.round(LOJA.pix * 100)}% de desconto ou cartão em até ${LOJA.parcelas}x sem juros. O prazo de entrega a Paola confirma no WhatsApp.</div></details>
         </div>
       </div>
     </div>`;
@@ -633,22 +610,6 @@ function telaProduto() {
   $('#avaliacoes').innerHTML = avaliacoesHTML();
   $('#relacionados').innerHTML = [...KITS, ...PRODUTOS].filter((x) => x.id !== it.id).slice(0, 4).map(card).join('');
   if (!vende) return;
-
-  // Prazo de entrega pelo CEP
-  const campoCep = $('#cep');
-  campoCep.addEventListener('input', () => {
-    const d = campoCep.value.replace(/\D/g, '').slice(0, 8);
-    campoCep.value = d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
-  });
-  $('#frete-cep').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const cep = campoCep.value.replace(/\D/g, '');
-    const saida = $('.cep-resultado');
-    if (cep.length !== 8) { saida.textContent = 'Digite os 8 números do CEP.'; return; }
-    const [de, ate] = prazoPorCep(cep);
-    const gratis = it.preco >= LOJA.freteGratis;
-    saida.innerHTML = `<b>Chega em ${de} a ${ate} dias úteis</b> · ${gratis ? 'frete grátis' : `frete a partir de ${brl(19.9)}`}<small>Estimativa de demonstração</small>`;
-  });
 
   const erro = $('#erro-compra');
   if (usaTam) {
@@ -660,10 +621,6 @@ function telaProduto() {
     });
   }
   if (it.escolha) ligarEscolha($('#escolha'), (v) => { extra = v; erro.hidden = true; });
-  $$('.compra-acoes .qtd button').forEach((b) => b.addEventListener('click', () => {
-    qtd = Math.max(1, Math.min(9, qtd + Number(b.dataset.q)));
-    $('.compra-acoes .qtd span').textContent = qtd;
-  }));
   const comprar = () => {
     const falta = (it.escolha && !extra && ['escolha', 'Escolha o gel ou o sutiã para continuar.'])
       || (usaTam && !calca && ['tamanho', 'Marque o número da sua calça para continuar.']);
@@ -673,13 +630,13 @@ function telaProduto() {
       $(`#${falta[0]}`).scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;
     }
-    adicionar(it.id, { calca, extra }, qtd);
+    adicionar(it.id, { calca: usaTam ? calca : null, extra });
   };
   $('#adicionar').addEventListener('click', comprar);
 
   // Barra fixa no celular quando o botão principal sai da tela
   const barra = $('#barra-prod');
-  barra.innerHTML = `<div><small>${nomeCurto(it)}</small><b>${brl(it.preco)}</b></div><button class="btn btn-preto" type="button">Comprar</button>`;
+  barra.innerHTML = `<div><small>${nomeCurto(it)}</small><b>${brl(it.preco)}</b></div><button class="btn btn-preto" type="button">Fazer pedido</button>`;
   $('button', barra).addEventListener('click', comprar);
   new IntersectionObserver(([e]) => barra.classList.toggle('visivel', !e.isIntersecting && e.boundingClientRect.top < 0)).observe($('#adicionar'));
 }
@@ -762,11 +719,10 @@ montarRodape();
 ({ inicio: telaInicio, loja: telaLoja, produto: telaProduto, praia: telaPraia })[document.body.dataset.pagina]?.();
 
 document.addEventListener('click', (e) => {
-  const alvo = e.target.closest('[data-abrir], [data-fechar], [data-add], [data-trocar], [data-finalizar], [data-tabela], [data-teste]');
+  const alvo = e.target.closest('[data-abrir], [data-fechar], [data-add], [data-trocar], [data-finalizar], [data-tabela]');
   if (e.target.classList.contains('veu')) return fecharTudo();
   if (!alvo) return;
-  if (alvo.hasAttribute('data-teste')) abrirTeste();
-  else if (alvo.dataset.abrir) abrir(alvo.dataset.abrir);
+  if (alvo.dataset.abrir) abrir(alvo.dataset.abrir);
   else if (alvo.hasAttribute('data-fechar')) fecharTudo();
   else if (alvo.dataset.add) abrirOpcoes(alvo.dataset.add);
   else if (alvo.dataset.trocar) trocar(alvo.dataset.trocar);

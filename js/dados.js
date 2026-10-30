@@ -7,6 +7,8 @@
 
 const LOJA = {
   whatsapp: 'https://wa.me/message/KA2EJDP4FVMGD1',
+  // Com o número da Paola (só dígitos, ex.: 5521999999999) o pedido já abre escrito na conversa
+  whatsappNumero: '',
   instagram: 'https://www.instagram.com/paolacorpusfit/',
   antesDepois: 'https://www.instagram.com/stories/highlights/18047489036211417/',
   arroba: '@paolacorpusfit',
@@ -38,7 +40,7 @@ const PRODUTOS = [
     tamanhos: true,
     frase: 'Não dobra, não enrola, não machuca.',
     desc: 'A cinta da Paola, com 30 barbatanas na frente e nas laterais. São elas que apertam, modelam e não deixam a peça dobrar nem enrolar. Tecido cetinete pós-cirúrgico e antialérgico, 4 camadas, 2 regulagens de colchete por dentro e zíper na frente para comprimir ainda mais.',
-    pontos: ['30 barbatanas: não dobra, não enrola', 'Zíper + 2 regulagens de colchete', '4 camadas de tecido cetinete', 'Pós-cirúrgica e antialérgica'],
+    pontos: ['30 barbatanas: não dobra, não enrola', 'Modela a cintura e melhora a postura', 'Ajuda no pós-parto e no pós-procedimento', 'Tecido cetinete pós-cirúrgico e antialérgico'],
     uso: 'Use no dia a dia e na atividade física. Comece pela regulagem mais folgada e passe para a mais justa quando o corpo acostumar.',
   },
   {
@@ -59,7 +61,7 @@ const PRODUTOS = [
     tamanhos: true,
     frase: 'A mesma cinta, com 20 barbatanas.',
     desc: 'Mesma modelagem, mesmo tecido cetinete pós-cirúrgico e antialérgico e o mesmo fechamento da cinta de 30: zíper na frente e 2 regulagens de colchete por dentro. A única diferença é ter 20 barbatanas em vez de 30.',
-    pontos: ['20 barbatanas: não dobra, não enrola', 'Zíper + 2 regulagens de colchete', '4 camadas de tecido cetinete', 'Pós-cirúrgica e antialérgica'],
+    pontos: ['20 barbatanas: não dobra, não enrola', 'Modela a cintura e melhora a postura', 'Ajuda no pós-parto e no pós-procedimento', 'Tecido cetinete pós-cirúrgico e antialérgico'],
     uso: 'Use no dia a dia e na atividade física. Comece pela regulagem mais folgada e passe para a mais justa quando o corpo acostumar.',
   },
   {
@@ -76,7 +78,7 @@ const PRODUTOS = [
     ],
     frase: 'Sustenta o busto e completa o contorno.',
     desc: 'Sutiã reforçado com fechamento na frente. Completa o contorno junto com a cinta e vem nos combos.',
-    pontos: ['Fechamento na frente', '2 unidades no Combo Adeus Pochete', 'Opção no Combo Duplo'],
+    pontos: ['Fechamento na frente', '2 unidades no Kit Completo', 'Opção no Combo Duplo'],
   },
   {
     id: 'gel-pimenta',
@@ -98,8 +100,8 @@ const PRODUTOS = [
     preco: null,
     img: 'img/real-creme.webp',
     frase: 'A massagem modeladora em casa.',
-    desc: 'Creme para massagem de pimenta negra da Rhenuks, de uso profissional. Vem no Combo Adeus Pochete.',
-    pontos: ['Rhenuks, uso profissional', 'Massagem modeladora', 'Vem no Combo Adeus Pochete'],
+    desc: 'Creme para massagem de pimenta negra da Rhenuks, de uso profissional. Vem no Kit Completo.',
+    pontos: ['Rhenuks, uso profissional', 'Massagem modeladora', 'Vem no Kit Completo'],
   },
 ];
 
@@ -107,7 +109,7 @@ const PRODUTOS = [
 const KITS = [
   {
     id: 'combo-5',
-    nome: 'Combo Adeus Pochete',
+    nome: 'Kit Completo Adeus Pochete',
     chamada: 'Adeus, pochete!',
     sub: 'Leve 5 produtos',
     cat: 'kits',
@@ -164,23 +166,9 @@ const PRAIA = [
 const FOCOS_PRAIA = [['todos', 'Todos'], ['barriga', 'Segura a barriga'], ['busto', 'Sustenta o busto'], ['bumbum', 'Valoriza o bumbum']];
 const TAMANHOS_PRAIA = TABELA.map((x) => x.t);
 
-// Teste "qual a sua peça ideal"
-const OBJETIVOS = [
-  { id: 'completo', nome: 'O tratamento completo', dica: 'Cinta, 2 sutiãs, gel e creme', produto: 'combo-5' },
-  { id: 'extra', nome: 'A cinta + um extra', dica: 'Gel ou sutiã por só R$ 30 a mais', produto: 'combo-duplo' },
-  { id: 'cinta', nome: 'Só a cinta, a melhor', dica: '30 barbatanas: não dobra, não enrola', produto: 'cinta-ziper-30' },
-  { id: 'economia', nome: 'Começar gastando menos', dica: 'A cinta de 20 barbatanas', produto: 'cinta-ziper-20' },
-];
-const USOS = [
-  { id: 'dia', nome: 'No dia a dia', dica: 'Por baixo da roupa ela fica lisinha e não marca.' },
-  { id: 'justa', nome: 'Com roupa justa', dica: 'Com roupa justa, a cinta segura a barriga e marca a cintura.' },
-  { id: 'treino', nome: 'Na atividade física', dica: 'Pode treinar com ela: as barbatanas não deixam a cinta dobrar.' },
-  { id: 'casa', nome: 'Em casa, para tratar', dica: 'Massageie o gel termoativo na barriga e vista a cinta em seguida.' },
-];
-
 // Avaliações de EXEMPLO: o espaço será preenchido com os antes e depois reais das clientes
 const AVALIACOES = [
   { foto: 'img/cliente-1.webp', nome: 'Cliente de exemplo', cidade: 'Niterói, RJ', tam: 'G', produto: 'Cinta 30 Barbatanas', texto: 'Uso o dia todo e ninguém percebe. Não enrola quando eu sento, que era o que me incomodava nas outras.' },
-  { foto: 'img/cliente-2.webp', nome: 'Cliente de exemplo', cidade: 'São Paulo, SP', tam: 'M', produto: 'Combo Adeus Pochete', texto: 'Escolhi pelo número da calça e a Paola confirmou comigo no WhatsApp. Veio certinho.' },
+  { foto: 'img/cliente-2.webp', nome: 'Cliente de exemplo', cidade: 'São Paulo, SP', tam: 'M', produto: 'Kit Completo', texto: 'Escolhi pelo número da calça e a Paola confirmou comigo no WhatsApp. Veio certinho.' },
   { foto: null, nome: 'Cliente de exemplo', cidade: 'Belo Horizonte, MG', tam: 'GG', produto: 'Combo Duplo', texto: 'Peguei com o gel por só R$ 30 a mais. A cinta não dobra nem na academia.' },
 ];
