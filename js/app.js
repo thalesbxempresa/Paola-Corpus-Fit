@@ -43,8 +43,6 @@ const I = {
   chat: svg('<path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3.5 20.5l1.4-4.8A8.5 8.5 0 1 1 21 11.5z"/>'),
   escudo: svg('<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>'),
   ok: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 'stroke-width="3"'),
-  tocar: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>',
-  pausar: svg('<path d="M9 5.5v13M15 5.5v13"/>', 'stroke-width="2.6"'),
   insta: svg('<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.4" cy="6.6" r="1" fill="currentColor"/>'),
   whats: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.5-.3z"/></svg>',
 };
@@ -522,19 +520,6 @@ function telaInicio() {
     ir.href = `produto.html?id=${destaque.id}&calca=${n}`;
     ir.textContent = `Ver o combo no tamanho ${linha.t}`;
   });
-
-  // Vídeo do topo: roda sozinho, com botão de pausar; quem prefere menos movimento começa parado
-  const video = $('.hero-foto video');
-  const botao = $('.video-btn');
-  const marcar = () => {
-    botao.innerHTML = video.paused ? I.tocar : I.pausar;
-    botao.setAttribute('aria-label', video.paused ? 'Tocar vídeo' : 'Pausar vídeo');
-  };
-  video.addEventListener('play', marcar);
-  video.addEventListener('pause', marcar);
-  botao.addEventListener('click', () => (video.paused ? video.play() : video.pause()));
-  marcar();
-  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) video.play().catch(() => {});
 }
 
 function telaLoja() {
