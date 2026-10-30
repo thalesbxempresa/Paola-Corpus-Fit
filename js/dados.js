@@ -39,7 +39,7 @@ const PRODUTOS = [
     selo: 'A melhor',
     tamanhos: true,
     frase: 'Não dobra, não enrola, não machuca.',
-    desc: 'A cinta da Paola, com 30 barbatanas na frente e nas laterais. São elas que apertam, modelam e não deixam a peça dobrar nem enrolar. Tecido cetinete pós-cirúrgico e antialérgico, 4 camadas, 2 regulagens de colchete por dentro e zíper na frente para comprimir ainda mais.',
+    desc: 'Feita para a maior reclamação de quem usa cinta: dobrar e enrolar. São 30 barbatanas na frente e nas laterais que seguram a cinta no lugar, mesmo quando você senta. Modela a cintura, segura a barriga e melhora a postura. Tecido cetinete pós-cirúrgico e antialérgico, 4 camadas, zíper na frente e 2 regulagens de colchete por dentro.',
     pontos: ['30 barbatanas: não dobra, não enrola', 'Modela a cintura e melhora a postura', 'Ajuda no pós-parto e no pós-procedimento', 'Tecido cetinete pós-cirúrgico e antialérgico'],
     uso: 'Use no dia a dia e na atividade física. Comece pela regulagem mais folgada e passe para a mais justa quando o corpo acostumar.',
   },
@@ -60,7 +60,7 @@ const PRODUTOS = [
     ],
     tamanhos: true,
     frase: 'A mesma cinta, com 20 barbatanas.',
-    desc: 'Mesma modelagem, mesmo tecido cetinete pós-cirúrgico e antialérgico e o mesmo fechamento da cinta de 30: zíper na frente e 2 regulagens de colchete por dentro. A única diferença é ter 20 barbatanas em vez de 30.',
+    desc: 'A mesma cinta da Paola, para quem quer começar gastando menos. Mesma modelagem, mesmo tecido cetinete pós-cirúrgico e antialérgico, zíper na frente e 2 regulagens de colchete por dentro. A única diferença: 20 barbatanas em vez de 30, então segura um pouco menos firme.',
     pontos: ['20 barbatanas: não dobra, não enrola', 'Modela a cintura e melhora a postura', 'Ajuda no pós-parto e no pós-procedimento', 'Tecido cetinete pós-cirúrgico e antialérgico'],
     uso: 'Use no dia a dia e na atividade física. Comece pela regulagem mais folgada e passe para a mais justa quando o corpo acostumar.',
   },
@@ -168,7 +168,7 @@ const TAMANHOS_PRAIA = TABELA.map((x) => x.t);
 
 // Avaliações de EXEMPLO: o espaço será preenchido com os antes e depois reais das clientes
 const AVALIACOES = [
-  { foto: 'img/cliente-1.webp', nome: 'Cliente de exemplo', cidade: 'Niterói, RJ', tam: 'G', produto: 'Cinta 30 Barbatanas', texto: 'Uso o dia todo e ninguém percebe. Não enrola quando eu sento, que era o que me incomodava nas outras.' },
-  { foto: 'img/cliente-2.webp', nome: 'Cliente de exemplo', cidade: 'São Paulo, SP', tam: 'M', produto: 'Kit Completo', texto: 'Escolhi pelo número da calça e a Paola confirmou comigo no WhatsApp. Veio certinho.' },
-  { foto: null, nome: 'Cliente de exemplo', cidade: 'Belo Horizonte, MG', tam: 'GG', produto: 'Combo Duplo', texto: 'Peguei com o gel por só R$ 30 a mais. A cinta não dobra nem na academia.' },
+  { foto: 'img/cliente-1.webp', nome: 'Cliente de exemplo', cidade: 'Niterói, RJ', tam: 'G', calca: 44, produto: 'Cinta 30 Barbatanas', texto: 'Uso o dia todo e ninguém percebe. Não enrola quando eu sento, que era o que me incomodava nas outras.' },
+  { foto: 'img/cliente-2.webp', nome: 'Cliente de exemplo', cidade: 'São Paulo, SP', tam: 'M', calca: 40, produto: 'Kit Completo', texto: 'Escolhi pelo número da calça e a Paola confirmou comigo no WhatsApp. Veio certinho.' },
+  { foto: null, nome: 'Cliente de exemplo', cidade: 'Belo Horizonte, MG', tam: 'GG', calca: 46, produto: 'Combo Duplo', texto: 'Peguei com o gel por só R$ 30 a mais. A cinta não dobra nem quando pego meu filho no colo.' },
 ];

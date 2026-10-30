@@ -36,9 +36,10 @@ function listaItens(k) {
   return linhas;
 }
 
-// As 3 opções do pedido; o kit completo vem marcado, como a Paola recomenda
+// As 3 opções do pedido; o kit completo vem marcado, como a Paola recomenda.
+// A cinta sozinha ao lado do Combo Duplo (+R$ 30) funciona como comparação de preço.
 const OPCOES = [
-  { id: 'combo-5', titulo: 'Kit Completo', selo: 'Mais escolhido', sub: 'Cinta de 30 barbatanas + 2 sutiãs + gel + creme' },
+  { id: 'combo-5', titulo: 'Kit Completo', selo: 'Mais escolhido', sub: 'Cinta de 30 barbatanas + 2 sutiãs + gel + creme', nota: `5 produtos: sai ${brl(item('combo-5').preco / 5)} cada` },
   { id: 'combo-duplo', titulo: 'Combo Duplo', sub: 'Cinta de 30 barbatanas + gel ou sutiã, você escolhe', nota: 'Só R$ 30 a mais que a cinta sozinha' },
   { id: 'cinta', titulo: 'Só a cinta', sub: 'Com 30 ou 20 barbatanas' },
 ];
@@ -83,7 +84,7 @@ const MENU = [
 
 function montarTopo() {
   const pagina = document.body.dataset.pagina;
-  const avisos = [`${KITS[0].sub} por ${brl(KITS[0].preco)}`, 'A Paola confirma seu tamanho no WhatsApp', `Frete grátis acima de ${brl(LOJA.freteGratis)}`];
+  const avisos = [`${KITS[0].sub} por ${brl(KITS[0].preco)}`, 'Você só paga depois de falar com a Paola', `Frete grátis acima de ${brl(LOJA.freteGratis)}`];
   $('#topo').innerHTML = `
   <div class="aviso" aria-live="off"><span>${avisos[0]}</span></div>
   <header class="cab">
@@ -324,7 +325,10 @@ function ligarCalca(raiz, aoMudar) {
 }
 const tabelaHTML = () => `<table class="tabela-mini"><thead><tr><th>Tamanho</th><th>Calça e short</th></tr></thead>
   <tbody>${TABELA.map((x) => `<tr data-linha="${x.t}"><td>${x.t}</td><td>${faixaCalca(x)}</td></tr>`).join('')}</tbody></table>`;
-const notaPedido = () => `<p class="pedido-nota">${I.chat}A Paola confirma seu tamanho pelo WhatsApp antes de enviar.</p>`;
+// Reduz o risco na hora do clique: nada é cobrado no site e o tamanho é conferido antes
+const notaPedido = () => `<p class="pedido-nota">${I.escudo}<span>Você só paga depois de falar com a Paola no WhatsApp. Ela confirma seu tamanho antes de enviar.</span></p>`;
+// O botão fala do que a cliente ganha, não do que ela precisa fazer
+const textoBotao = (it) => (it.itens ? 'Quero meu kit' : 'Quero minha cinta');
 
 function abrirTabela(aoEscolher) {
   let escolhido = null;
@@ -422,7 +426,7 @@ function montarPedido(raiz) {
       ${calcaHTML()}
       <div class="pedido-resumo">${resumo()}</div>
       <p class="dica-tam erro" data-erro hidden></p>
-      <button class="btn btn-preto btn-bloco btn-pedir" type="button" data-pedir>Fazer meu pedido</button>
+      <button class="btn btn-preto btn-bloco btn-pedir" type="button" data-pedir>${textoBotao(produto())}</button>
       ${notaPedido()}`;
     const foto = $('#comprar-foto');
     if (foto) foto.src = produto().img;
@@ -468,7 +472,7 @@ function avaliacoesHTML() {
       <div class="av-topo"><span class="estrelas" aria-label="5 de 5 estrelas">★★★★★</span><span class="av-exemplo">Exemplo</span></div>
       <p>“${a.texto}”</p>
       <div class="av-quem"><b>${a.nome}</b> · ${a.cidade}</div>
-      <div class="av-compra">Comprou: ${a.produto} · tam. ${a.tam}</div>
+      <div class="av-compra">Veste calça ${a.calca} · usa o ${a.tam} · comprou ${a.produto}</div>
     </div>
   </article>`).join('');
 }
@@ -590,7 +594,7 @@ function telaProduto() {
           ${calcaHTML(calca)}
         </div>` : ''}
         ${vende ? `<p class="dica-tam erro" id="erro-compra" hidden></p>
-        <button class="btn btn-preto btn-bloco btn-pedir" type="button" id="adicionar">Fazer meu pedido</button>
+        <button class="btn btn-preto btn-bloco btn-pedir" type="button" id="adicionar">${textoBotao(it)}</button>
         ${usaTam ? notaPedido() : ''}` : `<div class="grupo"><div class="grupo-titulo">Leve nos combos</div><div class="kits">${kitsCom(it.id).map(cardKit).join('')}</div></div>
         <a class="btn btn-claro btn-bloco" href="${LOJA.whatsapp}" target="_blank" rel="noopener" style="margin-top:14px">${I.whats}Perguntar no WhatsApp</a>`}
         ${it.pontos ? `<ul class="pontos-prod">${it.pontos.map((p) => `<li>${p}</li>`).join('')}</ul>` : ''}
@@ -636,7 +640,7 @@ function telaProduto() {
 
   // Barra fixa no celular quando o botão principal sai da tela
   const barra = $('#barra-prod');
-  barra.innerHTML = `<div><small>${nomeCurto(it)}</small><b>${brl(it.preco)}</b></div><button class="btn btn-preto" type="button">Fazer pedido</button>`;
+  barra.innerHTML = `<div><small>${nomeCurto(it)}</small><b>${brl(it.preco)}</b></div><button class="btn btn-preto" type="button">${it.itens ? 'Quero o meu' : 'Quero a minha'}</button>`;
   $('button', barra).addEventListener('click', comprar);
   new IntersectionObserver(([e]) => barra.classList.toggle('visivel', !e.isIntersecting && e.boundingClientRect.top < 0)).observe($('#adicionar'));
 }

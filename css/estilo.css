@@ -700,7 +700,24 @@ section[id] { scroll-margin-top: 84px; }
 .pedido-resumo .total small { color: var(--ok); font-weight: 700; }
 .btn-pedir { min-height: 58px; margin-top: 12px; font-size: 15px; }
 .pedido-nota { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; font-size: 13px; color: var(--tinta-2); text-align: center; }
-.pedido-nota svg { flex: none; width: 18px; height: 18px; color: var(--vinho); }
+.pedido-nota svg { flex: none; width: 20px; height: 20px; color: var(--ok); }
+.pedido-nota span { max-width: 44ch; text-align: left; line-height: 1.4; }
+
+/* Cinta comum x cinta da Paola */
+.sec-intro { max-width: 52ch; margin: -6px 0 20px; font-size: 16px; color: var(--tinta-2); }
+.versus-tab { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.vt-col { padding: 16px 14px; border-radius: 22px; }
+.vt-col h3 { margin-bottom: 12px; font-size: 13px; font-weight: 900; letter-spacing: .08em; line-height: 1.3; text-transform: uppercase; }
+.vt-col ul { list-style: none; display: grid; gap: 12px; margin: 0; padding: 0; }
+.vt-col li { position: relative; padding-left: 26px; font-size: 14px; line-height: 1.35; }
+.vt-col li::before { position: absolute; left: 0; top: 0; display: grid; place-items: center; width: 19px; height: 19px; border-radius: 50%; font-size: 11px; font-weight: 900; }
+.vt-outras { background: var(--areia-2); color: var(--tinta-2); }
+.vt-outras li::before { content: '✕'; background: var(--areia-3); color: var(--tinta-2); }
+.vt-paola { background: var(--branco); box-shadow: inset 0 0 0 2.5px var(--vinho); }
+.vt-paola h3 { color: var(--vinho); }
+.vt-paola li { font-weight: 700; }
+.vt-paola li::before { content: '✓'; background: var(--vinho); color: var(--branco); }
+@media (min-width: 900px) { .versus-tab { max-width: 880px; gap: 18px; } .vt-col { padding: 26px 24px; } .vt-col li { font-size: 16px; } }
 @media (min-width: 900px) {
   .comprar-grade { grid-template-columns: .85fr 1.15fr; gap: 56px; align-items: start; }
   .comprar-foto { display: block; position: sticky; top: 100px; aspect-ratio: 4 / 5; border-radius: 28px; overflow: hidden; background: var(--areia-2); }
