@@ -514,6 +514,7 @@ function telaInicio() {
   $('#praia-pecas').innerHTML = PRAIA.slice(0, 3).map((p) => `<span><img src="${p.img}" alt="${p.nome}" loading="lazy"></span>`).join('');
   $('#avaliacoes').innerHTML = avaliacoesHTML();
   ligarComparadores();
+  barraInicio();
 }
 
 function telaLoja() {
@@ -717,10 +718,97 @@ function telaPraia() {
   });
 }
 
+// ---------------- Movimento ao rolar ----------------
+// Leve de propósito: só opacidade e posição, sem biblioteca. A área do pedido não se mexe.
+const semMovimento = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const GRUPOS_ANIMA = [
+  ['.titulo-sec, .sec-intro, .com-sem-txt, .teste-banner, .praia-banner, .dia-a-dia', 'anima'],
+  ['.beneficios .benef, .vt-outras li, .vt-paola li, .avaliacao, .teste-passos li, .numeros > div, .pontos-cinta li, .corpos figure, .faq details, #relacionados .card, #grade-loja .card', 'anima'],
+  ['.antes-depois, .anatomia-foto', 'anima anima-zoom'],
+  ['.anatomia-foto .pino', 'anima-pino'],
+];
+
+function ligarMovimento() {
+  if (semMovimento || !('IntersectionObserver' in window)) return;
+  // Segurança: se o navegador não avisar a rolagem (aba em segundo plano, app embutido), mostra tudo
+  let respondeu = false;
+  setTimeout(() => { if (!respondeu) $$('.anima, .anima-pino').forEach((el) => el.classList.add('visivel')); }, 2500);
+  const olhar = new IntersectionObserver((entradas) => entradas.forEach((e) => {
+    respondeu = true;
+    if (!e.isIntersecting) return;
+    e.target.classList.add('visivel');
+    olhar.unobserve(e.target);
+    if (e.target.dataset.conta) contar(e.target);
+    if (e.target.classList.contains('antes-depois')) demoComparador(e.target);
+  }), { rootMargin: '0px 0px -8% 0px', threshold: 0.15 });
+
+  GRUPOS_ANIMA.forEach(([sel, classes]) => {
+    $$(sel).forEach((el) => {
+      // Itens irmãos entram em sequência
+      const irmaos = [...el.parentElement.children].filter((x) => x.matches(sel));
+      el.style.setProperty('--i', irmaos.indexOf(el));
+      el.classList.add(...classes.split(' '));
+      olhar.observe(el);
+    });
+  });
+  $$('[data-conta]').forEach((el) => olhar.observe(el));
+}
+
+// Número sobe de 0 até o valor final (o valor certo já está no HTML, caso nada rode)
+function contar(el) {
+  const fim = Number(el.dataset.conta);
+  el.textContent = '0';
+  const t0 = performance.now();
+  const passo = (t) => {
+    const k = Math.min(1, (t - t0) / 1100);
+    el.textContent = Math.round(fim * (1 - (1 - k) ** 3));
+    if (k < 1) requestAnimationFrame(passo);
+  };
+  requestAnimationFrame(passo);
+}
+
+// O comparador mostra sozinho o "sem" e o "com" uma vez; se ela tocar, para na hora
+function demoComparador(comp) {
+  const controle = $('input', comp);
+  const passos = [[0, 50], [900, 90], [2100, 10], [3000, 50]];
+  let parar = false;
+  ['pointerdown', 'touchstart', 'keydown'].forEach((ev) => controle.addEventListener(ev, () => { parar = true; }, { once: true, passive: true }));
+  const definir = (v) => { comp.style.setProperty('--pos', `${v}%`); controle.value = v; };
+  const t0 = performance.now() + 400;
+  const passo = (t) => {
+    if (parar) return;
+    const dt = Math.max(0, t - t0);
+    const i = passos.findIndex(([ms]) => ms > dt);
+    if (i === -1) return definir(50);
+    const [m0, v0] = passos[i - 1];
+    const [m1, v1] = passos[i];
+    const k = (dt - m0) / (m1 - m0);
+    definir(v0 + (v1 - v0) * (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2));
+    requestAnimationFrame(passo);
+  };
+  requestAnimationFrame(passo);
+}
+
+// Barra "Quero meu kit" no celular: aparece depois do topo e some enquanto ela está no pedido
+function barraInicio() {
+  const barra = $('#barra-inicio');
+  if (!barra) return;
+  let passouTopo = false;
+  let noPedido = false;
+  const atualizar = () => {
+    const mostrar = passouTopo && !noPedido;
+    barra.classList.toggle('visivel', mostrar);
+    document.body.classList.toggle('com-barra', mostrar);
+  };
+  new IntersectionObserver(([e]) => { passouTopo = !e.isIntersecting && e.boundingClientRect.top < 0; atualizar(); }).observe($('.hero-acoes'));
+  new IntersectionObserver(([e]) => { noPedido = e.isIntersecting; atualizar(); }).observe($('#comprar'));
+}
+
 // ---------------- Início ----------------
 montarTopo();
 montarRodape();
 ({ inicio: telaInicio, loja: telaLoja, produto: telaProduto, praia: telaPraia })[document.body.dataset.pagina]?.();
+ligarMovimento();
 
 document.addEventListener('click', (e) => {
   const alvo = e.target.closest('[data-abrir], [data-fechar], [data-add], [data-trocar], [data-finalizar], [data-tabela]');
