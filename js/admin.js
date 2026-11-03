@@ -261,7 +261,7 @@ document.addEventListener('focusout', (e) => { if (e.target.closest('[data-dica-
 
 // ---------------- Entrar e criar conta ----------------
 const campoSenha = (nome, rotulo, auto) => `<div class="campo"><label for="ac-${nome}">${rotulo}</label>
-  <div class="ad-senha"><input id="ac-${nome}" name="${nome}" type="password" autocomplete="${auto}" minlength="8" required><button type="button" data-ver-senha>Mostrar</button></div></div>`;
+  <div class="pn-senha"><input id="ac-${nome}" name="${nome}" type="password" autocomplete="${auto}" minlength="8" required><button type="button" data-ver-senha>Mostrar</button></div></div>`;
 
 function telaAcesso(modo, aviso = '') {
   const local = Banco.modo === 'local';
@@ -272,21 +272,21 @@ function telaAcesso(modo, aviso = '') {
   };
   const [titulo, sub, botao] = TEXTOS[modo];
   $('#painel').innerHTML = `
-    <main class="ad-acesso">
-      <form class="ad-acesso-caixa" id="form-acesso" novalidate>
+    <main class="pn-acesso">
+      <form class="pn-acesso-caixa" id="form-acesso" novalidate>
         <span class="logo"><b>Paola</b><small>Corpus Fit</small></span>
         <h1>${titulo}</h1>
         <p>${sub}</p>
-        ${aviso ? `<p class="ad-ok-msg">${esc(aviso)}</p>` : ''}
+        ${aviso ? `<p class="pn-ok-msg">${esc(aviso)}</p>` : ''}
         ${modo === 'nova-senha' ? '' : '<div class="campo"><label for="ac-email">E-mail</label><input id="ac-email" name="email" type="email" inputmode="email" autocomplete="username" required></div>'}
         ${modo === 'entrar' ? campoSenha('senha', 'Senha', 'current-password') : campoSenha('senha', modo === 'criar' ? 'Escolha uma senha' : 'Nova senha', 'new-password')}
         ${modo === 'entrar' ? '' : campoSenha('repete', 'Repita a senha', 'new-password')}
         <p class="dica-tam erro" data-erro hidden></p>
         <button class="btn btn-preto btn-bloco" type="submit">${botao}</button>
-        ${modo === 'entrar' ? '<button class="ad-link" type="button" data-esqueci>Esqueci a senha</button>' : ''}
+        ${modo === 'entrar' ? '<button class="pn-link" type="button" data-esqueci>Esqueci a senha</button>' : ''}
         ${!local && modo === 'entrar' ? '<button class="btn btn-claro btn-bloco" type="button" data-ir="criar">Primeiro acesso? Criar conta</button>' : ''}
-        ${!local && modo === 'criar' ? '<button class="ad-link" type="button" data-ir="entrar">Já tenho conta</button><p class="ad-nota">Depois de criar, abra o link de confirmação que chega no seu e-mail.</p>' : ''}
-        ${local && modo === 'criar' ? '<p class="ad-nota">Sem o banco conectado, a conta vale só neste navegador e a senha fica guardada aqui de forma embaralhada, nunca em texto. A proteção de verdade entra com o Supabase.</p>' : ''}
+        ${!local && modo === 'criar' ? '<button class="pn-link" type="button" data-ir="entrar">Já tenho conta</button><p class="pn-nota">Depois de criar, abra o link de confirmação que chega no seu e-mail.</p>' : ''}
+        ${local && modo === 'criar' ? '<p class="pn-nota">Sem o banco conectado, a conta vale só neste navegador e a senha fica guardada aqui de forma embaralhada, nunca em texto. A proteção de verdade entra com o Supabase.</p>' : ''}
       </form>
     </main>`;
   const form = $('#form-acesso');
@@ -356,17 +356,17 @@ const ABAS = {
 function montarPainel() {
   $('#painel').innerHTML = `
     <div class="ad">
-      <header class="ad-topo">
+      <header class="pn-topo">
         <span class="logo"><b>Paola</b><small>Corpus Fit</small></span>
-        <div class="ad-topo-dir"><a class="ad-link" href="index.html" target="_blank" rel="noopener">Ver a loja</a><button class="ad-ico" type="button" data-sair aria-label="Sair">${I.sair}</button></div>
+        <div class="pn-topo-dir"><a class="pn-link" href="index.html" target="_blank" rel="noopener">Ver a loja</a><button class="pn-ico" type="button" data-sair aria-label="Sair">${I.sair}</button></div>
       </header>
-      <nav class="ad-nav" aria-label="Seções do painel">
-        <span class="logo ad-nav-logo"><b>Paola</b><small>Corpus Fit</small></span>
+      <nav class="pn-nav" aria-label="Seções do painel">
+        <span class="logo pn-nav-logo"><b>Paola</b><small>Corpus Fit</small></span>
         ${Object.entries(ABAS).map(([id, a]) => `<a href="#${id}">${a.ico}<span>${a.nome}</span></a>`).join('')}
-        <div class="ad-nav-pe"><a href="index.html" target="_blank" rel="noopener">Ver a loja</a><button type="button" data-sair>${I.sair}Sair</button></div>
+        <div class="pn-nav-pe"><a href="index.html" target="_blank" rel="noopener">Ver a loja</a><button type="button" data-sair>${I.sair}Sair</button></div>
       </nav>
-      <main class="ad-main">
-        ${Banco.modo === 'local' ? '<p class="ad-modo"><b>Modo neste navegador.</b> Só você vê estas alterações. As clientes continuam vendo os dados atuais do site até o Supabase ser conectado. <a href="#loja">Como conectar</a></p>' : ''}
+      <main class="pn-main">
+        ${Banco.modo === 'local' ? '<p class="pn-modo"><b>Modo neste navegador.</b> Só você vê estas alterações. As clientes continuam vendo os dados atuais do site até o Supabase ser conectado. <a href="#loja">Como conectar</a></p>' : ''}
         <div id="aba"></div>
       </main>
     </div>`;
@@ -376,7 +376,7 @@ function montarPainel() {
     telaAcesso('entrar');
   }));
   // Evita perder o que foi digitado no produto ao trocar de aba
-  $('.ad-nav').addEventListener('click', (e) => {
+  $('.pn-nav').addEventListener('click', (e) => {
     if (e.target.closest('a[href^="#"]') && estado.editor?.sujo && !confirm('Sair sem salvar as alterações deste produto?')) e.preventDefault();
   });
   abrirAba();
@@ -387,7 +387,7 @@ function abrirAba() {
   const pedido = location.hash.slice(1);
   const id = ABAS[pedido] ? pedido : 'resumo';
   estado.editor = null;
-  $$('.ad-nav a[href^="#"]').forEach((a) => {
+  $$('.pn-nav a[href^="#"]').forEach((a) => {
     if (a.getAttribute('href') === `#${id}`) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
   });
@@ -395,7 +395,7 @@ function abrirAba() {
   esconderDica();
   const alvo = $('#aba');
   Promise.resolve(ABAS[id].abrir(alvo)).catch((e) => {
-    alvo.innerHTML = `<section class="ad-card"><h2>Não deu para carregar</h2><p class="ad-texto">${esc(e.message)}</p><button class="btn btn-claro" type="button" data-de-novo>Tentar de novo</button></section>`;
+    alvo.innerHTML = `<section class="pn-card"><h2>Não deu para carregar</h2><p class="pn-texto">${esc(e.message)}</p><button class="btn btn-claro" type="button" data-de-novo>Tentar de novo</button></section>`;
     $('[data-de-novo]', alvo).addEventListener('click', abrirAba);
   });
 }
@@ -414,7 +414,7 @@ async function abrirPainel() {
 
 const carregarDados = async () => { [estado.pedidos, estado.eventos] = await Promise.all([Banco.pedidos(), Banco.eventos()]); };
 const temExemplos = () => Banco.modo === 'local' && !!lerJSON(EXEMPLOS, null);
-const avisoExemplos = () => (temExemplos() ? `<p class="ad-exemplo">${I.alerta}<span><b>Dados de exemplo ligados.</b> Estes números são fictícios, só para visualizar o painel.</span><button class="ad-link" type="button" data-tirar-exemplos>Remover</button></p>` : '');
+const avisoExemplos = () => (temExemplos() ? `<p class="pn-exemplo">${I.alerta}<span><b>Dados de exemplo ligados.</b> Estes números são fictícios, só para visualizar o painel.</span><button class="pn-link" type="button" data-tirar-exemplos>Remover</button></p>` : '');
 function ligarExemplos(alvo) {
   $('[data-tirar-exemplos]', alvo)?.addEventListener('click', () => {
     const extras = lerJSON(EXTRAS, {});
@@ -500,36 +500,36 @@ function desenharColunas(el, pontos, { fmt = num, fmtEixo = fmt, todos = false, 
   const Y = (v) => y0 - (v / teto) * alt;
   const f1 = (v) => Math.round(v * 10) / 10;
 
-  const grade = [0, 0.5, 1].map((k) => `<line class="ad-grade" x1="${esq}" x2="${L - 2}" y1="${f1(Y(teto * k))}" y2="${f1(Y(teto * k))}"/>
-    ${todos ? '' : `<text class="ad-eixo" x="${esq - 8}" y="${f1(Y(teto * k) + 4)}" text-anchor="end">${esc(fmtEixo(teto * k))}</text>`}`).join('');
+  const grade = [0, 0.5, 1].map((k) => `<line class="pn-grade" x1="${esq}" x2="${L - 2}" y1="${f1(Y(teto * k))}" y2="${f1(Y(teto * k))}"/>
+    ${todos ? '' : `<text class="pn-eixo" x="${esq - 8}" y="${f1(Y(teto * k) + 4)}" text-anchor="end">${esc(fmtEixo(teto * k))}</text>`}`).join('');
   const colunas = pontos.map((p, i) => {
     if (!p.valor) return '';
     const x = f1(X(i));
     const y = f1(Y(p.valor));
     const r = Math.min(4, w / 2, y0 - y);
-    return `<path class="ad-col" data-i="${i}" d="M${x} ${y0}V${f1(y + r)}Q${x} ${y} ${f1(x + r)} ${y}H${f1(x + w - r)}Q${f1(x + w)} ${y} ${f1(x + w)} ${f1(y + r)}V${y0}Z"/>`;
+    return `<path class="pn-col" data-i="${i}" d="M${x} ${y0}V${f1(y + r)}Q${x} ${y} ${f1(x + r)} ${y}H${f1(x + w - r)}Q${f1(x + w)} ${y} ${f1(x + w)} ${f1(y + r)}V${y0}Z"/>`;
   }).join('');
   const meio = (i) => f1(X(i) + w / 2);
   const indices = todos ? pontos.map((_, i) => i) : [...new Set([0, Math.floor((pontos.length - 1) / 2), pontos.length - 1])];
   const rotulos = indices.map((i) => {
     const ancora = todos || (i !== 0 && i !== pontos.length - 1) ? 'middle' : i === 0 ? 'start' : 'end';
     const x = ancora === 'start' ? f1(X(i)) : ancora === 'end' ? f1(X(i) + w) : meio(i);
-    return `<text class="ad-eixo" x="${x}" y="${altura - 6}" text-anchor="${ancora}">${esc(pontos[i].rotulo)}</text>`;
+    return `<text class="pn-eixo" x="${x}" y="${altura - 6}" text-anchor="${ancora}">${esc(pontos[i].rotulo)}</text>`;
   }).join('');
   // Rótulo só onde importa: todas as colunas quando são poucas, o pico quando são muitas
   const marcados = todos ? pontos.map((_, i) => i) : maior > 0 ? [pontos.findIndex((p) => p.valor === maior)] : [];
   const valores = marcados.filter((i) => pontos[i].valor > 0).map((i) => {
     const x = Math.max(esq + 24, Math.min(L - 26, meio(i)));
-    return `<text class="ad-valor" x="${f1(x)}" y="${f1(Y(pontos[i].valor) - 6)}" text-anchor="middle">${esc(todos ? fmt(pontos[i].valor) : fmtEixo(pontos[i].valor))}</text>`;
+    return `<text class="pn-valor" x="${f1(x)}" y="${f1(Y(pontos[i].valor) - 6)}" text-anchor="middle">${esc(todos ? fmt(pontos[i].valor) : fmtEixo(pontos[i].valor))}</text>`;
   }).join('');
 
-  el.innerHTML = `<svg class="ad-grafico" width="${L}" height="${altura}" viewBox="0 0 ${L} ${altura}" role="img" aria-label="${esc(descricao)}" tabindex="0">${grade}${colunas}${valores}${rotulos}</svg>`;
+  el.innerHTML = `<svg class="pn-grafico" width="${L}" height="${altura}" viewBox="0 0 ${L} ${altura}" role="img" aria-label="${esc(descricao)}" tabindex="0">${grade}${colunas}${valores}${rotulos}</svg>`;
 
   const grafico = $('svg', el);
   let atual = -1;
   const marcar = (i) => {
     atual = i;
-    $$('.ad-col', grafico).forEach((c) => c.classList.toggle('ativa', Number(c.dataset.i) === i));
+    $$('.pn-col', grafico).forEach((c) => c.classList.toggle('ativa', Number(c.dataset.i) === i));
   };
   const posicao = (ev) => Math.max(0, Math.min(pontos.length - 1, Math.floor((ev.clientX - grafico.getBoundingClientRect().left - esq) / faixa)));
   grafico.addEventListener('pointermove', (ev) => {
@@ -561,14 +561,14 @@ function desenharColunas(el, pontos, { fmt = num, fmtEixo = fmt, todos = false, 
 // Barras deitadas: nome e valor escritos, largura mostra a proporção
 function barrasHTML(linhas) {
   const maior = Math.max(1, ...linhas.map((l) => l.valor));
-  return `<div class="ad-barras">${linhas.map((l) => `<div class="ad-b" tabindex="0" data-dica-v="${esc(l.dicaV || l.txt)}" data-dica-r="${esc(l.dicaR || l.nome)}">
-    <div class="ad-b-txt"><span>${esc(l.nome)}${l.sub ? `<small>${esc(l.sub)}</small>` : ''}</span><b>${esc(l.txt)}</b></div>
-    <div class="ad-b-linha"><i style="width:${l.valor > 0 ? Math.max(1.5, (l.valor / maior) * 100) : 0}%"></i></div>
+  return `<div class="pn-barras">${linhas.map((l) => `<div class="pn-b" tabindex="0" data-dica-v="${esc(l.dicaV || l.txt)}" data-dica-r="${esc(l.dicaR || l.nome)}">
+    <div class="pn-b-txt"><span>${esc(l.nome)}${l.sub ? `<small>${esc(l.sub)}</small>` : ''}</span><b>${esc(l.txt)}</b></div>
+    <div class="pn-b-linha"><i style="width:${l.valor > 0 ? Math.max(1.5, (l.valor / maior) * 100) : 0}%"></i></div>
   </div>`).join('')}</div>`;
 }
 
 // ---------------- Aba Resumo ----------------
-const VAZIO_GRAFICO = (txt) => `<p class="ad-vazio">${txt}</p>`;
+const VAZIO_GRAFICO = (txt) => `<p class="pn-vazio">${txt}</p>`;
 
 function recorte(dias) {
   const fim = new Date();
@@ -625,8 +625,8 @@ function deltaHTML(atual, antes, rotulo, pontosPct = false) {
   if (!antes) return ''; // Sem período anterior não há comparação honesta a mostrar
   const dif = pontosPct ? (atual - antes) * 100 : ((atual - antes) / antes) * 100;
   const n = Math.round(Math.abs(dif));
-  if (!n) return `<span class="ad-delta">Igual a ${rotulo}</span>`;
-  return `<span class="ad-delta ${dif > 0 ? 'sobe' : 'desce'}">${dif > 0 ? '▲' : '▼'} ${n}${pontosPct ? ' p.p.' : '%'} <i>vs. ${rotulo}</i></span>`;
+  if (!n) return `<span class="pn-delta">Igual a ${rotulo}</span>`;
+  return `<span class="pn-delta ${dif > 0 ? 'sobe' : 'desce'}">${dif > 0 ? '▲' : '▼'} ${n}${pontosPct ? ' p.p.' : '%'} <i>vs. ${rotulo}</i></span>`;
 }
 
 async function abaResumo(alvo) {
@@ -691,43 +691,43 @@ function desenharResumo(alvo) {
 
   alvo.innerHTML = `
     ${avisoExemplos()}
-    <div class="ad-filtros" role="radiogroup" aria-label="Período">
+    <div class="pn-filtros" role="radiogroup" aria-label="Período">
       ${[[7, '7 dias'], [30, '30 dias'], [90, '90 dias'], [0, 'Tudo']].map(([d, n]) => `<button class="chip" type="button" role="radio" data-periodo="${d}" aria-checked="${d === estado.periodo}">${n}</button>`).join('')}
     </div>
-    ${semNada ? `<section class="ad-card ad-comeco"><h2>Ainda não há pedidos</h2>
-      <p class="ad-texto">${Banco.modo === 'local' ? 'Sem o Supabase, aparecem aqui só os pedidos feitos neste navegador. Para ver como o painel fica com movimento, ligue os dados de exemplo (números fictícios, sempre marcados).' : 'Os pedidos aparecem aqui assim que as clientes finalizarem pelo site.'}</p>
+    ${semNada ? `<section class="pn-card pn-comeco"><h2>Ainda não há pedidos</h2>
+      <p class="pn-texto">${Banco.modo === 'local' ? 'Sem o Supabase, aparecem aqui só os pedidos feitos neste navegador. Para ver como o painel fica com movimento, ligue os dados de exemplo (números fictícios, sempre marcados).' : 'Os pedidos aparecem aqui assim que as clientes finalizarem pelo site.'}</p>
       ${Banco.modo === 'local' ? '<button class="btn btn-claro" type="button" data-por-exemplos>Ver com dados de exemplo</button>' : ''}</section>` : ''}
-    <section class="ad-heroi">
-      <div class="ad-card ad-heroi-valor">
-        <span class="ad-rotulo">Faturamento</span>
+    <section class="pn-heroi">
+      <div class="pn-card pn-heroi-valor">
+        <span class="pn-rotulo">Faturamento</span>
         <strong>${brl(m.faturamento)}</strong>
         ${deltaHTML(m.faturamento, ma?.faturamento, rotuloAntes)}
         <small>Soma dos pedidos pagos, enviados e entregues. Pedido só registrado não conta.</small>
       </div>
-      <div class="ad-kpis">
-        <div class="ad-card ad-kpi"><span class="ad-rotulo">Pedidos registrados</span><strong>${num(m.registrados)}</strong>${deltaHTML(m.registrados, ma?.registrados, rotuloAntes)}</div>
-        <div class="ad-card ad-kpi"><span class="ad-rotulo">Fechamento</span><strong>${Math.round(m.taxa * 100)}%</strong><small>${num(m.vendas.length)} de ${num(m.registrados)} pagaram</small></div>
-        <div class="ad-card ad-kpi"><span class="ad-rotulo">Ticket médio</span><strong>${brl(m.ticket)}</strong>${deltaHTML(m.ticket, ma?.ticket, rotuloAntes)}</div>
-        <a class="ad-card ad-kpi ad-kpi-link" href="#pedidos" data-ver-novos><span class="ad-rotulo">Aguardando pagamento</span><strong>${num(m.aguardando)}</strong><small>${brl(m.aguardandoValor)} em aberto</small></a>
+      <div class="pn-kpis">
+        <div class="pn-card pn-kpi"><span class="pn-rotulo">Pedidos registrados</span><strong>${num(m.registrados)}</strong>${deltaHTML(m.registrados, ma?.registrados, rotuloAntes)}</div>
+        <div class="pn-card pn-kpi"><span class="pn-rotulo">Fechamento</span><strong>${Math.round(m.taxa * 100)}%</strong><small>${num(m.vendas.length)} de ${num(m.registrados)} pagaram</small></div>
+        <div class="pn-card pn-kpi"><span class="pn-rotulo">Ticket médio</span><strong>${brl(m.ticket)}</strong>${deltaHTML(m.ticket, ma?.ticket, rotuloAntes)}</div>
+        <a class="pn-card pn-kpi pn-kpi-link" href="#pedidos" data-ver-novos><span class="pn-rotulo">Aguardando pagamento</span><strong>${num(m.aguardando)}</strong><small>${brl(m.aguardandoValor)} em aberto</small></a>
       </div>
     </section>
-    <section class="ad-card">
+    <section class="pn-card">
       <h2>Faturamento no período</h2>
       <div id="g-faturamento">${m.vendas.length ? '' : VAZIO_GRAFICO('Nenhuma venda paga neste período.')}</div>
-      ${linhasTabela.length ? `<details class="ad-tabela"><summary>Ver em tabela</summary><table>
+      ${linhasTabela.length ? `<details class="pn-tabela"><summary>Ver em tabela</summary><table>
         <thead><tr><th>Período</th><th>Vendas</th><th>Valor</th></tr></thead>
         <tbody>${linhasTabela.map((p) => `<tr><td>${esc(p.dica)}</td><td>${num(p.n)}</td><td>${brl(p.valor)}</td></tr>`).join('')}</tbody>
       </table></details>` : ''}
     </section>
-    <div class="ad-grade-2">
-      <section class="ad-card"><h2>Do clique ao pagamento</h2>${etapas[0][1] || m.registrados ? barrasHTML(funil) : VAZIO_GRAFICO('Sem movimento neste período.')}
-        ${Banco.modo === 'local' ? '<p class="ad-nota">Sem o Supabase, as visitas contam só este navegador.</p>' : ''}</section>
-      <section class="ad-card"><h2>Mais vendidos</h2>${ranking.length ? barrasHTML(ranking) : VAZIO_GRAFICO('Aparece quando houver venda paga.')}</section>
-      <section class="ad-card"><h2>Tamanhos mais pedidos</h2><div id="g-tamanhos">${validos.length ? '' : VAZIO_GRAFICO('Sem pedidos neste período.')}</div><p class="ad-nota">Ajuda a decidir o que repor. Pedidos cancelados não entram.</p></section>
-      <section class="ad-card"><h2>Forma de pagamento</h2>
-        ${totalPag ? `<div class="ad-pilha" role="img" aria-label="Pix ${pct(pix)}%, cartão ${pct(cartao)}%">${pix ? `<i style="flex:${pix};background:var(--serie-1)"></i>` : ''}${cartao ? `<i style="flex:${cartao};background:var(--serie-2)"></i>` : ''}</div>
-        <ul class="ad-legenda"><li><i style="background:var(--serie-1)"></i>Pix<b>${pct(pix)}%</b><small>${num(pix)} pedidos</small></li><li><i style="background:var(--serie-2)"></i>Cartão<b>${pct(cartao)}%</b><small>${num(cartao)} pedidos</small></li></ul>` : VAZIO_GRAFICO('Sem pedidos neste período.')}
-        <h2 class="ad-h2-2">De onde vêm os pedidos</h2>
+    <div class="pn-grade-2">
+      <section class="pn-card"><h2>Do clique ao pagamento</h2>${etapas[0][1] || m.registrados ? barrasHTML(funil) : VAZIO_GRAFICO('Sem movimento neste período.')}
+        ${Banco.modo === 'local' ? '<p class="pn-nota">Sem o Supabase, as visitas contam só este navegador.</p>' : ''}</section>
+      <section class="pn-card"><h2>Mais vendidos</h2>${ranking.length ? barrasHTML(ranking) : VAZIO_GRAFICO('Aparece quando houver venda paga.')}</section>
+      <section class="pn-card"><h2>Tamanhos mais pedidos</h2><div id="g-tamanhos">${validos.length ? '' : VAZIO_GRAFICO('Sem pedidos neste período.')}</div><p class="pn-nota">Ajuda a decidir o que repor. Pedidos cancelados não entram.</p></section>
+      <section class="pn-card"><h2>Forma de pagamento</h2>
+        ${totalPag ? `<div class="pn-pilha" role="img" aria-label="Pix ${pct(pix)}%, cartão ${pct(cartao)}%">${pix ? `<i style="flex:${pix};background:var(--serie-1)"></i>` : ''}${cartao ? `<i style="flex:${cartao};background:var(--serie-2)"></i>` : ''}</div>
+        <ul class="pn-legenda"><li><i style="background:var(--serie-1)"></i>Pix<b>${pct(pix)}%</b><small>${num(pix)} pedidos</small></li><li><i style="background:var(--serie-2)"></i>Cartão<b>${pct(cartao)}%</b><small>${num(cartao)} pedidos</small></li></ul>` : VAZIO_GRAFICO('Sem pedidos neste período.')}
+        <h2 class="pn-h2-2">De onde vêm os pedidos</h2>
         ${estados.length ? barrasHTML(estados) : VAZIO_GRAFICO('Sem pedidos neste período.')}
       </section>
     </div>`;
@@ -753,30 +753,30 @@ addEventListener('resize', () => {
 });
 
 // ---------------- Aba Pedidos ----------------
-const etiquetaStatus = (s) => `<span class="ad-st ad-st-${esc(s)}">${(STATUS[s] || STATUS.novo)[1]}${(STATUS[s] || STATUS.novo)[0]}</span>`;
+const etiquetaStatus = (s) => `<span class="pn-st pn-st-${esc(s)}">${(STATUS[s] || STATUS.novo)[1]}${(STATUS[s] || STATUS.novo)[0]}</span>`;
 const enderecoDe = (p) => [p.rua && `${p.rua}, ${p.num}${p.complemento ? ` - ${p.complemento}` : ''}`, p.bairro && `${p.bairro} - ${p.cidade}/${p.uf}`, p.cep && `CEP ${p.cep}`].filter(Boolean).join('\n');
 
 function cartaoPedido(p) {
   const resumo = (p.itens || []).map((x) => `${x.qtd || 1}x ${nomeDoItem(x)}`).join(', ');
-  return `<details class="ad-ped" data-id="${esc(p.id)}">
+  return `<details class="pn-ped" data-id="${esc(p.id)}">
     <summary>
-      <div class="ad-ped-l1"><b>${esc(p.numero)}</b>${etiquetaStatus(p.status)}${p.conferir ? `<span class="ad-st ad-st-conferir">${I.alerta}Conferir valor</span>` : ''}</div>
-      <div class="ad-ped-l2"><span>${esc(p.nome)}</span><b>${brl(p.total)}</b></div>
-      <div class="ad-ped-l3">${esc(resumo)} · ${dataHora(p.data)}</div>
+      <div class="pn-ped-l1"><b>${esc(p.numero)}</b>${etiquetaStatus(p.status)}${p.conferir ? `<span class="pn-st pn-st-conferir">${I.alerta}Conferir valor</span>` : ''}</div>
+      <div class="pn-ped-l2"><span>${esc(p.nome)}</span><b>${brl(p.total)}</b></div>
+      <div class="pn-ped-l3">${esc(resumo)} · ${dataHora(p.data)}</div>
     </summary>
-    <div class="ad-ped-corpo">
+    <div class="pn-ped-corpo">
       <div class="campo"><label for="st-${esc(p.id)}">Situação do pedido</label>
         <select id="st-${esc(p.id)}" data-status>${Object.entries(STATUS).map(([id, [nome]]) => `<option value="${id}" ${id === p.status ? 'selected' : ''}>${nome}</option>`).join('')}</select>
       </div>
-      <div><h3>Itens</h3><ul class="ad-ped-itens">${(p.itens || []).map((x) => {
+      <div><h3>Itens</h3><ul class="pn-ped-itens">${(p.itens || []).map((x) => {
         const tam = tamanhoDoItem(x);
         return `<li><span>${x.qtd || 1}x ${esc(nomeDoItem(x))}${x.extra ? ` + ${esc(nomeDoItem({ id: x.extra }))}` : ''}${tam ? `<small>Tamanho ${esc(tam)} · veste calça ${esc(x.calca)}</small>` : ''}</span>${x.preco != null ? `<b>${brl(x.preco * (x.qtd || 1))}</b>` : ''}</li>`;
       }).join('')}</ul></div>
-      ${p.conferir ? '<p class="ad-exemplo">O valor enviado pelo site não bateu com o preço do banco. Confira antes de mandar o link de pagamento.</p>' : ''}
+      ${p.conferir ? '<p class="pn-exemplo">O valor enviado pelo site não bateu com o preço do banco. Confira antes de mandar o link de pagamento.</p>' : ''}
       <div><h3>Pagamento</h3><p>${esc(p.pagamento || 'Não informado')}</p></div>
-      <div><h3>Entrega</h3><p class="ad-endereco">${esc(enderecoDe(p)) || 'Não informado'}</p>${enderecoDe(p) ? '<button class="ad-link" type="button" data-copiar>Copiar endereço</button>' : ''}</div>
+      <div><h3>Entrega</h3><p class="pn-endereco">${esc(enderecoDe(p)) || 'Não informado'}</p>${enderecoDe(p) ? '<button class="pn-link" type="button" data-copiar>Copiar endereço</button>' : ''}</div>
       <div class="campo"><label for="nt-${esc(p.id)}">Anotação interna</label><textarea id="nt-${esc(p.id)}" data-nota rows="2" placeholder="Só aparece aqui no painel">${esc(p.nota || '')}</textarea></div>
-      <button class="ad-link ad-perigo" type="button" data-excluir>Excluir pedido</button>
+      <button class="pn-link pn-perigo" type="button" data-excluir>Excluir pedido</button>
     </div>
   </details>`;
 }
@@ -802,11 +802,11 @@ async function abaPedidos(alvo) {
   const conta = (s) => estado.pedidos.filter((p) => s === 'todos' || p.status === s).length;
   alvo.innerHTML = `
     ${avisoExemplos()}
-    <div class="ad-cab"><h1 class="ad-h1">Pedidos</h1><button class="btn btn-claro ad-btn-p" type="button" data-csv>Baixar planilha</button></div>
-    <div class="ad-filtros" role="radiogroup" aria-label="Situação">
+    <div class="pn-cab"><h1 class="pn-h1">Pedidos</h1><button class="btn btn-claro pn-btn-p" type="button" data-csv>Baixar planilha</button></div>
+    <div class="pn-filtros" role="radiogroup" aria-label="Situação">
       ${[['todos', 'Todos'], ...Object.entries(STATUS).map(([id, [nome]]) => [id, nome])].map(([id, nome]) => `<button class="chip" type="button" role="radio" data-filtro="${id}" aria-checked="${id === estado.filtro}">${nome} <small>${conta(id)}</small></button>`).join('')}
     </div>
-    <div class="campo ad-busca"><label for="busca">Buscar por número, nome ou cidade</label><input id="busca" type="search" value="${esc(estado.busca)}" placeholder="Ex.: PCF-0311 ou Maria"></div>
+    <div class="campo pn-busca"><label for="busca">Buscar por número, nome ou cidade</label><input id="busca" type="search" value="${esc(estado.busca)}" placeholder="Ex.: PCF-0311 ou Maria"></div>
     <div id="lista-pedidos"></div>`;
 
   const filtrados = () => {
@@ -817,9 +817,9 @@ async function abaPedidos(alvo) {
   const desenhar = () => {
     const lista = filtrados();
     $('#lista-pedidos').innerHTML = lista.length
-      ? lista.slice(0, 200).map(cartaoPedido).join('') + (lista.length > 200 ? `<p class="ad-nota">Mostrando os 200 mais recentes de ${num(lista.length)}. Use a busca ou baixe a planilha.</p>` : '')
-      : `<section class="ad-card ad-comeco"><h2>${estado.pedidos.length ? 'Nada encontrado' : 'Ainda não há pedidos'}</h2>
-        <p class="ad-texto">${estado.pedidos.length ? 'Tente outra busca ou outra situação.' : Banco.modo === 'local' ? 'Sem o Supabase, aparecem aqui só os pedidos feitos neste navegador. Depois de conectar, chegam os de todas as clientes.' : 'Os pedidos aparecem aqui assim que as clientes finalizarem pelo site.'}</p></section>`;
+      ? lista.slice(0, 200).map(cartaoPedido).join('') + (lista.length > 200 ? `<p class="pn-nota">Mostrando os 200 mais recentes de ${num(lista.length)}. Use a busca ou baixe a planilha.</p>` : '')
+      : `<section class="pn-card pn-comeco"><h2>${estado.pedidos.length ? 'Nada encontrado' : 'Ainda não há pedidos'}</h2>
+        <p class="pn-texto">${estado.pedidos.length ? 'Tente outra busca ou outra situação.' : Banco.modo === 'local' ? 'Sem o Supabase, aparecem aqui só os pedidos feitos neste navegador. Depois de conectar, chegam os de todas as clientes.' : 'Os pedidos aparecem aqui assim que as clientes finalizarem pelo site.'}</p></section>`;
   };
   desenhar();
 
@@ -833,7 +833,7 @@ async function abaPedidos(alvo) {
   ligarExemplos(alvo);
 
   const lista = $('#lista-pedidos');
-  const pedidoDe = (el) => estado.pedidos.find((p) => String(p.id) === el.closest('.ad-ped').dataset.id);
+  const pedidoDe = (el) => estado.pedidos.find((p) => String(p.id) === el.closest('.pn-ped').dataset.id);
   lista.addEventListener('change', async (e) => {
     const p = pedidoDe(e.target);
     try {
@@ -841,8 +841,8 @@ async function abaPedidos(alvo) {
         const novo = e.target.value;
         await Banco.alterarPedido(p.id, { status: novo });
         p.status = novo;
-        const cartao = e.target.closest('.ad-ped');
-        $('.ad-ped-l1 .ad-st', cartao).outerHTML = etiquetaStatus(novo);
+        const cartao = e.target.closest('.pn-ped');
+        $('.pn-ped-l1 .pn-st', cartao).outerHTML = etiquetaStatus(novo);
         toast(`Pedido marcado como ${STATUS[novo][0].toLowerCase()}`);
       } else if (e.target.matches('[data-nota]')) {
         await Banco.alterarPedido(p.id, { nota: e.target.value.trim() });
@@ -887,20 +887,20 @@ function abaProdutos(alvo) {
   const seg = estado.segmento;
   const lista = estado.catalogo[seg];
   alvo.innerHTML = `
-    <div class="ad-cab"><h1 class="ad-h1">Produtos</h1><button class="btn btn-preto ad-btn-p" type="button" data-novo>${I.mais}${SEGMENTOS[seg][1]}</button></div>
-    <div class="ad-filtros" role="radiogroup" aria-label="Tipo">
+    <div class="pn-cab"><h1 class="pn-h1">Produtos</h1><button class="btn btn-preto pn-btn-p" type="button" data-novo>${I.mais}${SEGMENTOS[seg][1]}</button></div>
+    <div class="pn-filtros" role="radiogroup" aria-label="Tipo">
       ${Object.entries(SEGMENTOS).map(([id, [nome]]) => `<button class="chip" type="button" role="radio" data-seg="${id}" aria-checked="${id === seg}">${nome}</button>`).join('')}
     </div>
-    ${estado.avisoValores ? `<p class="ad-exemplo">${I.alerta}<span><b>Confira estes textos:</b> eles citam valores e não mudam sozinhos quando o preço muda. ${esc(estado.avisoValores.join('; '))}.</span><button class="ad-link" type="button" data-ok-aviso>Entendi</button></p>` : ''}
-    <section class="ad-itens">${lista.map((x, i) => `
-      <article class="ad-item ${x.ativo === false ? 'oculto' : ''}">
-        <button class="ad-item-abre" type="button" data-editar="${esc(x.id)}">
+    ${estado.avisoValores ? `<p class="pn-exemplo">${I.alerta}<span><b>Confira estes textos:</b> eles citam valores e não mudam sozinhos quando o preço muda. ${esc(estado.avisoValores.join('; '))}.</span><button class="pn-link" type="button" data-ok-aviso>Entendi</button></p>` : ''}
+    <section class="pn-itens">${lista.map((x, i) => `
+      <article class="pn-item ${x.ativo === false ? 'oculto' : ''}">
+        <button class="pn-item-abre" type="button" data-editar="${esc(x.id)}">
           <img src="${esc(x.img)}" alt="" loading="lazy">
-          <span class="ad-item-txt"><b>${esc(x.nome)}</b><span>${seg === 'praia' ? 'Prévia de lançamento' : textoItem(x)}</span>${x.ativo === false ? '<em>Oculto na loja</em>' : ''}</span>
+          <span class="pn-item-txt"><b>${esc(x.nome)}</b><span>${seg === 'praia' ? 'Prévia de lançamento' : textoItem(x)}</span>${x.ativo === false ? '<em>Oculto na loja</em>' : ''}</span>
         </button>
-        <div class="ad-item-ordem">
-          <button class="ad-ico" type="button" data-mover="-1" data-i="${i}" aria-label="Subir ${esc(x.nome)}" ${i === 0 ? 'disabled' : ''}>${I.cima}</button>
-          <button class="ad-ico" type="button" data-mover="1" data-i="${i}" aria-label="Descer ${esc(x.nome)}" ${i === lista.length - 1 ? 'disabled' : ''}>${I.baixo}</button>
+        <div class="pn-item-ordem">
+          <button class="pn-ico" type="button" data-mover="-1" data-i="${i}" aria-label="Subir ${esc(x.nome)}" ${i === 0 ? 'disabled' : ''}>${I.cima}</button>
+          <button class="pn-ico" type="button" data-mover="1" data-i="${i}" aria-label="Descer ${esc(x.nome)}" ${i === lista.length - 1 ? 'disabled' : ''}>${I.baixo}</button>
         </div>
       </article>`).join('')}
     </section>`;
@@ -944,16 +944,16 @@ function abrirEditor(seg, id) {
 }
 
 // Campos do formulário
-const ajuda = (t) => (t ? `<small class="ad-ajuda">${t}</small>` : '');
+const ajuda = (t) => (t ? `<small class="pn-ajuda">${t}</small>` : '');
 const campo = (rotulo, nome, valor, op = {}) => `<div class="campo"><label for="f-${nome}">${rotulo}</label><input id="f-${nome}" name="${nome}" type="${op.tipo || 'text'}" value="${esc(valor ?? '')}" ${op.attrs || ''}>${ajuda(op.ajuda)}</div>`;
 const area = (rotulo, nome, valor, op = {}) => `<div class="campo"><label for="f-${nome}">${rotulo}</label><textarea id="f-${nome}" name="${nome}" rows="${op.linhas || 3}">${esc(valor ?? '')}</textarea>${ajuda(op.ajuda)}</div>`;
 const seletor = (rotulo, nome, valor, opcoes, op = {}) => `<div class="campo"><label for="f-${nome}">${rotulo}</label><select id="f-${nome}" name="${nome}" ${op.attrs || ''}>${opcoes.map(([v, n]) => `<option value="${v}" ${v === valor ? 'selected' : ''}>${n}</option>`).join('')}</select>${ajuda(op.ajuda)}</div>`;
-const chave = (rotulo, nome, marcado, op = {}) => `<label class="ad-chave"><input type="checkbox" name="${nome}" value="${op.valor || '1'}" ${marcado ? 'checked' : ''} ${op.attrs || ''}><span>${rotulo}${op.ajuda ? `<small>${op.ajuda}</small>` : ''}</span></label>`;
-const fotoBloco = (rotulo, nome, valor, op = {}) => `<div class="ad-foto" data-foto="${nome}">
-    ${valor ? `<img src="${esc(valor)}" alt="">` : '<span class="ad-foto-vazia">Sem foto</span>'}
+const chave = (rotulo, nome, marcado, op = {}) => `<label class="pn-chave"><input type="checkbox" name="${nome}" value="${op.valor || '1'}" ${marcado ? 'checked' : ''} ${op.attrs || ''}><span>${rotulo}${op.ajuda ? `<small>${op.ajuda}</small>` : ''}</span></label>`;
+const fotoBloco = (rotulo, nome, valor, op = {}) => `<div class="pn-foto" data-foto="${nome}">
+    ${valor ? `<img src="${esc(valor)}" alt="">` : '<span class="pn-foto-vazia">Sem foto</span>'}
     <div><b>${rotulo}</b>${ajuda(op.ajuda)}
-      <div class="ad-foto-acoes"><label class="ad-link">${valor ? 'Trocar foto' : 'Escolher foto'}<input type="file" accept="image/*" hidden></label>
-      ${valor && op.opcional ? '<button class="ad-link ad-perigo" type="button" data-tirar-foto>Tirar</button>' : ''}</div>
+      <div class="pn-foto-acoes"><label class="pn-link">${valor ? 'Trocar foto' : 'Escolher foto'}<input type="file" accept="image/*" hidden></label>
+      ${valor && op.opcional ? '<button class="pn-link pn-perigo" type="button" data-tirar-foto>Tirar</button>' : ''}</div>
     </div>
   </div>`;
 
@@ -974,33 +974,33 @@ function secaoProduto(r) {
   const fixo = Catalogo.FIXOS.includes(r.id);
   const ehCinta = r.cat === 'cintas';
   return `
-    <section class="ad-card"><h2>Fotos</h2>
+    <section class="pn-card"><h2>Fotos</h2>
       ${fotoBloco('Foto principal', 'img', r.img)}
       ${fotoBloco('Segunda foto', 'img2', r.img2, { opcional: true, ajuda: 'Aparece quando a cliente passa o mouse no card.' })}
-      <h3 class="ad-sub">Galeria da página do produto</h3>
-      ${(r.galeria || []).map((g, i) => `<div class="ad-gal"><img src="${esc(g.src)}" alt=""><input name="g-${i}" value="${esc(g.txt || '')}" placeholder="Legenda (opcional)" aria-label="Legenda da foto ${i + 1}"><button class="ad-link ad-perigo" type="button" data-tirar-gal="${i}">Tirar</button></div>`).join('')}
-      <label class="ad-link ad-add">Adicionar foto à galeria<input type="file" accept="image/*" data-gal hidden></label>
+      <h3 class="pn-sub">Galeria da página do produto</h3>
+      ${(r.galeria || []).map((g, i) => `<div class="pn-gal"><img src="${esc(g.src)}" alt=""><input name="g-${i}" value="${esc(g.txt || '')}" placeholder="Legenda (opcional)" aria-label="Legenda da foto ${i + 1}"><button class="pn-link pn-perigo" type="button" data-tirar-gal="${i}">Tirar</button></div>`).join('')}
+      <label class="pn-link pn-add">Adicionar foto à galeria<input type="file" accept="image/*" data-gal hidden></label>
     </section>
-    <section class="ad-card"><h2>Identificação</h2>
+    <section class="pn-card"><h2>Identificação</h2>
       ${campo('Nome', 'nome', r.nome, { attrs: 'required' })}
-      <div class="ad-2">
+      <div class="pn-2">
         ${campo('Nome curto', 'curto', r.curto, { ajuda: 'Usado no pedido e nos combos.' })}
         ${campo('Plural', 'plural', r.plural, { ajuda: 'Se vier 2 no combo. Ex.: Sutiãs reforçados.' })}
       </div>
-      <div class="ad-2">
+      <div class="pn-2">
         ${seletor('Categoria', 'cat', r.cat, CATEGORIAS, fixo ? { attrs: 'disabled', ajuda: 'Fixa: este item é base do caminho de compra.' } : {})}
         ${ehCinta ? campo('Barbatanas', 'barbatanas', r.barbatanas, { tipo: 'number', attrs: 'inputmode="numeric" min="1"' }) : campo('Selo', 'selo', r.selo, { ajuda: 'Etiqueta na foto. Ex.: A melhor.' })}
       </div>
       ${ehCinta ? campo('Selo', 'selo', r.selo, { ajuda: 'Etiqueta na foto. Ex.: A melhor.' }) : ''}
     </section>
     ${secaoPreco(r, !fixo)}
-    <section class="ad-card"><h2>Textos</h2>
+    <section class="pn-card"><h2>Textos</h2>
       ${campo('Frase de destaque', 'frase', r.frase)}
       ${area('Descrição', 'desc', r.desc, { linhas: 5 })}
       ${area('Pontos principais', 'pontos', (r.pontos || []).join('\n'), { linhas: 4, ajuda: 'Um por linha.' })}
       ${area('Como usar', 'uso', r.uso)}
     </section>
-    <section class="ad-card"><h2>Opções</h2>
+    <section class="pn-card"><h2>Opções</h2>
       ${chave('Pede o número da calça', 'tamanhos', r.tamanhos, { ajuda: 'A cliente escolhe o tamanho antes de comprar.' })}
       ${chaveVisivel(r, fixo)}
     </section>`;
@@ -1010,13 +1010,13 @@ function secaoPreco(r, podeSemPreco) {
   const ed = estado.editor;
   if (ed.semPreco === undefined) ed.semPreco = r.preco == null && podeSemPreco && ed.seg === 'produtos';
   const sem = ed.semPreco;
-  return `<section class="ad-card"><h2>Preço</h2>
-    <div class="ad-2">
+  return `<section class="pn-card"><h2>Preço</h2>
+    <div class="pn-2">
       ${campo('De (riscado)', 'de', precoTxt(r.de), { attrs: 'inputmode="decimal" placeholder="Opcional"', ajuda: 'Só use com comprovação do preço anterior.' })}
       ${campo('Por', 'preco', precoTxt(r.preco), { attrs: `inputmode="decimal" ${sem ? 'disabled' : ''}` })}
     </div>
     ${podeSemPreco && estado.editor.seg === 'produtos' ? chave('Sem preço: vem só nos combos', 'semPreco', sem) : ''}
-    <p class="ad-previa" id="previa-preco"></p>
+    <p class="pn-previa" id="previa-preco"></p>
   </section>`;
 }
 
@@ -1028,48 +1028,48 @@ function secaoKit(r) {
   const fixo = Catalogo.FIXOS.includes(r.id);
   const conta = (id) => (r.itens || []).filter((i) => i === id).length;
   return `
-    <section class="ad-card"><h2>Fotos</h2>
+    <section class="pn-card"><h2>Fotos</h2>
       ${fotoBloco('Foto principal', 'img', r.img)}
       ${fotoBloco('Segunda foto', 'img2', r.img2, { opcional: true })}
     </section>
-    <section class="ad-card"><h2>Identificação</h2>
+    <section class="pn-card"><h2>Identificação</h2>
       ${campo('Nome', 'nome', r.nome, { attrs: 'required' })}
-      <div class="ad-2">
+      <div class="pn-2">
         ${campo('Subtítulo', 'sub', r.sub, { ajuda: 'Ex.: Leve 5 produtos.' })}
         ${campo('Selo', 'selo', r.selo, { ajuda: 'Ex.: O que mais sai.' })}
       </div>
       ${campo('Chamada do card', 'gancho', r.gancho, { ajuda: 'Vazia: mostra quanto economiza.' })}
     </section>
     ${secaoPreco(r, false)}
-    <section class="ad-card"><h2>O que vem no combo</h2>
-      <ul class="ad-compoe">${estado.catalogo.produtos.map((p) => `<li><img src="${esc(p.img)}" alt=""><span>${esc(p.curto || p.nome)}</span>
+    <section class="pn-card"><h2>O que vem no combo</h2>
+      <ul class="pn-compoe">${estado.catalogo.produtos.map((p) => `<li><img src="${esc(p.img)}" alt=""><span>${esc(p.curto || p.nome)}</span>
         <div class="qtd"><button type="button" data-kit="${esc(p.id)}" data-d="-1" aria-label="Menos ${esc(p.nome)}">−</button><span>${conta(p.id)}</span><button type="button" data-kit="${esc(p.id)}" data-d="1" aria-label="Mais ${esc(p.nome)}">+</button></div></li>`).join('')}</ul>
-      <h3 class="ad-sub">A cliente escolhe um destes (opcional)</h3>
+      <h3 class="pn-sub">A cliente escolhe um destes (opcional)</h3>
       ${estado.catalogo.produtos.map((p) => chave(esc(p.curto || p.nome), 'escolha', r.escolha?.includes(p.id), { valor: esc(p.id) })).join('')}
     </section>
-    <section class="ad-card"><h2>Textos</h2>
+    <section class="pn-card"><h2>Textos</h2>
       ${campo('Frase de destaque', 'frase', r.frase)}
       ${area('Descrição', 'desc', r.desc, { linhas: 4 })}
     </section>
-    <section class="ad-card"><h2>Opções</h2>${chaveVisivel(r, fixo)}</section>`;
+    <section class="pn-card"><h2>Opções</h2>${chaveVisivel(r, fixo)}</section>`;
 }
 
 function secaoPraia(r) {
   return `
-    <section class="ad-card"><h2>Foto e nome</h2>
+    <section class="pn-card"><h2>Foto e nome</h2>
       ${fotoBloco('Foto', 'img', r.img)}
       ${campo('Nome', 'nome', r.nome, { attrs: 'required' })}
       ${campo('Selo', 'selo', r.selo, { ajuda: 'Ex.: Destaque.' })}
     </section>
-    <section class="ad-card"><h2>O que a peça resolve</h2>
+    <section class="pn-card"><h2>O que a peça resolve</h2>
       ${FOCOS.map(([id, nome]) => chave(nome, 'foco', r.foco?.includes(id), { valor: id })).join('')}
       ${chave('Entra no "Monte seu biquíni"', 'biquini', r.biquini, { ajuda: 'Top e calcinha em tamanhos diferentes.' })}
     </section>
-    <section class="ad-card"><h2>Cores previstas</h2>
-      <div class="ad-cores">${(r.cores || []).map((c, i) => `<div><input type="color" name="cor" value="${esc(c)}" aria-label="Cor ${i + 1}">${r.cores.length > 1 ? `<button class="ad-link ad-perigo" type="button" data-tirar-cor="${i}">Tirar</button>` : ''}</div>`).join('')}</div>
-      ${(r.cores || []).length < 5 ? '<button class="ad-link ad-add" type="button" data-nova-cor>Adicionar cor</button>' : ''}
+    <section class="pn-card"><h2>Cores previstas</h2>
+      <div class="pn-cores">${(r.cores || []).map((c, i) => `<div><input type="color" name="cor" value="${esc(c)}" aria-label="Cor ${i + 1}">${r.cores.length > 1 ? `<button class="pn-link pn-perigo" type="button" data-tirar-cor="${i}">Tirar</button>` : ''}</div>`).join('')}</div>
+      ${(r.cores || []).length < 5 ? '<button class="pn-link pn-add" type="button" data-nova-cor>Adicionar cor</button>' : ''}
     </section>
-    <section class="ad-card"><h2>Opções</h2>${chaveVisivel(r, false)}</section>`;
+    <section class="pn-card"><h2>Opções</h2>${chaveVisivel(r, false)}</section>`;
 }
 
 function desenharEditor() {
@@ -1079,12 +1079,12 @@ function desenharEditor() {
   const bloqueio = !id ? null : Catalogo.FIXOS.includes(id) ? 'Este item é base do caminho de compra: dá para editar, não para excluir.'
     : seg !== 'praia' && usadoEmKits(id).length ? `Faz parte de: ${usadoEmKits(id).join(', ')}. Tire do combo antes de excluir.` : null;
   alvo.innerHTML = `
-    <button class="ad-voltar" type="button" data-voltar>${I.voltar}Voltar para a lista</button>
-    <div class="ad-cab"><h1 class="ad-h1">${id ? esc(r.nome) : SEGMENTOS[seg][1]}</h1>${id && seg !== 'praia' ? `<a class="ad-link" href="produto.html?id=${esc(id)}" target="_blank" rel="noopener">Ver na loja</a>` : ''}</div>
-    <form id="editor" class="ad-form" novalidate>
+    <button class="pn-voltar" type="button" data-voltar>${I.voltar}Voltar para a lista</button>
+    <div class="pn-cab"><h1 class="pn-h1">${id ? esc(r.nome) : SEGMENTOS[seg][1]}</h1>${id && seg !== 'praia' ? `<a class="pn-link" href="produto.html?id=${esc(id)}" target="_blank" rel="noopener">Ver na loja</a>` : ''}</div>
+    <form id="editor" class="pn-form" novalidate>
       ${secoes(r)}
-      ${id ? `<section class="ad-card ad-zona"><h2>Excluir</h2>${bloqueio ? `<p class="ad-texto">${esc(bloqueio)}</p>` : '<button class="ad-link ad-perigo" type="button" data-excluir-item>Excluir este item da loja</button>'}</section>` : ''}
-      <div class="ad-salvar"><p class="dica-tam erro" data-erro hidden></p><button class="btn btn-preto btn-bloco" type="submit">Salvar</button></div>
+      ${id ? `<section class="pn-card pn-zona"><h2>Excluir</h2>${bloqueio ? `<p class="pn-texto">${esc(bloqueio)}</p>` : '<button class="pn-link pn-perigo" type="button" data-excluir-item>Excluir este item da loja</button>'}</section>` : ''}
+      <div class="pn-salvar"><p class="dica-tam erro" data-erro hidden></p><button class="btn btn-preto btn-bloco" type="submit">Salvar</button></div>
     </form>`;
   ligarEditor(alvo);
 }
@@ -1296,64 +1296,64 @@ function abaLoja(alvo) {
   const l = estado.catalogo.loja;
   const local = Banco.modo === 'local';
   alvo.innerHTML = `
-    <div class="ad-cab"><h1 class="ad-h1">Loja</h1></div>
-    <form id="form-loja" class="ad-form" novalidate>
-      <section class="ad-card"><h2>Contato</h2>
+    <div class="pn-cab"><h1 class="pn-h1">Loja</h1></div>
+    <form id="form-loja" class="pn-form" novalidate>
+      <section class="pn-card"><h2>Contato</h2>
         ${campo('Número do WhatsApp', 'whatsappNumero', l.whatsappNumero, { attrs: 'inputmode="numeric" placeholder="5521999999999"', ajuda: 'Só números, com 55 e DDD. Com ele, o pedido já abre escrito na conversa.' })}
         ${campo('Link do WhatsApp', 'whatsapp', l.whatsapp, { tipo: 'url' })}
-        <div class="ad-2">
+        <div class="pn-2">
           ${campo('Instagram (link)', 'instagram', l.instagram, { tipo: 'url' })}
           ${campo('Instagram (arroba)', 'arroba', l.arroba)}
         </div>
         ${campo('Link dos antes e depois', 'antesDepois', l.antesDepois, { tipo: 'url' })}
         ${campo('Cidade de envio', 'cidade', l.cidade)}
       </section>
-      <section class="ad-card"><h2>Vendas</h2>
-        <div class="ad-3">
+      <section class="pn-card"><h2>Vendas</h2>
+        <div class="pn-3">
           ${campo('Frete grátis acima de', 'freteGratis', precoTxt(l.freteGratis), { attrs: 'inputmode="decimal"' })}
           ${campo('Desconto no Pix (%)', 'pixPct', precoTxt(Math.round(l.pix * 1000) / 10), { attrs: 'inputmode="decimal"' })}
           ${campo('Parcelas sem juros', 'parcelas', l.parcelas, { tipo: 'number', attrs: 'inputmode="numeric" min="1" max="24"' })}
         </div>
         ${campo('Lançamento da moda praia', 'lancamentoPraia', (l.lancamentoPraia || '').slice(0, 16), { tipo: 'datetime-local', ajuda: 'Vazio: a contagem regressiva não aparece. Só use data real.' })}
       </section>
-      <section class="ad-card"><h2>Tabela de tamanhos</h2>
-        <p class="ad-texto">O número de calça que cada tamanho veste. Vale para toda a loja.</p>
+      <section class="pn-card"><h2>Tabela de tamanhos</h2>
+        <p class="pn-texto">O número de calça que cada tamanho veste. Vale para toda a loja.</p>
         <div id="tabela-tam">${estado.catalogo.tabela.map(linhaTamanho).join('')}</div>
-        <button class="ad-link ad-add" type="button" data-novo-tam>Adicionar tamanho</button>
+        <button class="pn-link pn-add" type="button" data-novo-tam>Adicionar tamanho</button>
       </section>
-      <div class="ad-salvar"><p class="dica-tam erro" data-erro hidden></p><button class="btn btn-preto btn-bloco" type="submit">Salvar dados da loja</button></div>
+      <div class="pn-salvar"><p class="dica-tam erro" data-erro hidden></p><button class="btn btn-preto btn-bloco" type="submit">Salvar dados da loja</button></div>
     </form>
 
-    <section class="ad-card ad-espaco"><h2>Conexão com o banco</h2>
-      ${local ? `<p class="ad-texto"><b>Ainda não conectado.</b> O painel está funcionando só neste navegador. Depois de conectar, os pedidos de todas as clientes chegam aqui e as edições passam a valer na loja. Os produtos que você já ajustou aqui são levados para o banco na primeira entrada.</p>
-      <ol class="ad-passos">
+    <section class="pn-card pn-espaco"><h2>Conexão com o banco</h2>
+      ${local ? `<p class="pn-texto"><b>Ainda não conectado.</b> O painel está funcionando só neste navegador. Depois de conectar, os pedidos de todas as clientes chegam aqui e as edições passam a valer na loja. Os produtos que você já ajustou aqui são levados para o banco na primeira entrada.</p>
+      <ol class="pn-passos">
         <li>Na conta da cliente, crie o projeto no Supabase, região São Paulo.</li>
         <li>No SQL Editor, cole o arquivo <code>supabase/schema.sql</code> e clique em Run.</li>
         <li>Coloque a URL e a chave pública em <code>js/config.js</code> e publique o site.</li>
         <li>Volte aqui e crie sua conta. O passo a passo completo está em <code>supabase/LEIA-ME.md</code>.</li>
-      </ol>` : '<p class="ad-texto"><b>Conectado ao Supabase.</b> Pedidos, produtos e dados da loja estão salvos no banco.</p>'}
+      </ol>` : '<p class="pn-texto"><b>Conectado ao Supabase.</b> Pedidos, produtos e dados da loja estão salvos no banco.</p>'}
     </section>
 
-    <section class="ad-card ad-espaco"><h2>Sua conta</h2>
-      <form id="form-senha" class="ad-form-mini" novalidate>
+    <section class="pn-card pn-espaco"><h2>Sua conta</h2>
+      <form id="form-senha" class="pn-form-mini" novalidate>
         <div class="campo"><label for="nova-senha">Nova senha</label><input id="nova-senha" type="password" autocomplete="new-password" minlength="8"></div>
         <button class="btn btn-claro" type="submit">Trocar senha</button>
       </form>
     </section>
 
-    <section class="ad-card ad-espaco"><h2>Dados</h2>
-      <div class="ad-acoes">
-        <button class="btn btn-claro ad-btn-p" type="button" data-baixar-cat>Baixar cópia do catálogo</button>
-        ${local && !temExemplos() ? '<button class="btn btn-claro ad-btn-p" type="button" data-por-exemplos>Ver com dados de exemplo</button>' : ''}
-        ${local && temExemplos() ? '<button class="btn btn-claro ad-btn-p" type="button" data-tirar-exemplos>Remover dados de exemplo</button>' : ''}
-        ${local ? '<button class="ad-link ad-perigo" type="button" data-restaurar>Desfazer todas as edições deste navegador</button>' : ''}
+    <section class="pn-card pn-espaco"><h2>Dados</h2>
+      <div class="pn-acoes">
+        <button class="btn btn-claro pn-btn-p" type="button" data-baixar-cat>Baixar cópia do catálogo</button>
+        ${local && !temExemplos() ? '<button class="btn btn-claro pn-btn-p" type="button" data-por-exemplos>Ver com dados de exemplo</button>' : ''}
+        ${local && temExemplos() ? '<button class="btn btn-claro pn-btn-p" type="button" data-tirar-exemplos>Remover dados de exemplo</button>' : ''}
+        ${local ? '<button class="pn-link pn-perigo" type="button" data-restaurar>Desfazer todas as edições deste navegador</button>' : ''}
       </div>
     </section>`;
 
   const form = $('#form-loja');
   const tabela = $('#tabela-tam', form);
   $('[data-novo-tam]', form).addEventListener('click', () => tabela.insertAdjacentHTML('beforeend', linhaTamanho({ t: '', calca: [] })));
-  tabela.addEventListener('click', (e) => { if (e.target.matches('[data-tirar-tam]')) e.target.closest('.ad-tam').remove(); });
+  tabela.addEventListener('click', (e) => { if (e.target.matches('[data-tirar-tam]')) e.target.closest('.pn-tam').remove(); });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1368,7 +1368,7 @@ function abaLoja(alvo) {
     if (frete === null || Number.isNaN(frete)) return falhar('O frete grátis precisa ser um valor. Ex.: 299.');
     if (pixPct === null || Number.isNaN(pixPct) || pixPct > 50) return falhar('O desconto no Pix precisa ficar entre 0 e 50%.');
     if (!Number.isInteger(parcelas) || parcelas < 1 || parcelas > 24) return falhar('As parcelas precisam ficar entre 1 e 24.');
-    const linhas = $$('.ad-tam', form).map((d) => ({
+    const linhas = $$('.pn-tam', form).map((d) => ({
       t: $('[data-t]', d).value.trim().toUpperCase(),
       calca: $('[data-c]', d).value.split(/[^\d]+/).filter(Boolean).map(Number),
     }));
@@ -1414,7 +1414,7 @@ function abaLoja(alvo) {
   });
   ligarExemplos(alvo);
 }
-const linhaTamanho = (x) => `<div class="ad-tam"><input data-t value="${esc(x.t)}" placeholder="P" aria-label="Tamanho"><input data-c value="${esc(x.calca.join(', '))}" inputmode="numeric" placeholder="36, 38" aria-label="Números de calça"><button class="ad-link ad-perigo" type="button" data-tirar-tam>Tirar</button></div>`;
+const linhaTamanho = (x) => `<div class="pn-tam"><input data-t value="${esc(x.t)}" placeholder="P" aria-label="Tamanho"><input data-c value="${esc(x.calca.join(', '))}" inputmode="numeric" placeholder="36, 38" aria-label="Números de calça"><button class="pn-link pn-perigo" type="button" data-tirar-tam>Tirar</button></div>`;
 
 // ---------------- Início ----------------
 (async () => {
@@ -1423,6 +1423,6 @@ const linhaTamanho = (x) => `<div class="ad-tam"><input data-t value="${esc(x.t)
     await Banco.iniciar();
     await abrirPainel();
   } catch (e) {
-    $('#painel').innerHTML = `<main class="ad-acesso"><div class="ad-acesso-caixa"><span class="logo"><b>Paola</b><small>Corpus Fit</small></span><h1>Não deu para abrir o painel</h1><p>${esc(e.message)}</p><button class="btn btn-preto btn-bloco" type="button" onclick="location.reload()">Tentar de novo</button></div></main>`;
+    $('#painel').innerHTML = `<main class="pn-acesso"><div class="pn-acesso-caixa"><span class="logo"><b>Paola</b><small>Corpus Fit</small></span><h1>Não deu para abrir o painel</h1><p>${esc(e.message)}</p><button class="btn btn-preto btn-bloco" type="button" onclick="location.reload()">Tentar de novo</button></div></main>`;
   }
 })();
