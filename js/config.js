@@ -5,7 +5,7 @@
 // os dados são as regras do banco (supabase/schema.sql).
 // Nunca coloque aqui a chave secreta (sb_secret_...) nem senhas.
 // =============================================================
-const PCF_SUPABASE = { url: '', chave: '' };
+const PCF_SUPABASE = { url: 'https://jtqxvxghgncqiyougsgs.supabase.co', chave: 'sb_publishable_M8pwMApBaLQDlB5fgW1MuA_Wo82xFLb' };
 
 // Impressão digital (SHA-256) do e-mail do administrador: o código do site é público e o e-mail não fica exposto
 const PCF_ADMIN_HASH = 'c75ac29fe42b03543ff9d464250e51ce4f666fa129062d9cf7c3e3c1e2cb26b0';
