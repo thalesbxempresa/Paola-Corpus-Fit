@@ -134,7 +134,7 @@ const Nuvem = (() => {
   };
   let sb = null;
   const TRADUCOES = {
-    'Invalid login credentials': 'E-mail ou senha incorretos. Ainda não criou sua conta? Use o botão abaixo.',
+    'Invalid login credentials': 'E-mail ou senha incorretos.',
     'Signups not allowed for this instance': 'O cadastro de novas contas está desligado. Se você já tem conta, use Entrar.',
     'email rate limit exceeded': 'O Supabase já enviou muitos e-mails na última hora. Aguarde um pouco e tente de novo, ou veja a saída em supabase/LEIA-ME.md.',
     'Email not confirmed': 'Confirme seu e-mail pelo link que enviamos antes de entrar.',
@@ -175,6 +175,12 @@ const Nuvem = (() => {
       return { entrou: !!d.session };
     },
     async entrar(email, senha) { checar(await sb.auth.signInWithPassword({ email: email.trim().toLowerCase(), password: senha })); },
+    async cadastroAberto() {
+      try {
+        const r = await fetch(`${PCF_SUPABASE.url}/auth/v1/settings`, { headers: { apikey: PCF_SUPABASE.chave } });
+        return !(await r.json()).disable_signup;
+      } catch (e) { return false; }
+    },
     async esqueci(email) { checar(await sb.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: paginaAtual() })); },
     async sair() { await sb.auth.signOut(); },
     async trocarSenha(senha) { checar(await sb.auth.updateUser({ password: senha })); },
@@ -284,8 +290,8 @@ function telaAcesso(modo, aviso = '') {
         <p class="dica-tam erro" data-erro hidden></p>
         <button class="btn btn-preto btn-bloco" type="submit">${botao}</button>
         ${modo === 'entrar' ? '<button class="pn-link" type="button" data-esqueci>Esqueci a senha</button>' : ''}
-        ${!local && modo === 'entrar' ? '<button class="btn btn-claro btn-bloco" type="button" data-ir="criar">Primeiro acesso? Criar conta</button>' : ''}
-        ${!local && modo === 'criar' ? '<button class="pn-link" type="button" data-ir="entrar">Já tenho conta</button><p class="pn-nota">Depois de criar, abra o link de confirmação que chega no seu e-mail.</p>' : ''}
+        ${!local && modo === 'entrar' ? '<button class="btn btn-claro btn-bloco" type="button" data-ir="criar" hidden>Primeiro acesso? Criar conta</button>' : ''}
+        ${!local && modo === 'criar' ? '<button class="pn-link" type="button" data-ir="entrar">Já tenho conta</button>' : ''}
         ${local && modo === 'criar' ? '<p class="pn-nota">Sem o banco conectado, a conta vale só neste navegador e a senha fica guardada aqui de forma embaralhada, nunca em texto. A proteção de verdade entra com o Supabase.</p>' : ''}
       </form>
     </main>`;
@@ -293,6 +299,8 @@ function telaAcesso(modo, aviso = '') {
   const erro = $('[data-erro]', form);
   const falhar = (msg, campo) => { erro.hidden = false; erro.textContent = msg; campo?.focus(); };
   (form.email || form.senha).focus();
+  // Com o cadastro desligado no Supabase, a opção de criar conta nem aparece
+  if (!local && modo === 'entrar') Banco.cadastroAberto().then((aberto) => { const b = $('[data-ir="criar"]', form); if (b) b.hidden = !aberto; });
 
   $$('[data-ver-senha]', form).forEach((b) => b.addEventListener('click', () => {
     const input = $('input', b.parentElement);
@@ -870,6 +878,7 @@ async function abaPedidos(alvo) {
 }
 
 // ---------------- Aba Produtos ----------------
+// Feita para a dona da loja: o que mais se usa fica à vista (foto, nome, preço, se está na loja); o resto vai em "Mais opções".
 const SEGMENTOS = { produtos: ['Produtos', 'Novo produto'], kits: ['Combos', 'Novo combo'], praia: ['Moda praia', 'Nova peça'] };
 const precoTxt = (v) => (v == null || Number.isNaN(v) ? '' : String(v).replace('.', ','));
 function lerPreco(txt) {
@@ -881,7 +890,26 @@ function lerPreco(txt) {
   return Number.isFinite(n) && n >= 0 ? n : NaN;
 }
 const usadoEmKits = (id) => estado.catalogo.kits.filter((k) => k.itens?.includes(id) || k.escolha?.includes(id)).map((k) => k.nome);
-const textoItem = (x) => (x.preco == null ? 'Só nos combos' : `${x.de ? `<s>${brl(x.de)}</s> ` : ''}${brl(x.preco)}`);
+const eFixo = (id) => Catalogo.FIXOS.includes(id);
+const textoItem = (x) => (x.preco == null ? 'Vende só nos combos' : `${x.de ? `<s>${brl(x.de)}</s> ` : ''}${brl(x.preco)}`);
+const salvoNaLoja = () => (Banco.modo === 'local' ? 'Salvo neste navegador' : 'Salvo. Já está na loja.');
+
+function linhaItem(x, i, total, seg) {
+  const naLoja = x.ativo !== false;
+  const direita = estado.ordenando
+    ? `<div class="pn-item-ordem">
+        <button class="pn-ico" type="button" data-mover="-1" data-i="${i}" aria-label="Subir ${esc(x.nome)}" ${i === 0 ? 'disabled' : ''}>${I.cima}</button>
+        <button class="pn-ico" type="button" data-mover="1" data-i="${i}" aria-label="Descer ${esc(x.nome)}" ${i === total - 1 ? 'disabled' : ''}>${I.baixo}</button>
+      </div>`
+    : eFixo(x.id) ? '' : `<label class="pn-sw"><input type="checkbox" data-na-loja="${esc(x.id)}" ${naLoja ? 'checked' : ''}><i aria-hidden="true"></i><span>${naLoja ? 'Na loja' : 'Fora da loja'}</span></label>`;
+  return `<article class="pn-item ${naLoja ? '' : 'oculto'}">
+    <button class="pn-item-abre" type="button" data-editar="${esc(x.id)}">
+      <img src="${esc(x.img)}" alt="" loading="lazy">
+      <span class="pn-item-txt"><b>${esc(x.nome)}</b><span>${seg === 'praia' ? 'Em breve' : textoItem(x)}</span></span>
+    </button>
+    ${direita}
+  </article>`;
+}
 
 function abaProdutos(alvo) {
   const seg = estado.segmento;
@@ -891,24 +919,21 @@ function abaProdutos(alvo) {
     <div class="pn-filtros" role="radiogroup" aria-label="Tipo">
       ${Object.entries(SEGMENTOS).map(([id, [nome]]) => `<button class="chip" type="button" role="radio" data-seg="${id}" aria-checked="${id === seg}">${nome}</button>`).join('')}
     </div>
-    ${estado.avisoValores ? `<p class="pn-exemplo">${I.alerta}<span><b>Confira estes textos:</b> eles citam valores e não mudam sozinhos quando o preço muda. ${esc(estado.avisoValores.join('; '))}.</span><button class="pn-link" type="button" data-ok-aviso>Entendi</button></p>` : ''}
-    <section class="pn-itens">${lista.map((x, i) => `
-      <article class="pn-item ${x.ativo === false ? 'oculto' : ''}">
-        <button class="pn-item-abre" type="button" data-editar="${esc(x.id)}">
-          <img src="${esc(x.img)}" alt="" loading="lazy">
-          <span class="pn-item-txt"><b>${esc(x.nome)}</b><span>${seg === 'praia' ? 'Prévia de lançamento' : textoItem(x)}</span>${x.ativo === false ? '<em>Oculto na loja</em>' : ''}</span>
-        </button>
-        <div class="pn-item-ordem">
-          <button class="pn-ico" type="button" data-mover="-1" data-i="${i}" aria-label="Subir ${esc(x.nome)}" ${i === 0 ? 'disabled' : ''}>${I.cima}</button>
-          <button class="pn-ico" type="button" data-mover="1" data-i="${i}" aria-label="Descer ${esc(x.nome)}" ${i === lista.length - 1 ? 'disabled' : ''}>${I.baixo}</button>
-        </div>
-      </article>`).join('')}
-    </section>`;
+    ${estado.avisoValores ? `<p class="pn-exemplo">${I.alerta}<span><b>Você mudou um preço.</b> Estes textos citam valores e não mudam sozinhos: ${esc(estado.avisoValores.join('; '))}.</span><button class="pn-link" type="button" data-ok-aviso>Entendi</button></p>` : ''}
+    <p class="pn-nota pn-dica-lista">Toque em um item para mudar foto, nome, preço ou descrição.</p>
+    <section class="pn-itens">${lista.map((x, i) => linhaItem(x, i, lista.length, seg)).join('')}</section>
+    ${lista.length > 1 ? `<button class="pn-link pn-ordem" type="button" data-ordenar>${estado.ordenando ? 'Pronto, terminei de ordenar' : 'Mudar a ordem na loja'}</button>` : ''}`;
 
-  $$('[data-seg]', alvo).forEach((b) => b.addEventListener('click', () => { estado.segmento = b.dataset.seg; abaProdutos(alvo); }));
+  $$('[data-seg]', alvo).forEach((b) => b.addEventListener('click', () => { estado.segmento = b.dataset.seg; estado.ordenando = false; abaProdutos(alvo); }));
   $('[data-novo]', alvo).addEventListener('click', () => abrirEditor(seg, null));
   $('[data-ok-aviso]', alvo)?.addEventListener('click', () => { estado.avisoValores = null; abaProdutos(alvo); });
+  $('[data-ordenar]', alvo)?.addEventListener('click', () => { estado.ordenando = !estado.ordenando; abaProdutos(alvo); });
   $$('[data-editar]', alvo).forEach((b) => b.addEventListener('click', () => abrirEditor(seg, b.dataset.editar)));
+  $$('[data-na-loja]', alvo).forEach((c) => c.addEventListener('change', async () => {
+    lista.find((x) => x.id === c.dataset.naLoja).ativo = c.checked;
+    await salvarCatalogo(c.checked ? 'Voltou para a loja' : 'Saiu da loja');
+    abaProdutos(alvo);
+  }));
   $$('[data-mover]', alvo).forEach((b) => b.addEventListener('click', async () => {
     const i = Number(b.dataset.i);
     const j = i + Number(b.dataset.mover);
@@ -931,14 +956,15 @@ async function salvarCatalogo(msg) {
 }
 
 const NOVOS = {
-  produtos: () => ({ id: '', nome: '', cat: 'tratamento', preco: null, img: '', frase: '', desc: '', pontos: [], ativo: true }),
-  kits: () => ({ id: '', nome: '', cat: 'kits', img: '', itens: [], de: null, preco: null, frase: '', desc: '', ativo: true }),
+  produtos: () => ({ id: '', nome: '', cat: 'tratamento', preco: null, img: '', desc: '', ativo: true }),
+  kits: () => ({ id: '', nome: '', cat: 'kits', img: '', itens: [], de: null, preco: null, desc: '', ativo: true }),
   praia: () => ({ id: '', nome: '', img: '', foco: [], cores: ['#1F1A17', '#B03A5B', '#1D6A86'], ativo: true }),
 };
 
 function abrirEditor(seg, id) {
   const r = id ? copia(estado.catalogo[seg].find((x) => x.id === id)) : NOVOS[seg]();
-  estado.editor = { seg, id, r, sujo: false };
+  estado.ordenando = false;
+  estado.editor = { seg, id, r, sujo: false, mais: false };
   desenharEditor();
   scrollTo(0, 0);
 }
@@ -949,10 +975,10 @@ const campo = (rotulo, nome, valor, op = {}) => `<div class="campo"><label for="
 const area = (rotulo, nome, valor, op = {}) => `<div class="campo"><label for="f-${nome}">${rotulo}</label><textarea id="f-${nome}" name="${nome}" rows="${op.linhas || 3}">${esc(valor ?? '')}</textarea>${ajuda(op.ajuda)}</div>`;
 const seletor = (rotulo, nome, valor, opcoes, op = {}) => `<div class="campo"><label for="f-${nome}">${rotulo}</label><select id="f-${nome}" name="${nome}" ${op.attrs || ''}>${opcoes.map(([v, n]) => `<option value="${v}" ${v === valor ? 'selected' : ''}>${n}</option>`).join('')}</select>${ajuda(op.ajuda)}</div>`;
 const chave = (rotulo, nome, marcado, op = {}) => `<label class="pn-chave"><input type="checkbox" name="${nome}" value="${op.valor || '1'}" ${marcado ? 'checked' : ''} ${op.attrs || ''}><span>${rotulo}${op.ajuda ? `<small>${op.ajuda}</small>` : ''}</span></label>`;
-const fotoBloco = (rotulo, nome, valor, op = {}) => `<div class="pn-foto" data-foto="${nome}">
+const fotoBloco = (rotulo, nome, valor, op = {}) => `<div class="pn-foto ${op.grande ? 'grande' : ''}" data-foto="${nome}">
     ${valor ? `<img src="${esc(valor)}" alt="">` : '<span class="pn-foto-vazia">Sem foto</span>'}
     <div><b>${rotulo}</b>${ajuda(op.ajuda)}
-      <div class="pn-foto-acoes"><label class="pn-link">${valor ? 'Trocar foto' : 'Escolher foto'}<input type="file" accept="image/*" hidden></label>
+      <div class="pn-foto-acoes"><label class="btn btn-claro pn-btn-p pn-btn-foto">${valor ? 'Trocar foto' : 'Escolher foto'}<input class="pn-oculto" type="file" accept="image/*"></label>
       ${valor && op.opcional ? '<button class="pn-link pn-perigo" type="button" data-tirar-foto>Tirar</button>' : ''}</div>
     </div>
   </div>`;
@@ -970,121 +996,159 @@ async function prepararFoto(arquivo) {
   return new Promise((ok, erro) => tela.toBlob((b) => (b ? ok(b) : erro(new Error('Não deu para converter a foto.'))), 'image/webp', 0.82));
 }
 
-function secaoProduto(r) {
-  const fixo = Catalogo.FIXOS.includes(r.id);
-  const ehCinta = r.cat === 'cintas';
-  return `
-    <section class="pn-card"><h2>Fotos</h2>
-      ${fotoBloco('Foto principal', 'img', r.img)}
-      ${fotoBloco('Segunda foto', 'img2', r.img2, { opcional: true, ajuda: 'Aparece quando a cliente passa o mouse no card.' })}
-      <h3 class="pn-sub">Galeria da página do produto</h3>
-      ${(r.galeria || []).map((g, i) => `<div class="pn-gal"><img src="${esc(g.src)}" alt=""><input name="g-${i}" value="${esc(g.txt || '')}" placeholder="Legenda (opcional)" aria-label="Legenda da foto ${i + 1}"><button class="pn-link pn-perigo" type="button" data-tirar-gal="${i}">Tirar</button></div>`).join('')}
-      <label class="pn-link pn-add">Adicionar foto à galeria<input type="file" accept="image/*" data-gal hidden></label>
-    </section>
-    <section class="pn-card"><h2>Identificação</h2>
-      ${campo('Nome', 'nome', r.nome, { attrs: 'required' })}
-      <div class="pn-2">
-        ${campo('Nome curto', 'curto', r.curto, { ajuda: 'Usado no pedido e nos combos.' })}
-        ${campo('Plural', 'plural', r.plural, { ajuda: 'Se vier 2 no combo. Ex.: Sutiãs reforçados.' })}
-      </div>
-      <div class="pn-2">
-        ${seletor('Categoria', 'cat', r.cat, CATEGORIAS, fixo ? { attrs: 'disabled', ajuda: 'Fixa: este item é base do caminho de compra.' } : {})}
-        ${ehCinta ? campo('Barbatanas', 'barbatanas', r.barbatanas, { tipo: 'number', attrs: 'inputmode="numeric" min="1"' }) : campo('Selo', 'selo', r.selo, { ajuda: 'Etiqueta na foto. Ex.: A melhor.' })}
-      </div>
-      ${ehCinta ? campo('Selo', 'selo', r.selo, { ajuda: 'Etiqueta na foto. Ex.: A melhor.' }) : ''}
-    </section>
-    ${secaoPreco(r, !fixo)}
-    <section class="pn-card"><h2>Textos</h2>
-      ${campo('Frase de destaque', 'frase', r.frase)}
-      ${area('Descrição', 'desc', r.desc, { linhas: 5 })}
-      ${area('Pontos principais', 'pontos', (r.pontos || []).join('\n'), { linhas: 4, ajuda: 'Um por linha.' })}
-      ${area('Como usar', 'uso', r.uso)}
-    </section>
-    <section class="pn-card"><h2>Opções</h2>
-      ${chave('Pede o número da calça', 'tamanhos', r.tamanhos, { ajuda: 'A cliente escolhe o tamanho antes de comprar.' })}
-      ${chaveVisivel(r, fixo)}
-    </section>`;
+const ETIQUETA = (r, exemplo) => campo('Etiqueta na foto', 'selo', r.selo, { ajuda: `Opcional. Ex.: ${exemplo}.` });
+const chaveNaLoja = (r) => (eFixo(r.id) ? '' : chave('Mostrar na loja', 'ativo', r.ativo !== false, { ajuda: 'Desligue quando acabar o estoque. Nada é apagado.' }));
+
+function secaoFotoNome(r, seg, exemplo) {
+  const novoProduto = seg === 'produtos' && !estado.editor.id;
+  return `<section class="pn-card"><h2>Foto e nome</h2>
+    ${fotoBloco('Foto principal', 'img', r.img, { grande: true, ajuda: 'É a primeira foto que a cliente vê.' })}
+    ${campo('Nome', 'nome', r.nome, { attrs: `required placeholder="Ex.: ${exemplo}"` })}
+    ${novoProduto ? seletor('Tipo de produto', 'cat', r.cat, CATEGORIAS) : ''}
+    ${novoProduto && r.cat === 'cintas' ? campo('Quantas barbatanas?', 'barbatanas', r.barbatanas, { tipo: 'number', attrs: 'inputmode="numeric" min="1"' }) : ''}
+    ${chaveNaLoja(r)}
+  </section>`;
 }
 
 function secaoPreco(r, podeSemPreco) {
   const ed = estado.editor;
-  if (ed.semPreco === undefined) ed.semPreco = r.preco == null && podeSemPreco && ed.seg === 'produtos';
+  if (ed.semPreco === undefined) ed.semPreco = r.preco == null && podeSemPreco && !!ed.id;
   const sem = ed.semPreco;
   return `<section class="pn-card"><h2>Preço</h2>
-    <div class="pn-2">
-      ${campo('De (riscado)', 'de', precoTxt(r.de), { attrs: 'inputmode="decimal" placeholder="Opcional"', ajuda: 'Só use com comprovação do preço anterior.' })}
-      ${campo('Por', 'preco', precoTxt(r.preco), { attrs: `inputmode="decimal" ${sem ? 'disabled' : ''}` })}
+    ${sem ? '' : `<div class="pn-2">
+      ${campo('Preço de venda', 'preco', precoTxt(r.preco), { attrs: 'inputmode="decimal" placeholder="Ex.: 369,99"' })}
+      ${campo('Preço antigo, riscado', 'de', precoTxt(r.de), { attrs: 'inputmode="decimal" placeholder="Opcional"', ajuda: 'Só preencha se esse preço já foi cobrado de verdade.' })}
     </div>
-    ${podeSemPreco && estado.editor.seg === 'produtos' ? chave('Sem preço: vem só nos combos', 'semPreco', sem) : ''}
-    <p class="pn-previa" id="previa-preco"></p>
+    <p class="pn-previa-preco" id="previa-preco"></p>`}
+    ${podeSemPreco ? chave('Vende só dentro de combos, sem preço próprio', 'semPreco', sem) : ''}
   </section>`;
 }
 
-const chaveVisivel = (r, fixo) => chave('Visível na loja', 'ativo', r.ativo !== false, fixo
-  ? { attrs: 'disabled', ajuda: 'Este item é base do caminho de compra e não pode ser ocultado.' }
-  : { ajuda: 'Desligado, some da loja sem apagar.' });
+function blocoExcluir(seg, id) {
+  if (!id || eFixo(id)) return '';
+  const combos = seg === 'produtos' ? usadoEmKits(id) : [];
+  return `<div class="pn-excluir"><h3 class="pn-sub">Excluir</h3>${combos.length
+    ? `<p class="pn-nota">Este produto faz parte de: ${esc(combos.join(', '))}. Tire do combo antes de excluir.</p>`
+    : '<button class="pn-link pn-perigo" type="button" data-excluir-item>Excluir este item da loja</button>'}</div>`;
+}
 
-function secaoKit(r) {
-  const fixo = Catalogo.FIXOS.includes(r.id);
-  const conta = (id) => (r.itens || []).filter((i) => i === id).length;
+const maisOpcoes = (resumo, corpo) => `<details class="pn-card pn-mais" ${estado.editor.mais ? 'open' : ''}>
+    <summary><b>Mais opções</b><small>${resumo}</small></summary>
+    <div class="pn-mais-corpo">${corpo}</div>
+  </details>`;
+
+function formProduto(r) {
+  const { id } = estado.editor;
+  const fixo = eFixo(id);
   return `
-    <section class="pn-card"><h2>Fotos</h2>
-      ${fotoBloco('Foto principal', 'img', r.img)}
-      ${fotoBloco('Segunda foto', 'img2', r.img2, { opcional: true })}
+    ${secaoFotoNome(r, 'produtos', 'Cinta Modeladora')}
+    ${secaoPreco(r, !fixo)}
+    <section class="pn-card"><h2>Descrição</h2>
+      ${area('O que dizer sobre o produto', 'desc', r.desc, { linhas: 5 })}
+      ${area('Principais vantagens', 'pontos', (r.pontos || []).join('\n'), { linhas: 4, ajuda: 'Uma em cada linha. Aparecem em lista na página do produto.' })}
     </section>
-    <section class="pn-card"><h2>Identificação</h2>
-      ${campo('Nome', 'nome', r.nome, { attrs: 'required' })}
-      <div class="pn-2">
-        ${campo('Subtítulo', 'sub', r.sub, { ajuda: 'Ex.: Leve 5 produtos.' })}
-        ${campo('Selo', 'selo', r.selo, { ajuda: 'Ex.: O que mais sai.' })}
-      </div>
-      ${campo('Chamada do card', 'gancho', r.gancho, { ajuda: 'Vazia: mostra quanto economiza.' })}
-    </section>
+    ${maisOpcoes('Mais fotos, etiqueta, como usar', `
+      ${ETIQUETA(r, 'A melhor')}
+      ${campo('Frase curta abaixo do nome', 'frase', r.frase, { ajuda: 'Opcional.' })}
+      ${area('Como usar', 'uso', r.uso, { ajuda: 'Opcional.' })}
+      <h3 class="pn-sub">Mais fotos</h3>
+      ${fotoBloco('Segunda foto do card', 'img2', r.img2, { opcional: true, ajuda: 'Aparece ao passar o mouse no computador.' })}
+      ${(r.galeria || []).map((g, i) => `<div class="pn-gal"><img src="${esc(g.src)}" alt=""><input name="g-${i}" value="${esc(g.txt || '')}" placeholder="Legenda (opcional)" aria-label="Legenda da foto ${i + 1}"><button class="pn-link pn-perigo" type="button" data-tirar-gal="${i}">Tirar</button></div>`).join('')}
+      <label class="btn btn-claro pn-btn-p pn-btn-foto pn-add">Adicionar foto na página do produto<input class="pn-oculto" type="file" accept="image/*" data-gal></label>
+      <h3 class="pn-sub">Detalhes</h3>
+      ${chave('A cliente escolhe o tamanho pela calça', 'tamanhos', r.tamanhos)}
+      ${id && !fixo ? seletor('Tipo de produto', 'cat', r.cat, CATEGORIAS) : ''}
+      ${id && r.cat === 'cintas' ? campo('Quantas barbatanas?', 'barbatanas', r.barbatanas, { tipo: 'number', attrs: 'inputmode="numeric" min="1"' }) : ''}
+      ${campo('Nome curto', 'curto', r.curto, { ajuda: 'Opcional. Usado no pedido e nos combos. Vazio: usa o nome.' })}
+      ${campo('Nome no plural', 'plural', r.plural, { ajuda: 'Opcional. Usado quando vêm 2 no combo. Ex.: Sutiãs reforçados.' })}
+      ${blocoExcluir('produtos', id)}
+    `)}`;
+}
+
+function resumoCombo(r) {
+  const conta = {};
+  (r.itens || []).forEach((i) => { conta[i] = (conta[i] || 0) + 1; });
+  const nomes = Object.entries(conta).map(([i, n]) => {
+    const p = estado.catalogo.produtos.find((x) => x.id === i);
+    const nome = p?.curto || p?.nome || i;
+    return n > 1 ? `${n} ${p?.plural || nome}` : nome;
+  });
+  return nomes.length ? `Vem: ${nomes.join(' + ')}` : 'Ainda não tem nenhum produto no combo.';
+}
+
+function formKit(r) {
+  const { id } = estado.editor;
+  const conta = (p) => (r.itens || []).filter((i) => i === p).length;
+  return `
+    ${secaoFotoNome(r, 'kits', 'Kit Completo')}
     ${secaoPreco(r, false)}
     <section class="pn-card"><h2>O que vem no combo</h2>
       <ul class="pn-compoe">${estado.catalogo.produtos.map((p) => `<li><img src="${esc(p.img)}" alt=""><span>${esc(p.curto || p.nome)}</span>
         <div class="qtd"><button type="button" data-kit="${esc(p.id)}" data-d="-1" aria-label="Menos ${esc(p.nome)}">−</button><span>${conta(p.id)}</span><button type="button" data-kit="${esc(p.id)}" data-d="1" aria-label="Mais ${esc(p.nome)}">+</button></div></li>`).join('')}</ul>
-      <h3 class="pn-sub">A cliente escolhe um destes (opcional)</h3>
+      <p class="pn-previa-preco">${esc(resumoCombo(r))}</p>
+      <h3 class="pn-sub">A cliente escolhe mais um item?</h3>
+      <p class="pn-nota">Opcional. Marque as opções; ela escolhe uma na hora de comprar.</p>
       ${estado.catalogo.produtos.map((p) => chave(esc(p.curto || p.nome), 'escolha', r.escolha?.includes(p.id), { valor: esc(p.id) })).join('')}
     </section>
-    <section class="pn-card"><h2>Textos</h2>
-      ${campo('Frase de destaque', 'frase', r.frase)}
-      ${area('Descrição', 'desc', r.desc, { linhas: 4 })}
+    <section class="pn-card"><h2>Descrição</h2>
+      ${area('O que dizer sobre o combo', 'desc', r.desc, { linhas: 4 })}
     </section>
-    <section class="pn-card"><h2>Opções</h2>${chaveVisivel(r, fixo)}</section>`;
+    ${maisOpcoes('Etiqueta, segunda foto, textos do card', `
+      ${ETIQUETA(r, 'O que mais sai')}
+      ${campo('Frase curta abaixo do nome', 'frase', r.frase, { ajuda: 'Opcional.' })}
+      ${campo('Destaque no card', 'gancho', r.gancho, { ajuda: 'Opcional. Vazio: mostra quanto a cliente economiza.' })}
+      ${campo('Resumo do combo', 'sub', r.sub, { ajuda: 'Opcional. Ex.: Leve 5 produtos.' })}
+      ${fotoBloco('Segunda foto do card', 'img2', r.img2, { opcional: true, ajuda: 'Aparece ao passar o mouse no computador.' })}
+      ${blocoExcluir('kits', id)}
+    `)}`;
 }
 
-function secaoPraia(r) {
+function formPraia(r) {
+  const { id } = estado.editor;
   return `
-    <section class="pn-card"><h2>Foto e nome</h2>
-      ${fotoBloco('Foto', 'img', r.img)}
-      ${campo('Nome', 'nome', r.nome, { attrs: 'required' })}
-      ${campo('Selo', 'selo', r.selo, { ajuda: 'Ex.: Destaque.' })}
-    </section>
-    <section class="pn-card"><h2>O que a peça resolve</h2>
-      ${FOCOS.map(([id, nome]) => chave(nome, 'foco', r.foco?.includes(id), { valor: id })).join('')}
-      ${chave('Entra no "Monte seu biquíni"', 'biquini', r.biquini, { ajuda: 'Top e calcinha em tamanhos diferentes.' })}
+    ${secaoFotoNome(r, 'praia', 'Biquíni Cintura Alta')}
+    <section class="pn-card"><h2>O que a peça valoriza</h2>
+      <p class="pn-nota">A cliente filtra a coleção por isso.</p>
+      ${FOCOS.map(([f, nome]) => chave(nome, 'foco', r.foco?.includes(f), { valor: f })).join('')}
+      ${chave('É biquíni: entra no "Monte seu biquíni"', 'biquini', r.biquini, { ajuda: 'Top e calcinha em tamanhos diferentes.' })}
     </section>
     <section class="pn-card"><h2>Cores previstas</h2>
       <div class="pn-cores">${(r.cores || []).map((c, i) => `<div><input type="color" name="cor" value="${esc(c)}" aria-label="Cor ${i + 1}">${r.cores.length > 1 ? `<button class="pn-link pn-perigo" type="button" data-tirar-cor="${i}">Tirar</button>` : ''}</div>`).join('')}</div>
       ${(r.cores || []).length < 5 ? '<button class="pn-link pn-add" type="button" data-nova-cor>Adicionar cor</button>' : ''}
     </section>
-    <section class="pn-card"><h2>Opções</h2>${chaveVisivel(r, false)}</section>`;
+    ${maisOpcoes('Etiqueta na foto', `
+      ${ETIQUETA(r, 'Destaque')}
+      ${blocoExcluir('praia', id)}
+    `)}`;
+}
+
+// O que a cliente vai ver, atualizado enquanto se digita
+function textoPrevia(r, seg) {
+  const preco = Number.isFinite(r.preco) && r.preco > 0 ? r.preco : null;
+  const falta = estado.editor.semPreco ? 'Vende só nos combos' : 'Falta o preço';
+  const valores = seg === 'praia' ? '<span>Em breve</span>'
+    : preco ? `${r.de > preco ? `<s>${brl(r.de)}</s>` : ''}<b>${brl(preco)}</b><small>${brl(preco * (1 - estado.catalogo.loja.pix))} no Pix</small>`
+      : `<span>${falta}</span>`;
+  return `${r.selo ? `<em>${esc(r.selo)}</em>` : ''}<h3>${esc(r.nome) || 'Nome do produto'}</h3>${valores}`;
 }
 
 function desenharEditor() {
   const { seg, id, r } = estado.editor;
   const alvo = $('#aba');
-  const secoes = { produtos: secaoProduto, kits: secaoKit, praia: secaoPraia }[seg];
-  const bloqueio = !id ? null : Catalogo.FIXOS.includes(id) ? 'Este item é base do caminho de compra: dá para editar, não para excluir.'
-    : seg !== 'praia' && usadoEmKits(id).length ? `Faz parte de: ${usadoEmKits(id).join(', ')}. Tire do combo antes de excluir.` : null;
+  const corpo = { produtos: formProduto, kits: formKit, praia: formPraia }[seg](r);
   alvo.innerHTML = `
     <button class="pn-voltar" type="button" data-voltar>${I.voltar}Voltar para a lista</button>
     <div class="pn-cab"><h1 class="pn-h1">${id ? esc(r.nome) : SEGMENTOS[seg][1]}</h1>${id && seg !== 'praia' ? `<a class="pn-link" href="produto.html?id=${esc(id)}" target="_blank" rel="noopener">Ver na loja</a>` : ''}</div>
-    <form id="editor" class="pn-form" novalidate>
-      ${secoes(r)}
-      ${id ? `<section class="pn-card pn-zona"><h2>Excluir</h2>${bloqueio ? `<p class="pn-texto">${esc(bloqueio)}</p>` : '<button class="pn-link pn-perigo" type="button" data-excluir-item>Excluir este item da loja</button>'}</section>` : ''}
-      <div class="pn-salvar"><p class="dica-tam erro" data-erro hidden></p><button class="btn btn-preto btn-bloco" type="submit">Salvar</button></div>
+    <form id="editor" class="pn-form pn-form-produto" novalidate>
+      ${corpo}
+      <aside class="pn-previa">
+        <small class="pn-previa-rotulo">Como aparece na loja</small>
+        <div class="pn-previa-cartao">
+          <span class="pn-previa-foto">${r.img ? `<img src="${esc(r.img)}" alt="">` : ''}</span>
+          <div class="pn-previa-txt" id="previa-loja">${textoPrevia(r, seg)}</div>
+        </div>
+      </aside>
+      <div class="pn-salvar"><p class="dica-tam erro" data-erro hidden></p><button class="btn btn-preto btn-bloco" type="submit">Salvar alterações</button></div>
     </form>`;
   ligarEditor(alvo);
 }
@@ -1099,7 +1163,7 @@ function lerEditor() {
   const marcados = (n) => $$(`[name="${n}"]:checked`, f).map((x) => x.value);
   r.nome = valor('nome');
   opcional('selo');
-  if (el.ativo && !el.ativo.disabled) r.ativo = el.ativo.checked;
+  if (el.ativo) r.ativo = el.ativo.checked;
   if (seg === 'praia') {
     r.foco = marcados('foco');
     if (el.biquini.checked) r.biquini = true; else delete r.biquini;
@@ -1118,30 +1182,28 @@ function lerEditor() {
     return;
   }
   ['curto', 'plural', 'uso'].forEach(opcional);
-  if (el.cat && !el.cat.disabled) r.cat = el.cat.value;
+  if (el.cat) r.cat = el.cat.value;
   if (el.barbatanas) { if (valor('barbatanas')) r.barbatanas = Number(valor('barbatanas')); else delete r.barbatanas; }
   r.pontos = valor('pontos').split('\n').map((x) => x.trim()).filter(Boolean);
   if (!r.pontos.length) delete r.pontos;
-  if (el.tamanhos.checked) r.tamanhos = true; else delete r.tamanhos;
+  if (el.tamanhos) { if (el.tamanhos.checked) r.tamanhos = true; else delete r.tamanhos; }
   (r.galeria || []).forEach((g, i) => { const t = valor(`g-${i}`); if (t) g.txt = t; else delete g.txt; });
 }
 
+// Devolve [mensagem, campo que precisa de atenção]
 function validarEditor() {
-  const { seg, id, r } = estado.editor;
-  const fixo = Catalogo.FIXOS.includes(id);
-  if (!r.nome) return 'Escreva o nome.';
-  if (!r.img) return 'Escolha a foto principal.';
-  if (seg === 'praia') return r.cores?.length ? null : 'Deixe pelo menos uma cor.';
-  if (!r.desc) return 'Escreva a descrição.';
-  if (Number.isNaN(r.de)) return 'O preço "de" não parece um número. Ex.: 650 ou 369,99.';
-  if (Number.isNaN(r.preco)) return 'O preço "por" não parece um número. Ex.: 650 ou 369,99.';
-  if ((seg === 'kits' || fixo) && !r.preco) return 'Este item precisa de preço.';
-  if (seg === 'produtos' && !estado.editor.semPreco && r.preco == null) return 'Escreva o preço ou marque "Sem preço".';
-  if (r.preco != null && r.preco <= 0) return 'O preço precisa ser maior que zero.';
-  if (r.de && r.preco && r.de <= r.preco) return 'O preço "de" precisa ser maior que o "por", ou fique vazio.';
-  if (seg === 'kits' && !r.itens?.length) return 'Coloque pelo menos um produto no combo.';
-  if (id === 'combo-duplo' && !r.escolha?.length) return 'O Combo Duplo precisa de pelo menos uma opção para a cliente escolher.';
-  if (seg === 'produtos' && r.cat === 'cintas' && r.preco != null && !r.barbatanas) return 'Informe quantas barbatanas a cinta tem.';
+  const { seg, id, r, semPreco } = estado.editor;
+  if (!r.nome) return ['Escreva o nome.', 'nome'];
+  if (!r.img) return ['Escolha a foto principal.'];
+  if (seg === 'praia') return r.cores?.length ? null : ['Deixe pelo menos uma cor.'];
+  if (Number.isNaN(r.preco)) return ['O preço de venda não parece um número. Ex.: 369,99.', 'preco'];
+  if (Number.isNaN(r.de)) return ['O preço antigo não parece um número. Ex.: 650.', 'de'];
+  if (!semPreco && !r.preco) return ['Escreva o preço de venda.', 'preco'];
+  if (r.de && r.preco && r.de <= r.preco) return ['O preço antigo precisa ser maior que o de venda. Se não houver, deixe vazio.', 'de'];
+  if (!r.desc) return ['Escreva a descrição.', 'desc'];
+  if (seg === 'kits' && !r.itens?.length) return ['Coloque pelo menos um produto no combo.'];
+  if (id === 'combo-duplo' && !r.escolha?.length) return ['O Combo Duplo precisa de pelo menos uma opção para a cliente escolher.'];
+  if (seg === 'produtos' && r.cat === 'cintas' && r.preco != null && !r.barbatanas) return ['Informe quantas barbatanas a cinta tem.', 'barbatanas'];
   return null;
 }
 
@@ -1158,7 +1220,7 @@ function idNovo(nome) {
 function textosComValor(doc) {
   const achados = [];
   [...doc.produtos, ...doc.kits].forEach((x) => {
-    const onde = [['frase', x.frase], ['chamada', x.gancho], ['descrição', x.desc], ['subtítulo', x.sub], ...(x.pontos || []).map((p) => ['pontos', p])]
+    const onde = [['frase', x.frase], ['destaque', x.gancho], ['descrição', x.desc], ['resumo', x.sub], ...(x.pontos || []).map((p) => ['vantagens', p])]
       .filter(([, t]) => t && /R\$\s?\d/.test(t)).map(([n]) => n);
     if (onde.length) achados.push(`${x.nome} (${[...new Set(onde)].join(', ')})`);
   });
@@ -1171,26 +1233,33 @@ function ligarEditor(alvo) {
   const { seg, id } = ed;
   const redesenhar = () => { lerEditor(); ed.sujo = true; desenharEditor(); };
 
-  form.addEventListener('input', () => { ed.sujo = true; });
+  // Conta do Pix, das parcelas e do desconto; e o cartão de como fica na loja
+  const previaPreco = $('#previa-preco', form);
+  const atualizarPrevias = () => {
+    $('#previa-loja', form).innerHTML = textoPrevia(ed.r, seg);
+    if (!previaPreco) return;
+    const p = lerPreco(form.elements.preco.value);
+    const de = lerPreco(form.elements.de.value);
+    const { pix, parcelas } = estado.catalogo.loja;
+    previaPreco.textContent = p > 0 ? `No Pix: ${brl(p * (1 - pix))} · Em até ${parcelas}x de ${brl(p / parcelas)}${de > p ? ` · ${Math.round((1 - p / de) * 100)}% de desconto` : ''}` : '';
+  };
+  atualizarPrevias();
+
+  form.addEventListener('input', () => { ed.sujo = true; lerEditor(); atualizarPrevias(); });
+  $('.pn-mais', form)?.addEventListener('toggle', (e) => { ed.mais = e.target.open; });
   $('[data-voltar]', alvo).addEventListener('click', () => {
     if (ed.sujo && !confirm('Sair sem salvar as alterações?')) return;
     estado.editor = null;
     abaProdutos(alvo);
     scrollTo(0, 0);
   });
-  form.elements.cat?.addEventListener('change', redesenhar);
+  form.elements.cat?.addEventListener('change', () => {
+    lerEditor();
+    if (ed.r.cat === 'cintas') ed.r.tamanhos = true; else delete ed.r.tamanhos;
+    ed.sujo = true;
+    desenharEditor();
+  });
   form.elements.semPreco?.addEventListener('change', redesenhar);
-
-  // Conta do Pix e das parcelas ao digitar o preço
-  const previa = $('#previa-preco', form);
-  const atualizarPrevia = () => {
-    if (!previa) return;
-    const p = lerPreco(form.elements.preco.value);
-    const { pix, parcelas } = estado.catalogo.loja;
-    previa.textContent = p > 0 ? `A cliente vê: ${brl(p * (1 - pix))} no Pix · ${parcelas}x de ${brl(p / parcelas)}` : '';
-  };
-  form.elements.preco?.addEventListener('input', atualizarPrevia);
-  atualizarPrevia();
 
   // Fotos
   const enviarFoto = async (arquivo, aoPronto) => {
@@ -1206,7 +1275,12 @@ function ligarEditor(alvo) {
   };
   $$('[data-foto] input[type=file]', form).forEach((inp) => inp.addEventListener('change', () => {
     const nome = inp.closest('[data-foto]').dataset.foto;
-    if (inp.files[0]) enviarFoto(inp.files[0], (url) => { ed.r[nome] = url; });
+    if (!inp.files[0]) return;
+    enviarFoto(inp.files[0], (url) => {
+      // A página do produto abre pela galeria: a foto principal nova precisa aparecer lá também
+      if (nome === 'img' && ed.r.galeria?.[0]?.src === ed.r.img) ed.r.galeria[0].src = url;
+      ed.r[nome] = url;
+    });
   }));
   $$('[data-tirar-foto]', form).forEach((b) => b.addEventListener('click', () => {
     lerEditor();
@@ -1265,8 +1339,15 @@ function ligarEditor(alvo) {
     const erro = $('[data-erro]', form);
     const problema = validarEditor();
     if (problema) {
+      const [msg, nomeCampo] = problema;
       erro.hidden = false;
-      erro.textContent = problema;
+      erro.textContent = msg;
+      const alvoCampo = nomeCampo && form.elements[nomeCampo];
+      if (alvoCampo) {
+        const caixa = alvoCampo.closest('details');
+        if (caixa) caixa.open = true;
+        alvoCampo.focus();
+      }
       return;
     }
     erro.hidden = true;
@@ -1277,7 +1358,7 @@ function ligarEditor(alvo) {
     const precoMudou = antes && (antes.preco !== ed.r.preco || antes.de !== ed.r.de);
     if (id) lista[lista.indexOf(antes)] = ed.r;
     else { ed.r.id = idNovo(ed.r.nome); lista.push(ed.r); }
-    if (await salvarCatalogo(id ? 'Alterações salvas' : 'Item criado')) {
+    if (await salvarCatalogo(id ? salvoNaLoja() : 'Item criado')) {
       if (precoMudou) {
         const achados = textosComValor(estado.catalogo);
         estado.avisoValores = achados.length ? achados : null;

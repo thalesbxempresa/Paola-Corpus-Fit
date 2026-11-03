@@ -18,7 +18,9 @@ Enquanto `js/config.js` estiver vazio, o painel (`admin.html`) funciona só no n
    Essa chave é pública por natureza: quem protege os dados são as regras do `schema.sql`. **A chave secreta (`sb_secret_...`) nunca entra no site nem no GitHub.**
 5. **Publique o site** e abra `/admin.html`.
 6. **Crie a conta de administrador**: clique em *Primeiro acesso? Criar conta*, use o e-mail do administrador e escolha a senha. Confirme pelo link do e-mail e entre. Na primeira entrada, o catálogo atual vai sozinho para o banco.
-7. **Feche o cadastro.** Em *Authentication > Sign In / Providers*, desligue *Allow new users to sign up*.
+7. **Feche o cadastro.** Em *Authentication > Sign In / Providers*, desligue *Allow new users to sign up*. O botão de criar conta some sozinho do painel.
+
+Se desligar a confirmação por e-mail (*Confirm email*), feche o cadastro logo depois de criar a conta: sem a confirmação, quem criar primeiro uma conta com o e-mail do administrador entra como administrador.
 
 ## Se o e-mail de confirmação não chegar
 
@@ -36,6 +38,8 @@ A tabela `admins` guarda a impressão digital (SHA-256) do e-mail, porque este r
 ```sql
 insert into public.admins values (encode(sha256(convert_to(lower('email@dela.com'), 'UTF8')), 'hex'));
 ```
+
+Com o cadastro fechado, crie a conta dela em *Authentication > Users > Add user > Create new user*, com *Auto Confirm User*.
 
 ## O que cada um pode fazer
 
