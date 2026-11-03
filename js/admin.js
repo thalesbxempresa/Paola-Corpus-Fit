@@ -134,7 +134,9 @@ const Nuvem = (() => {
   };
   let sb = null;
   const TRADUCOES = {
-    'Invalid login credentials': 'E-mail ou senha incorretos.',
+    'Invalid login credentials': 'E-mail ou senha incorretos. Ainda não criou sua conta? Use o botão abaixo.',
+    'Signups not allowed for this instance': 'O cadastro de novas contas está desligado. Se você já tem conta, use Entrar.',
+    'email rate limit exceeded': 'O Supabase já enviou muitos e-mails na última hora. Aguarde um pouco e tente de novo, ou veja a saída em supabase/LEIA-ME.md.',
     'Email not confirmed': 'Confirme seu e-mail pelo link que enviamos antes de entrar.',
     'User already registered': 'Esta conta já existe. Use Entrar.',
     'Email address not authorized': 'O Supabase não enviou o e-mail: o servidor padrão só envia para quem é da equipe do projeto. Veja o passo a passo em supabase/LEIA-ME.md.',
@@ -282,8 +284,8 @@ function telaAcesso(modo, aviso = '') {
         <p class="dica-tam erro" data-erro hidden></p>
         <button class="btn btn-preto btn-bloco" type="submit">${botao}</button>
         ${modo === 'entrar' ? '<button class="ad-link" type="button" data-esqueci>Esqueci a senha</button>' : ''}
-        ${!local && modo === 'entrar' ? '<button class="ad-link" type="button" data-ir="criar">Primeiro acesso? Criar conta</button>' : ''}
-        ${!local && modo === 'criar' ? '<button class="ad-link" type="button" data-ir="entrar">Já tenho conta</button>' : ''}
+        ${!local && modo === 'entrar' ? '<button class="btn btn-claro btn-bloco" type="button" data-ir="criar">Primeiro acesso? Criar conta</button>' : ''}
+        ${!local && modo === 'criar' ? '<button class="ad-link" type="button" data-ir="entrar">Já tenho conta</button><p class="ad-nota">Depois de criar, abra o link de confirmação que chega no seu e-mail.</p>' : ''}
         ${local && modo === 'criar' ? '<p class="ad-nota">Sem o banco conectado, a conta vale só neste navegador e a senha fica guardada aqui de forma embaralhada, nunca em texto. A proteção de verdade entra com o Supabase.</p>' : ''}
       </form>
     </main>`;
@@ -297,7 +299,11 @@ function telaAcesso(modo, aviso = '') {
     input.type = input.type === 'password' ? 'text' : 'password';
     b.textContent = input.type === 'password' ? 'Mostrar' : 'Ocultar';
   }));
-  $$('[data-ir]', form).forEach((b) => b.addEventListener('click', () => telaAcesso(b.dataset.ir)));
+  $$('[data-ir]', form).forEach((b) => b.addEventListener('click', () => {
+    const digitado = form.email.value;
+    telaAcesso(b.dataset.ir);
+    $('#form-acesso').email.value = digitado;
+  }));
   $('[data-esqueci]', form)?.addEventListener('click', async () => {
     if (local) {
       if (!confirm('Sem o banco conectado não há como recuperar a senha. Apagar a conta deste navegador e criar outra? Produtos e pedidos salvos aqui continuam.')) return;
