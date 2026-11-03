@@ -7,13 +7,18 @@ const $$ = (sel, raiz = document) => [...raiz.querySelectorAll(sel)];
 const brl = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const pix = (v) => v * (1 - LOJA.pix);
 const parcela = (v) => v / LOJA.parcelas;
+const pctPix = () => `${(LOJA.pix * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
 const item = (id) => PRODUTOS.find((p) => p.id === id) || KITS.find((k) => k.id === id);
 const nomeCurto = (it) => it.curto || it.nome;
 const temPreco = (it) => it.preco != null;
+const visivel = (it) => it.ativo !== false;
+// "R$ 30" quando é valor redondo; "R$ 30,50" quando não é
+const brlLimpo = (v) => { const c = Math.round(v * 100) / 100; return Number.isInteger(c) ? `R$ ${c.toLocaleString('pt-BR')}` : brl(c); };
 const precisaTamanho = (it) => (it.itens ? it.itens.some((i) => item(i).tamanhos) : !!it.tamanhos);
 const tamanhoPorCalca = (n) => TABELA.find((x) => x.calca.includes(Number(n)));
 const faixaCalca = (x) => x.calca.join(' e ');
-const kitsCom = (id) => KITS.filter((k) => k.itens.includes(id) || k.escolha?.includes(id));
+const kitsCom = (id) => KITS.filter((k) => visivel(k) && (k.itens.includes(id) || k.escolha?.includes(id)));
+const cintasAVenda = () => PRODUTOS.filter((x) => x.cat === 'cintas' && x.barbatanas && temPreco(x) && visivel(x));
 
 // O número da calça é perguntado uma vez só e vale para o site todo
 let calcaMemoria = null;
@@ -31,7 +36,7 @@ function gravarCalca(n) {
 function listaItens(k) {
   const conta = {};
   k.itens.forEach((i) => { conta[i] = (conta[i] || 0) + 1; });
-  const linhas = Object.entries(conta).map(([id, n]) => (n > 1 ? `${n} ${item(id).plural}` : nomeCurto(item(id))));
+  const linhas = Object.entries(conta).map(([id, n]) => (n > 1 ? `${n} ${item(id).plural || nomeCurto(item(id))}` : nomeCurto(item(id))));
   if (k.escolha) linhas.push(k.escolha.map((i) => nomeCurto(item(i))).join(' ou '));
   return linhas;
 }
@@ -39,8 +44,8 @@ function listaItens(k) {
 // As 3 opções do pedido; o kit completo vem marcado, como a Paola recomenda.
 // A cinta sozinha ao lado do Combo Duplo (+R$ 30) funciona como comparação de preço.
 const OPCOES = [
-  { id: 'combo-5', titulo: 'Kit Completo', selo: 'Mais escolhido', sub: 'Cinta de 30 barbatanas + 2 sutiãs + gel + creme', nota: `5 produtos: sai ${brl(item('combo-5').preco / 5)} cada` },
-  { id: 'combo-duplo', titulo: 'Combo Duplo', sub: 'Cinta de 30 barbatanas + gel ou sutiã, você escolhe', nota: 'Só R$ 30 a mais que a cinta sozinha' },
+  { id: 'combo-5', titulo: 'Kit Completo', selo: 'Mais escolhido', sub: 'Cinta de 30 barbatanas + 2 sutiãs + gel + creme', nota: () => { const k = item('combo-5'); return `${k.itens.length} produtos: sai ${brl(k.preco / k.itens.length)} cada`; } },
+  { id: 'combo-duplo', titulo: 'Combo Duplo', sub: 'Cinta de 30 barbatanas + gel ou sutiã, você escolhe', nota: () => { const dif = item('combo-duplo').preco - item('cinta-ziper-30').preco; return dif > 0 ? `Só ${brlLimpo(dif)} a mais que a cinta sozinha` : ''; } },
   { id: 'cinta', titulo: 'Só a cinta', sub: 'Com 30 ou 20 barbatanas' },
 ];
 
@@ -84,7 +89,8 @@ const MENU = [
 
 function montarTopo() {
   const pagina = document.body.dataset.pagina;
-  const avisos = [`${KITS[0].sub} por ${brl(KITS[0].preco)}`, 'Você só paga depois de falar com a Paola', `Frete grátis acima de ${brl(LOJA.freteGratis)}`];
+  const kit = item('combo-5');
+  const avisos = [`${kit.sub || kit.nome} por ${brl(kit.preco)}`, 'Você só paga depois de falar com a Paola', `Frete grátis acima de ${brl(LOJA.freteGratis)}`];
   $('#topo').innerHTML = `
   <div class="aviso" aria-live="off"><span>${avisos[0]}</span></div>
   <header class="cab">
@@ -205,11 +211,12 @@ function adicionar(id, op = {}, qtd = 1, s = lerSacola()) {
   if (achado) achado.qtd += qtd;
   else s.push({ chave, id, calca: op.calca || null, extra: op.extra || null, qtd });
   gravarSacola(s);
+  Catalogo.evento('sacola');
   abrir('sacola');
 }
 const subtotal = (s = lerSacola()) => s.reduce((t, x) => t + item(x.id).preco * x.qtd, 0);
 const nomeLinha = (x) => `${item(x.id).nome}${x.extra ? ` + ${nomeCurto(item(x.extra))}` : ''}`;
-const tamLinha = (x) => (x.calca ? `Tamanho ${tamanhoPorCalca(x.calca).t} · calça ${x.calca}` : 'Tamanho único');
+const tamLinha = (x) => (x.calca ? `Tamanho ${tamanhoPorCalca(x.calca)?.t || ''} · calça ${x.calca}` : 'Tamanho único');
 
 function desenharSacola() {
   const s = lerSacola();
@@ -233,7 +240,7 @@ function desenharSacola() {
   const sub = subtotal(s);
   const falta = Math.max(0, LOJA.freteGratis - sub);
   // Sugestão: subir um degrau (cinta 20 → 30 → combo duplo → combo de 5)
-  const base = s.find((x) => SOBE[x.id] && !s.some((y) => y.id === SOBE[x.id][0]));
+  const base = s.find((x) => SOBE[x.id] && item(SOBE[x.id][0]).preco > item(x.id).preco && !s.some((y) => y.id === SOBE[x.id][0]));
   const [paraId, chamada] = base ? SOBE[base.id] : [];
   const para = paraId && item(paraId);
 
@@ -277,8 +284,8 @@ function trocar(chave) {
 }
 
 // ---------------- Registro do pedido ----------------
-// Provisório até ter pagamento no site: o pedido ganha número, fica salvo neste aparelho
-// e vai organizado para a Paola no WhatsApp; ela responde com o link de pagamento.
+// Provisório até ter pagamento no site: o pedido ganha número, fica salvo neste aparelho, vai para o
+// painel (quando o banco está conectado) e segue organizado para a Paola no WhatsApp; ela responde com o link de pagamento.
 const lerJSON = (chave, padrao) => { try { return JSON.parse(localStorage.getItem(chave)) || padrao; } catch (e) { return padrao; } };
 const gravarJSON = (chave, valor) => { try { localStorage.setItem(chave, JSON.stringify(valor)); } catch (e) { /* ok */ } };
 const lerPedidos = () => lerJSON('pcf-pedidos', []);
@@ -287,14 +294,18 @@ function registrarPedido(s, dados) {
   const agora = new Date();
   const dois = (n) => String(n).padStart(2, '0');
   const numero = `PCF-${dois(agora.getDate())}${dois(agora.getMonth() + 1)}-${Math.floor(1000 + Math.random() * 9000)}`;
-  const pedido = { ...dados, numero, data: agora.toISOString(), itens: s, total: subtotal(s) };
+  const id = crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/x/g, () => Math.floor(Math.random() * 16).toString(16));
+  // Nome, tamanho e preço ficam guardados como estavam: o pedido não muda se o produto mudar depois
+  const itens = s.map((x) => ({ ...x, nome: nomeLinha(x), tam: tamanhoPorCalca(x.calca)?.t || null, preco: item(x.id).preco }));
+  const pedido = { ...dados, id, numero, data: agora.toISOString(), itens, total: subtotal(s) };
   gravarJSON('pcf-pedidos', [pedido, ...lerPedidos()].slice(0, 10));
+  Catalogo.enviarPedido(pedido);
   return pedido;
 }
 
 // Mensagem no formato que a Paola lê de uma vez (negrito do WhatsApp com *)
 function textoPedido(p) {
-  const itens = p.itens.map((x) => `• ${x.qtd}x ${nomeLinha(x)}${x.calca ? `\n   Tamanho ${tamanhoPorCalca(x.calca).t} (veste calça ${x.calca})` : ''}`).join('\n');
+  const itens = p.itens.map((x) => `• ${x.qtd}x ${x.nome || nomeLinha(x)}${x.calca ? `\n   Tamanho ${x.tam || tamanhoPorCalca(x.calca)?.t} (veste calça ${x.calca})` : ''}`).join('\n');
   return `*Pedido ${p.numero}*\nOi, Paola! Quero finalizar este pedido:\n\n${itens}\n\n*Total:* ${brl(p.total)} (${brl(pix(p.total))} no Pix)\n\n*Meus dados*\nNome: ${p.nome}\nPagamento: ${p.pagamento}\n\n*Entrega*\n${p.rua ? `${p.rua}, ${p.num}${p.complemento ? ` - ${p.complemento}` : ''}\n${p.bairro} - ${p.cidade}/${p.uf}\n` : ''}CEP: ${p.cep}\n\nPode me mandar o link de pagamento? Se precisar, te mando uma foto de frente para confirmar o tamanho.`;
 }
 
@@ -302,6 +313,7 @@ function textoPedido(p) {
 function finalizar() {
   const s = lerSacola();
   if (!s.length) return;
+  Catalogo.evento('checkout');
   const cliente = lerJSON('pcf-cliente', {});
   let pagamento = cliente.pagamento || 'Pix';
   const m = abrirModal(`
@@ -312,7 +324,7 @@ function finalizar() {
     </div>
     <ul class="espera-lista aviso-lista">
       <li>Ela confere seu tamanho antes de enviar e, se precisar, pede uma foto de frente</li>
-      <li>Você recebe dela o link de pagamento: Pix com 5% de desconto ou cartão em até ${LOJA.parcelas}x</li>
+      <li>Você recebe dela o link de pagamento: Pix com ${pctPix()} de desconto ou cartão em até ${LOJA.parcelas}x</li>
       <li>Nada é cobrado agora</li>
     </ul>
     <form class="checkout" id="form-checkout" novalidate>
@@ -330,7 +342,7 @@ function finalizar() {
         <div class="campo"><label for="ck-uf">UF</label><input id="ck-uf" name="uf" autocomplete="address-level1" maxlength="2" required></div>
       </div>
       <div class="campo"><span class="rotulo">Como prefere pagar?</span>
-        <div class="tamanhos" role="radiogroup" aria-label="Forma de pagamento">${['Pix', 'Cartão'].map((f) => `<button class="chip" type="button" role="radio" data-pag="${f}" aria-checked="${f === pagamento}">${f === 'Pix' ? 'Pix (5% off)' : `Cartão em até ${LOJA.parcelas}x`}</button>`).join('')}</div>
+        <div class="tamanhos" role="radiogroup" aria-label="Forma de pagamento">${['Pix', 'Cartão'].map((f) => `<button class="chip" type="button" role="radio" data-pag="${f}" aria-checked="${f === pagamento}">${f === 'Pix' ? `Pix (${pctPix()} off)` : `Cartão em até ${LOJA.parcelas}x`}</button>`).join('')}</div>
       </div>
       <div class="ck-total"><span>Total do pedido</span><b>${brl(subtotal(s))}</b></div>
       <p class="dica-tam erro" data-erro hidden></p>
@@ -516,7 +528,7 @@ function montarPedido(raiz) {
   };
   const subOpcao = (o) => {
     if (o.id === 'combo-duplo') return `<div class="kit-op-sub" id="pedido-escolha"><small>Qual você quer junto?</small>${escolhaHTML(item('combo-duplo'), p.extra)}</div>`;
-    return `<div class="kit-op-sub"><div class="versoes">${PRODUTOS.filter((x) => x.cat === 'cintas').map((x) => `<button type="button" data-versao="${x.id}" aria-pressed="${x.id === p.versao}"><b>${x.barbatanas} barbatanas</b><small>${x.selo ? `${x.selo} · ` : ''}${brl(x.preco)}</small></button>`).join('')}</div></div>`;
+    return `<div class="kit-op-sub"><div class="versoes">${cintasAVenda().map((x) => `<button type="button" data-versao="${x.id}" aria-pressed="${x.id === p.versao}"><b>${x.barbatanas} barbatanas</b><small>${x.selo ? `${x.selo} · ` : ''}${brl(x.preco)}</small></button>`).join('')}</div></div>`;
   };
 
   const desenhar = () => {
@@ -525,10 +537,11 @@ function montarPedido(raiz) {
       <div class="kits-opcoes" role="radiogroup" aria-label="O que você quer levar">${OPCOES.map((o) => {
         const it = item(o.id === 'cinta' ? p.versao : o.id);
         const marcado = p.opcao === o.id;
+        const nota = o.nota?.();
         return `<button class="kit-op" type="button" role="radio" aria-checked="${marcado}" data-opcao="${o.id}">
           <span class="kit-op-foto"><img src="${it.img}" alt="" loading="lazy"></span>
           <span class="kit-op-txt">${o.selo ? `<span class="kit-op-selo">${o.selo}</span>` : ''}<b>${o.titulo}</b><small>${o.sub}</small>
-            <span class="kit-op-preco"><s>${brl(it.de)}</s> <strong>${brl(it.preco)}</strong></span>${o.nota ? `<em>${o.nota}</em>` : ''}</span>
+            <span class="kit-op-preco">${it.de ? `<s>${brl(it.de)}</s> ` : ''}<strong>${brl(it.preco)}</strong></span>${nota ? `<em>${nota}</em>` : ''}</span>
           <span class="kit-op-radio" aria-hidden="true"></span>
         </button>${marcado && o.id !== 'combo-5' ? subOpcao(o) : ''}`;
       }).join('')}</div>
@@ -611,8 +624,8 @@ function cardKit(k) {
     <div>
       <a href="produto.html?id=${k.id}"><h3>${k.nome}</h3></a>
       <p class="itens">${listaItens(k).join(' + ')}</p>
-      <div class="precos"><span class="de">${brl(k.de)}</span><span class="por">${brl(k.preco)}</span></div>
-      <span class="economia">${k.gancho || `Economize ${brl(k.de - k.preco)}`}</span><br>
+      <div class="precos">${k.de ? `<span class="de">${brl(k.de)}</span>` : ''}<span class="por">${brl(k.preco)}</span></div>
+      ${k.gancho || k.de ? `<span class="economia">${k.gancho || `Economize ${brl(k.de - k.preco)}`}</span><br>` : ''}
       <button class="btn btn-preto" type="button" data-add="${k.id}">Quero este</button>
     </div>
   </div>`;
@@ -621,7 +634,7 @@ function cardKit(k) {
 // ---------------- Telas ----------------
 function telaInicio() {
   montarPedido($('#pedido'));
-  $('#praia-pecas').innerHTML = PRAIA.slice(0, 3).map((p) => `<span><img src="${p.img}" alt="${p.nome}" loading="lazy"></span>`).join('');
+  $('#praia-pecas').innerHTML = PRAIA.filter(visivel).slice(0, 3).map((p) => `<span><img src="${p.img}" alt="${p.nome}" loading="lazy"></span>`).join('');
   $('#avaliacoes').innerHTML = avaliacoesHTML();
   ligarComparadores();
   barraInicio();
@@ -629,7 +642,7 @@ function telaInicio() {
 
 function telaLoja() {
   const filtros = [['tudo', 'Tudo'], ['kits', 'Combos'], ['cintas', 'Cintas'], ['sutias', 'Sutiã'], ['tratamento', 'Tratamento']];
-  const todos = [...KITS, ...PRODUTOS];
+  const todos = [...KITS, ...PRODUTOS].filter(visivel);
   const valor = (x) => (temPreco(x) ? x.preco : Infinity);
   let ordem = 'vendidos';
 
@@ -649,7 +662,8 @@ function telaLoja() {
 
 function telaProduto() {
   const busca = new URLSearchParams(location.search);
-  const it = item(busca.get('id')) || item('combo-5');
+  const pedido = item(busca.get('id'));
+  const it = pedido && visivel(pedido) ? pedido : item('combo-5');
   const ehKit = !!it.itens;
   const vende = temPreco(it);
   const usaTam = vende && precisaTamanho(it);
@@ -666,25 +680,25 @@ function telaProduto() {
   const cat = ({ cintas: 'Cintas', sutias: 'Sutiã', tratamento: 'Tratamento', kits: 'Combos' })[it.cat];
 
   const versoes = it.cat === 'cintas' ? `<div class="grupo"><div class="grupo-titulo">Versão</div>
-    <div class="versoes">${PRODUTOS.filter((p) => p.cat === 'cintas').map((p) => `<a href="produto.html?id=${p.id}" aria-current="${p.id === it.id}"><b>${p.barbatanas} barbatanas</b><small>${p.selo ? `${p.selo} · ` : ''}${brl(p.preco)}</small></a>`).join('')}</div></div>` : '';
+    <div class="versoes">${cintasAVenda().map((p) => `<a href="produto.html?id=${p.id}" aria-current="${p.id === it.id}"><b>${p.barbatanas} barbatanas</b><small>${p.selo ? `${p.selo} · ` : ''}${brl(p.preco)}</small></a>`).join('')}</div></div>` : '';
 
   const precoHTML = vende ? `<div class="preco-bloco">
       <div class="linha1">${it.de ? `<span class="de">${brl(it.de)}</span>` : ''}<span class="por">${brl(it.preco)}</span>${it.de ? `<span class="economia">-${Math.round((1 - it.preco / it.de) * 100)}%</span>` : ''}</div>
-      <div class="pix">${brl(pix(it.preco))} no Pix (${Math.round(LOJA.pix * 100)}% off)</div>
+      <div class="pix">${brl(pix(it.preco))} no Pix (${pctPix()} off)</div>
       <div class="parc">ou ${LOJA.parcelas}x de ${brl(parcela(it.preco))} sem juros</div>
     </div>` : `<div class="preco-bloco"><div class="linha1"><span class="por" style="font-size:24px">Vem nos combos</span></div><div class="parc">Sai junto com a cinta. Para comprar avulso, fale com a Paola.</div></div>`;
 
   const conta = {};
   if (ehKit) it.itens.forEach((i) => { conta[i] = (conta[i] || 0) + 1; });
-  const vemNoKit = ehKit ? `<div class="grupo"><div class="grupo-titulo">Vem no combo</div><ul class="itens-kit">${Object.entries(conta).map(([i, n]) => `<li><span class="mini">${midia(item(i))}</span>${n > 1 ? `${n} ${item(i).plural}` : item(i).nome}</li>`).join('')}${it.escolha ? `<li><span class="mini">${I.mais}</span>${it.escolha.map((i) => nomeCurto(item(i))).join(' ou ')} (você escolhe)</li>` : ''}</ul></div>` : '';
+  const vemNoKit = ehKit ? `<div class="grupo"><div class="grupo-titulo">Vem no combo</div><ul class="itens-kit">${Object.entries(conta).map(([i, n]) => `<li><span class="mini">${midia(item(i))}</span>${n > 1 ? `${n} ${item(i).plural || nomeCurto(item(i))}` : item(i).nome}</li>`).join('')}${it.escolha ? `<li><span class="mini">${I.mais}</span>${it.escolha.map((i) => nomeCurto(item(i))).join(' ou ')} (você escolhe)</li>` : ''}</ul></div>` : '';
 
   const [sobeId, sobeTxt] = SOBE[it.id] || [];
-  const sobe = sobeId && item(sobeId);
+  const sobe = sobeId && item(sobeId).preco > it.preco ? item(sobeId) : null;
   const junto = sobe ? `<div class="junto">
       <div class="grupo-titulo" style="margin:0">Por só ${brl(sobe.preco - it.preco)} a mais</div>
       <div class="junto-pecas"><span class="mini">${midia(sobe)}</span></div>
       <b>${sobeTxt}</b>
-      <div class="precos"><s>${brl(sobe.de)}</s> por <strong>${brl(sobe.preco)}</strong></div>
+      <div class="precos">${sobe.de ? `<s>${brl(sobe.de)}</s> por ` : ''}<strong>${brl(sobe.preco)}</strong></div>
       <a class="btn btn-preto btn-bloco" href="produto.html?id=${sobe.id}">Ver ${sobe.nome}</a>
     </div>` : '';
 
@@ -715,7 +729,7 @@ function telaProduto() {
           ${it.uso ? `<details><summary>Como usar</summary><div class="conteudo">${it.uso}</div></details>` : ''}
           ${usaTam ? `<details><summary>Dobra? Marca? Machuca?</summary><div class="conteudo"><p><b>Dobra ou enrola?</b> Não. As barbatanas mantêm a cinta no lugar, mesmo sentada ou treinando.</p><p style="margin-top:10px"><b>Quantas regulagens?</b> Duas regulagens de colchete por dentro e mais o zíper por fora, na frente.</p><p style="margin-top:10px"><b>Marca na roupa?</b> Não marca por baixo da roupa.</p><p style="margin-top:10px"><b>Machuca?</b> O tecido cetinete é pós-cirúrgico e antialérgico. Comece com poucas horas por dia e aumente aos poucos.</p></div></details>` : ''}
           ${usaTam ? `<details><summary>Tabela de medidas</summary><div class="conteudo">${tabelaHTML()}<p style="margin-top:10px">A cinta estica, então o que vale é o número da calça ou short, não a medida em centímetros.</p></div></details>` : ''}
-          <details><summary>Entrega e pagamento</summary><div class="conteudo">Enviamos do ${LOJA.cidade} para todo o Brasil. Pix com ${Math.round(LOJA.pix * 100)}% de desconto ou cartão em até ${LOJA.parcelas}x sem juros. O prazo de entrega a Paola confirma no WhatsApp.</div></details>
+          <details><summary>Entrega e pagamento</summary><div class="conteudo">Enviamos do ${LOJA.cidade} para todo o Brasil. Pix com ${pctPix()} de desconto ou cartão em até ${LOJA.parcelas}x sem juros. O prazo de entrega a Paola confirma no WhatsApp.</div></details>
         </div>
       </div>
     </div>`;
@@ -723,7 +737,7 @@ function telaProduto() {
   // Bloco "no dia a dia" só onde tem cinta
   $('#dia-a-dia').hidden = !usaTam;
   $('#avaliacoes').innerHTML = avaliacoesHTML();
-  $('#relacionados').innerHTML = [...KITS, ...PRODUTOS].filter((x) => x.id !== it.id).slice(0, 4).map(card).join('');
+  $('#relacionados').innerHTML = [...KITS, ...PRODUTOS].filter((x) => visivel(x) && x.id !== it.id).slice(0, 4).map(card).join('');
   if (!vende) return;
 
   const erro = $('#erro-compra');
@@ -757,7 +771,8 @@ function telaProduto() {
 }
 
 function telaPraia() {
-  $('#praia-vitrine').innerHTML = PRAIA.slice(0, 2).map((p) => `<span><img src="${p.img}" alt="${p.nome}"></span>`).join('');
+  const pecas = PRAIA.filter(visivel);
+  $('#praia-vitrine').innerHTML = pecas.slice(0, 2).map((p) => `<span><img src="${p.img}" alt="${p.nome}"></span>`).join('');
 
   // Foto fixa: conforme a página sobe, ela fica fosca e some no fundo (uma conta por quadro, só opacidade)
   const fundo = $('.praia-fundo');
@@ -783,7 +798,7 @@ function telaPraia() {
   let foco = 'todos';
   const desenharColecao = () => {
     $('#filtros-praia').innerHTML = FOCOS_PRAIA.map(([id, nome]) => `<button class="filtro" type="button" data-foco="${id}" aria-pressed="${id === foco}">${nome}</button>`).join('');
-    $('#colecao').innerHTML = PRAIA.filter((p) => foco === 'todos' || p.foco.includes(foco)).map((p) => `
+    $('#colecao').innerHTML = pecas.filter((p) => foco === 'todos' || p.foco.includes(foco)).map((p) => `
       <div class="peca-praia">
         <div class="img">${p.selo ? `<span class="selo">${p.selo}</span>` : ''}<img src="${p.img}" alt="${p.nome}" loading="lazy"><a class="avise" href="${p.biquini ? '#monte' : '#espera'}" data-escolher="${p.biquini ? p.id : ''}">${p.biquini ? 'Montar o meu' : 'Avise-me'}</a></div>
         <h3>${p.nome}</h3>
@@ -794,9 +809,11 @@ function telaPraia() {
   };
 
   // Monte seu biquíni: top e calcinha em tamanhos diferentes
-  const biquinis = PRAIA.filter((p) => p.biquini);
-  const montar = { modelo: biquinis[0].id, cor: 0, top: null, baixo: null };
+  const biquinis = pecas.filter((p) => p.biquini);
+  const montar = { modelo: biquinis[0]?.id, cor: 0, top: null, baixo: null };
+  if (!biquinis.length) $('#monte').hidden = true;
   const desenharMonte = () => {
+    if (!biquinis.length) return;
     const p = PRAIA.find((x) => x.id === montar.modelo);
     const chips = (parte) => TAMANHOS_PRAIA.map((t) => `<button class="chip" type="button" data-parte="${parte}" data-t="${t}" aria-checked="${montar[parte] === t}">${t}</button>`).join('');
     $('#monte-caixa').innerHTML = `
@@ -955,11 +972,32 @@ function barraInicio() {
   new IntersectionObserver(([e]) => { noPedido = e.isIntersecting; atualizar(); }).observe($('#comprar'));
 }
 
+// Valores escritos no HTML acompanham os preços editados no painel
+function preencherValores() {
+  const kit = item('combo-5');
+  const valores = {
+    'kit-de': kit.de ? brlLimpo(kit.de) : '',
+    'kit-preco': brl(kit.preco),
+    'kit-preco-curto': brlLimpo(kit.preco),
+    'kit-parcela': `ou ${LOJA.parcelas}x de ${brl(parcela(kit.preco))}`,
+    'kit-cada': `R$ ${Math.ceil(kit.preco / kit.itens.length)}`,
+    'duplo-a-mais': brlLimpo(item('combo-duplo').preco - item('cinta-ziper-30').preco),
+    'pix-pct': pctPix(),
+    parcelas: `${LOJA.parcelas}x`,
+  };
+  $$('[data-v]').forEach((el) => { el.textContent = valores[el.dataset.v]; });
+  $$('[data-so-de]').forEach((el) => { el.hidden = !kit.de; });
+}
+
 // ---------------- Início ----------------
-montarTopo();
-montarRodape();
-({ inicio: telaInicio, loja: telaLoja, produto: telaProduto, praia: telaPraia })[document.body.dataset.pagina]?.();
-ligarMovimento();
+Catalogo.pronto.then(() => {
+  montarTopo();
+  montarRodape();
+  preencherValores();
+  ({ inicio: telaInicio, loja: telaLoja, produto: telaProduto, praia: telaPraia })[document.body.dataset.pagina]?.();
+  ligarMovimento();
+  Catalogo.evento('visita');
+});
 
 document.addEventListener('click', (e) => {
   const alvo = e.target.closest('[data-abrir], [data-fechar], [data-add], [data-trocar], [data-finalizar], [data-tabela]');

@@ -10,7 +10,7 @@
   <meta property="og:image" content="img/og-real.jpg">
   <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
   <link rel="preload" href="fonts/figtree.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="css/estilo.css">
+  <link rel="stylesheet" href="css/estilo.css?v=2">
 </head>
 <body data-pagina="inicio">
   <div id="topo"></div>
@@ -22,7 +22,7 @@
         <div class="hero-grade">
           <a class="hero-foto hero-combo" href="#comprar">
             <img src="img/hero-combo.webp" alt="Modelo com a cinta de 30 barbatanas e o sutiã reforçado, segurando o gel termoativo, ao lado do creme para massagem" width="1400" height="1400" fetchpriority="high">
-            <span class="etiqueta-preco">de <s>R$ 1.089</s> por<b>R$ 479,00</b>ou 6x de R$ 79,83</span>
+            <span class="etiqueta-preco"><span data-so-de>de <s data-v="kit-de">R$ 1.089</s> por</span><b data-v="kit-preco">R$ 479,00</b><span data-v="kit-parcela">ou 6x de R$ 79,83</span></span>
             <div class="hero-sobre">
               <span class="selo-hero">Kit completo · 5 produtos</span>
               <h1 class="titulo">Adeus, pochete!</h1>
@@ -132,7 +132,7 @@
             <ol class="teste-passos tam-passos">
               <li><b>1</b>Você escolhe o kit e marca o número da calça</li>
               <li><b>2</b>Envia o pedido pelo WhatsApp. Nada é cobrado no site</li>
-              <li><b>3</b>A Paola confirma seu tamanho e você paga no Pix (5% off) ou no cartão em até 6x</li>
+              <li><b>3</b>A Paola confirma seu tamanho e você paga no Pix (<span data-v="pix-pct">5%</span> off) ou no cartão em até <span data-v="parcelas">6x</span></li>
               <li><b>4</b>A cinta chega na sua casa, em qualquer lugar do Brasil</li>
             </ol>
             <a class="btn btn-rosa" href="#comprar">Quero meu kit</a>
@@ -196,9 +196,9 @@
           <details><summary>Posso usar no pós-parto?</summary><p>Pode. A cinta ajuda no pós-parto e no pós-procedimento, e o tecido é pós-cirúrgico e antialérgico. Se você fez cesárea ou cirurgia, comece quando o seu médico liberar.</p></details>
           <details><summary>E se eu errar o tamanho?</summary><p>Por isso a Paola confere antes de enviar. Você escolhe pelo número da calça ou short (do P ao XGG, até o 52) e, no WhatsApp, ela confirma o tamanho com você por uma foto de frente.</p></details>
           <details><summary>Dobra quando eu sento ou pego o bebê?</summary><p>Não. As barbatanas mantêm a cinta no lugar quando você senta, se abaixa ou se mexe. E ela não marca por baixo da roupa.</p></details>
-          <details><summary>Qual kit eu escolho?</summary><p>O Kit Completo é o mais escolhido: cinta, 2 sutiãs, gel e creme, e cada produto sai por menos de R$ 96. Se quiser gastar menos, o Combo Duplo (cinta + gel ou sutiã) custa só R$ 30 a mais que a cinta sozinha.</p></details>
+          <details><summary>Qual kit eu escolho?</summary><p>O Kit Completo é o mais escolhido: cinta, 2 sutiãs, gel e creme, e cada produto sai por menos de <span data-v="kit-cada">R$ 96</span>. Se quiser gastar menos, o Combo Duplo (cinta + gel ou sutiã) custa só <span data-v="duplo-a-mais">R$ 30</span> a mais que a cinta sozinha.</p></details>
           <details><summary>Qual a diferença entre a cinta de 30 e a de 20?</summary><p>Só a quantidade de barbatanas. O tecido, o zíper e as regulagens são iguais. Quanto mais barbatanas, mais firme: por isso a de 30 é a melhor.</p></details>
-          <details><summary>Preciso pagar no site?</summary><p>Não. Você envia o pedido pelo WhatsApp e só paga depois de falar com a Paola: no Pix (com 5% de desconto) ou no cartão em até 6x sem juros. Ela envia do Rio de Janeiro para todo o Brasil.</p></details>
+          <details><summary>Preciso pagar no site?</summary><p>Não. Você envia o pedido pelo WhatsApp e só paga depois de falar com a Paola: no Pix (com <span data-v="pix-pct">5%</span> de desconto) ou no cartão em até <span data-v="parcelas">6x</span> sem juros. Ela envia do Rio de Janeiro para todo o Brasil.</p></details>
         </div>
       </div>
     </section>
@@ -219,9 +219,11 @@
     </section>
   </main>
 
-  <div class="barra-prod" id="barra-inicio"><div><small>Kit Completo · 5 produtos</small><b>R$ 479,00</b></div><a class="btn btn-preto" href="#comprar">Quero meu kit</a></div>
+  <div class="barra-prod" id="barra-inicio"><div><small>Kit Completo · 5 produtos</small><b data-v="kit-preco">R$ 479,00</b></div><a class="btn btn-preto" href="#comprar">Quero meu kit</a></div>
   <div id="rodape"></div>
   <script src="js/dados.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/catalogo.js"></script>
+  <script src="js/app.js?v=2"></script>
 </body>
 </html>
