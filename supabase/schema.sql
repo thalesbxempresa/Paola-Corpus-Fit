@@ -47,7 +47,7 @@ create table if not exists public.pedidos (
   id uuid primary key,
   numero text not null,
   criado_em timestamptz not null default now(),
-  status text not null default 'novo' check (status in ('novo', 'pago', 'enviado', 'entregue', 'cancelado')),
+  status text not null default 'novo',
   nome text not null,
   cep text, rua text, num text, complemento text, bairro text, cidade text, uf text,
   pagamento text,
@@ -57,6 +57,38 @@ create table if not exists public.pedidos (
   nota text
 );
 create index if not exists pedidos_criado_em on public.pedidos (criado_em desc);
+
+-- ---------- Acompanhamento do pedido ----------
+-- Etapas: novo (recebido) > pago (confirmado) > preparando > enviado > entregue, ou cancelado.
+alter table public.pedidos add column if not exists historico jsonb not null default '[]'::jsonb;
+alter table public.pedidos add column if not exists rastreio_codigo text;
+alter table public.pedidos add column if not exists rastreio_link text;
+alter table public.pedidos drop constraint if exists pedidos_status_check;
+alter table public.pedidos add constraint pedidos_status_check check (status in ('novo', 'pago', 'preparando', 'enviado', 'entregue', 'cancelado'));
+alter table public.pedidos drop constraint if exists pedidos_rastreio_link_check;
+alter table public.pedidos add constraint pedidos_rastreio_link_check check (rastreio_link is null or rastreio_link like 'https://%');
+
+-- A data de cada etapa é registrada pelo banco, ninguém precisa preencher
+create or replace function public.pedido_historico() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if tg_op = 'INSERT' then
+    new.historico := jsonb_build_array(jsonb_build_object('status', new.status, 'em', now()));
+  elsif new.status is distinct from old.status then
+    new.historico := coalesce(old.historico, '[]'::jsonb) || jsonb_build_object('status', new.status, 'em', now());
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.pedido_historico() from public, anon, authenticated;
+drop trigger if exists pedido_historico on public.pedidos;
+create trigger pedido_historico before insert or update of status on public.pedidos
+  for each row execute function public.pedido_historico();
+
+-- Pedidos anteriores a este recurso começam o histórico pela situação atual
+update public.pedidos
+  set historico = jsonb_build_array(jsonb_build_object('status', status, 'em', criado_em))
+  where historico = '[]'::jsonb;
 
 -- ---------- Contadores do funil (por dia, sem dado pessoal) ----------
 create table if not exists public.eventos_dia (
@@ -149,6 +181,35 @@ begin
 end;
 $$;
 
+-- O que a cliente vê ao acompanhar: pelo link do pedido ou pelo número + CEP.
+-- Só o necessário: sem endereço, sobrenome ou anotações internas.
+create or replace function public.acompanhar_pedido(p_id uuid default null, p_numero text default null, p_cep text default null) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select jsonb_build_object(
+    'id', p.id,
+    'numero', p.numero,
+    'status', p.status,
+    'criado_em', p.criado_em,
+    'historico', p.historico,
+    'primeiro_nome', split_part(p.nome, ' ', 1),
+    'cidade', p.cidade,
+    'uf', p.uf,
+    'itens', coalesce((select jsonb_agg(jsonb_build_object('nome', i ->> 'nome', 'tam', i ->> 'tam', 'qtd', i -> 'qtd')) from jsonb_array_elements(p.itens) i), '[]'::jsonb),
+    'total', p.total,
+    'rastreio_codigo', p.rastreio_codigo,
+    'rastreio_link', p.rastreio_link
+  )
+  from public.pedidos p
+  where p.id = p_id
+    or (
+      length(regexp_replace(coalesce(p_cep, ''), '\D', '', 'g')) = 8
+      and upper(p.numero) = upper(trim(p_numero))
+      and regexp_replace(coalesce(p.cep, ''), '\D', '', 'g') = regexp_replace(p_cep, '\D', '', 'g')
+    )
+  order by p.criado_em desc
+  limit 1;
+$$;
+
 -- ---------- Regras de acesso ----------
 alter table public.admins enable row level security;
 alter table public.loja_config enable row level security;
@@ -170,9 +231,9 @@ create policy admin_pedidos on public.pedidos for all to authenticated using (pu
 drop policy if exists admin_eventos on public.eventos_dia;
 create policy admin_eventos on public.eventos_dia for select to authenticated using (public.eh_admin());
 
-revoke all on function public.eh_admin(), public.catalogo_publico(), public.registrar_pedido(jsonb), public.registrar_evento(text) from public, anon, authenticated;
+revoke all on function public.eh_admin(), public.catalogo_publico(), public.registrar_pedido(jsonb), public.registrar_evento(text), public.acompanhar_pedido(uuid, text, text) from public, anon, authenticated;
 grant execute on function public.eh_admin() to authenticated;
-grant execute on function public.catalogo_publico(), public.registrar_pedido(jsonb), public.registrar_evento(text) to anon, authenticated;
+grant execute on function public.catalogo_publico(), public.registrar_pedido(jsonb), public.registrar_evento(text), public.acompanhar_pedido(uuid, text, text) to anon, authenticated;
 
 -- ---------- Fotos dos produtos ----------
 -- Qualquer pessoa vê (são as fotos da loja); só o administrador envia, troca ou apaga.

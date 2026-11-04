@@ -109,6 +109,14 @@ const Catalogo = (() => {
   }
   if (ligado && document.body.dataset.pagina !== 'admin') (parse(ler(FILA)) || []).forEach(enviar);
 
+  // Acompanhamento: pelo link do pedido ({ p_id }) ou por número + CEP ({ p_numero, p_cep })
+  async function acompanhar(filtro) {
+    const r = await rpc('acompanhar_pedido', filtro);
+    if (r.status === 400) return null; // Link adulterado: mesmo caso de não encontrar
+    if (!r.ok) throw new Error('Acompanhamento indisponível');
+    return r.json();
+  }
+
   // Versão crua para o painel (sem o tratamento de HTML da loja)
   const doc = () => {
     const salvo = parse(ler(CHAVE));
@@ -124,5 +132,5 @@ const Catalogo = (() => {
     aplicar(padrao);
   };
 
-  return { ligado, FIXOS, pronto, doc, valido, salvarLocal, restaurar, evento, enviarPedido };
+  return { ligado, FIXOS, pronto, doc, valido, salvarLocal, restaurar, evento, enviarPedido, acompanhar };
 })();

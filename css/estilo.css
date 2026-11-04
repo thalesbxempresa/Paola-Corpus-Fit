@@ -857,3 +857,40 @@ section[id] { scroll-margin-top: 84px; }
 .ck-linha .campo input { min-width: 0; width: 100%; }
 .ck-status { font-size: 13px; color: var(--tinta-2); }
 .ck-status:empty { display: none; }
+
+/* ---------- Acompanhar pedido ---------- */
+.acomp { display: grid; gap: 18px; max-width: 560px; margin: 0 auto; padding: 30px 0 64px; }
+.acomp .titulo { margin-top: -10px; font-size: clamp(1.8rem, 7vw, 2.4rem); }
+.acomp h2 { margin: 0 0 10px; font-size: 15px; font-weight: 900; letter-spacing: .02em; }
+.acomp-carregando { padding: 48px 0; color: var(--tinta-2); text-align: center; }
+.acomp-etapas { display: grid; margin: 0; padding: 20px 18px 8px; border-radius: 20px; background: var(--branco); list-style: none; }
+.acomp-etapas li { position: relative; display: flex; gap: 12px; padding-bottom: 18px; color: var(--tinta-3); }
+.acomp-etapas li:not(:last-child)::before { content: ''; position: absolute; left: 13px; top: 28px; bottom: 0; width: 2px; background: var(--areia-3); }
+.acomp-etapas li.feita:not(.atual)::before { background: var(--ok); }
+.acomp-etapas i { position: relative; z-index: 1; flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--areia-2); color: var(--branco); }
+.acomp-etapas i svg { width: 16px; height: 16px; stroke-width: 3; }
+.acomp-etapas li.feita { color: var(--tinta-2); }
+.acomp-etapas li.feita i { background: var(--ok); }
+.acomp-etapas li.atual { color: var(--tinta); }
+.acomp-etapas b { display: block; font-size: 15.5px; font-weight: 800; line-height: 1.75; }
+.acomp-etapas small { display: block; font-size: 12.5px; color: var(--tinta-2); }
+.acomp-etapas p { margin-top: 4px; font-size: 14.5px; line-height: 1.45; color: var(--tinta-2); }
+.acomp-cancelado { padding: 14px 16px; border-radius: 14px; background: var(--branco); color: var(--tinta-2); line-height: 1.45; }
+.acomp-rastreio, .acomp-resumo, .acomp-form, .acomp-meus { padding: 18px; border-radius: 20px; background: var(--branco); }
+.acomp-codigo { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 12px 14px; border-radius: 12px; background: var(--areia); }
+.acomp-codigo b { font-size: 16px; font-weight: 800; letter-spacing: .03em; overflow-wrap: anywhere; }
+.acomp-resumo ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; font-size: 14.5px; }
+.acomp-resumo small { display: block; font-size: 13px; color: var(--tinta-2); }
+.acomp-total { display: flex; justify-content: space-between; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--areia-2); font-size: 15px; }
+.acomp-total b { font-weight: 800; }
+.acomp-form { display: grid; gap: 14px; }
+.acomp-form > p:first-child { color: var(--tinta-2); line-height: 1.45; }
+.acomp-form .dica-tam { margin: 0; }
+.acomp-form [hidden] { display: none; }
+.acomp-meus a { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0; border-top: 1px solid var(--areia-2); }
+.acomp-meus a:first-of-type { border-top: 0; padding-top: 2px; }
+.acomp-meus b { display: block; font-size: 15px; font-weight: 800; }
+.acomp-meus small { font-size: 13px; color: var(--tinta-2); }
+.acomp-meus svg { flex: none; width: 18px; height: 18px; }
+.acomp .envio-copiar { margin: 0 auto; }
+.ultimo-pedido .link-tam + .link-tam { margin-top: 6px; }

@@ -41,11 +41,15 @@ insert into public.admins values (encode(sha256(convert_to(lower('email@dela.com
 
 Com o cadastro fechado, crie a conta dela em *Authentication > Users > Add user > Create new user*, com *Auto Confirm User*.
 
+## Acompanhamento do pedido
+
+A cliente acompanha em `acompanhar.html`, pelo link que vai na mensagem do pedido ou digitando o número do pedido e o CEP. Ela vê etapas, datas, rastreio, itens, cidade e o primeiro nome. Endereço, sobrenome e anotações internas nunca aparecem. As datas de cada etapa são registradas pelo próprio banco.
+
 ## O que cada um pode fazer
 
 | Quem | Pode | Não pode |
 |---|---|---|
-| Cliente (sem login) | Ler o catálogo, registrar pedido, somar contador do funil | Ler pedidos, alterar preço, alterar catálogo |
+| Cliente (sem login) | Ler o catálogo, registrar pedido, somar contador do funil, acompanhar o próprio pedido | Ler a lista de pedidos, alterar preço, alterar catálogo |
 | Administrador | Tudo no painel | - |
 
 O total do pedido é sempre recalculado no banco com os preços de lá. Se o valor enviado pelo site não bater, o pedido entra marcado como **Conferir valor**.

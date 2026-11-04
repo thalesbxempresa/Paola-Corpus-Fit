@@ -287,3 +287,26 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .pn-previa-cartao { grid-template-columns: 1fr; }
   .pn-salvar { grid-column: 1; }
 }
+
+/* ---------- Andamento do pedido ---------- */
+.pn-st-preparando { background: #F7DDE3; color: #7A1F33; }
+.pn-andamento { display: grid; gap: 12px; }
+.pn-etapas { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; font-size: 14.5px; }
+.pn-etapas li { position: relative; display: flex; gap: 10px; min-height: 40px; color: var(--tinta-3); }
+.pn-etapas li:not(:last-child)::before { content: ''; position: absolute; left: 11px; top: 24px; bottom: 0; width: 2px; background: var(--areia-3); }
+.pn-etapas li.feita:not(.atual)::before { background: var(--ok); }
+.pn-etapas i { position: relative; z-index: 1; flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--areia-2); color: var(--branco); }
+.pn-etapas i svg { width: 14px; height: 14px; stroke-width: 3; }
+.pn-etapas li.feita { color: var(--tinta-2); }
+.pn-etapas li.feita i { background: var(--ok); }
+.pn-etapas li.atual { color: var(--tinta); font-weight: 800; }
+.pn-etapas small { display: block; padding-bottom: 8px; font-size: 12.5px; font-weight: 400; color: var(--tinta-2); }
+.pn-etapa-cancelada { padding: 10px 14px; border-radius: 12px; background: #FBE4E1; color: #8E2A1E; font-size: 14px; font-weight: 700; }
+.pn-envio { display: grid; gap: 12px; padding: 14px; border-radius: 14px; background: var(--areia); }
+.pn-envio .campo input { background: var(--branco); }
+.pn-envio .pn-link { justify-self: center; }
+.pn-rastreio-info { padding-top: 2px; }
+.pn-rastreio-info .pn-link { margin-right: 14px; }
+.pn-aviso-cliente { display: grid; justify-items: start; gap: 6px; padding-top: 12px; border-top: 1px solid var(--areia-2); }
+.pn-aviso-cliente h3 { margin-bottom: 0; }
+.pn-ped-corpo .pn-andamento > .pn-link { justify-self: center; }

@@ -12,6 +12,8 @@ const item = (id) => PRODUTOS.find((p) => p.id === id) || KITS.find((k) => k.id 
 const nomeCurto = (it) => it.curto || it.nome;
 const temPreco = (it) => it.preco != null;
 const visivel = (it) => it.ativo !== false;
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const linkAcompanhar = (id) => new URL(`acompanhar.html?p=${encodeURIComponent(id)}`, location.href).href;
 // "R$ 30" quando é valor redondo; "R$ 30,50" quando não é
 const brlLimpo = (v) => { const c = Math.round(v * 100) / 100; return Number.isInteger(c) ? `R$ ${c.toLocaleString('pt-BR')}` : brl(c); };
 const precisaTamanho = (it) => (it.itens ? it.itens.some((i) => item(i).tamanhos) : !!it.tamanhos);
@@ -111,7 +113,7 @@ function montarTopo() {
     <div class="gaveta-topo"><h2>Menu</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
     <div class="gaveta-corpo">
       <a class="btn btn-preto btn-bloco" href="index.html#comprar" data-fechar>Fazer meu pedido</a>
-      <nav class="menu-links" style="margin-top:14px">${MENU.slice(1, 4).map(([nome, link]) => `<a href="${link}" data-fechar>${nome}${I.seta}</a>`).join('')}</nav>
+      <nav class="menu-links" style="margin-top:14px">${[...MENU.slice(1, 4), ['Acompanhar meu pedido', 'acompanhar.html']].map(([nome, link]) => `<a href="${link}" data-fechar>${nome}${I.seta}</a>`).join('')}</nav>
       <a class="menu-praia" href="moda-praia.html"><span>Lançamento</span><b>Moda Praia</b><span>Entre na lista de espera →</span></a>
       <div class="menu-contato">
         <a class="btn btn-claro" href="${LOJA.whatsapp}" target="_blank" rel="noopener">${I.whats}Falar com a Paola</a>
@@ -144,6 +146,7 @@ function montarRodape() {
         </div>
         <div><h4>Loja</h4><ul>${MENU.map(([nome, link]) => `<li><a href="${link}">${nome}</a></li>`).join('')}</ul></div>
         <div><h4>Ajuda</h4><ul>
+          <li><a href="acompanhar.html">Acompanhar meu pedido</a></li>
           <li><a href="index.html#comprar">Descobrir meu tamanho</a></li>
           <li><a href="index.html#duvidas">Dúvidas frequentes</a></li>
           <li><a href="${LOJA.whatsapp}" target="_blank" rel="noopener">Atendimento no WhatsApp</a></li>
@@ -230,8 +233,8 @@ function desenharSacola() {
   if (!s.length) {
     const ultimo = lerPedidos()[0];
     corpo.innerHTML = `<div class="sacola-vazia">${I.sacola}<b>Seu pedido está vazio</b><p style="color:var(--tinta-2)">Escolha o kit e o número da calça. Leva 1 minuto.</p><a class="btn btn-preto" href="index.html#comprar" data-fechar>Fazer meu pedido</a>
-      ${ultimo ? `<div class="ultimo-pedido"><small>Seu último pedido</small><b>${ultimo.numero} · ${brl(ultimo.total)}</b><button class="link-tam" type="button" data-reenviar>Enviar de novo para a Paola</button></div>` : ''}</div>`;
-    $('[data-reenviar]', corpo)?.addEventListener('click', () => enviarWhatsApp(textoPedido(ultimo), 'A Paola confere seu tamanho e te envia o link de pagamento', ultimo.numero));
+      ${ultimo ? `<div class="ultimo-pedido"><small>Seu último pedido</small><b>${ultimo.numero} · ${brl(ultimo.total)}</b>${ultimo.id && Catalogo.ligado ? `<a class="link-tam" href="${esc(linkAcompanhar(ultimo.id))}">Acompanhar este pedido</a>` : ''}<button class="link-tam" type="button" data-reenviar>Enviar de novo para a Paola</button></div>` : ''}</div>`;
+    $('[data-reenviar]', corpo)?.addEventListener('click', () => enviarWhatsApp(textoPedido(ultimo), 'A Paola confere seu tamanho e te envia o link de pagamento', ultimo.numero, ultimo.id));
     pe.innerHTML = '';
     pe.hidden = true;
     return;
@@ -306,7 +309,7 @@ function registrarPedido(s, dados) {
 // Mensagem no formato que a Paola lê de uma vez (negrito do WhatsApp com *)
 function textoPedido(p) {
   const itens = p.itens.map((x) => `• ${x.qtd}x ${x.nome || nomeLinha(x)}${x.calca ? `\n   Tamanho ${x.tam || tamanhoPorCalca(x.calca)?.t} (veste calça ${x.calca})` : ''}`).join('\n');
-  return `*Pedido ${p.numero}*\nOi, Paola! Quero finalizar este pedido:\n\n${itens}\n\n*Total:* ${brl(p.total)} (${brl(pix(p.total))} no Pix)\n\n*Meus dados*\nNome: ${p.nome}\nPagamento: ${p.pagamento}\n\n*Entrega*\n${p.rua ? `${p.rua}, ${p.num}${p.complemento ? ` - ${p.complemento}` : ''}\n${p.bairro} - ${p.cidade}/${p.uf}\n` : ''}CEP: ${p.cep}\n\nPode me mandar o link de pagamento? Se precisar, te mando uma foto de frente para confirmar o tamanho.`;
+  return `*Pedido ${p.numero}*\nOi, Paola! Quero finalizar este pedido:\n\n${itens}\n\n*Total:* ${brl(p.total)} (${brl(pix(p.total))} no Pix)\n\n*Meus dados*\nNome: ${p.nome}\nPagamento: ${p.pagamento}\n\n*Entrega*\n${p.rua ? `${p.rua}, ${p.num}${p.complemento ? ` - ${p.complemento}` : ''}\n${p.bairro} - ${p.cidade}/${p.uf}\n` : ''}CEP: ${p.cep}\n\nPode me mandar o link de pagamento? Se precisar, te mando uma foto de frente para confirmar o tamanho.${Catalogo.ligado && p.id ? `\n\nAcompanhar meu pedido: ${linkAcompanhar(p.id)}` : ''}`;
 }
 
 // Antes do WhatsApp: explica por que a compra fecha com uma pessoa e pede só o essencial
@@ -392,11 +395,11 @@ function finalizar() {
     gravarJSON('pcf-cliente', { ...d, pagamento });
     const pedido = registrarPedido(s, { ...d, pagamento });
     gravarSacola([]);
-    enviarWhatsApp(textoPedido(pedido), 'A Paola confere seu tamanho e te envia o link de pagamento', pedido.numero);
+    enviarWhatsApp(textoPedido(pedido), 'A Paola confere seu tamanho e te envia o link de pagamento', pedido.numero, pedido.id);
   });
 }
 
-function enviarWhatsApp(texto, depois, numero) {
+function enviarWhatsApp(texto, depois, numero, idPedido) {
   if (LOJA.whatsappNumero) {
     window.open(`https://wa.me/${LOJA.whatsappNumero}?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
     if (!numero) return;
@@ -412,7 +415,8 @@ function enviarWhatsApp(texto, depois, numero) {
     </ol>
     <pre class="envio-texto"></pre>
     <a class="btn btn-preto btn-bloco" href="${LOJA.whatsapp}" target="_blank" rel="noopener">${I.whats}Abrir WhatsApp</a>
-    <button class="link-tam envio-copiar" type="button" data-copiar>Copiar a mensagem de novo</button>`);
+    <button class="link-tam envio-copiar" type="button" data-copiar>Copiar a mensagem de novo</button>
+    ${idPedido && Catalogo.ligado ? `<a class="link-tam envio-copiar" href="${esc(linkAcompanhar(idPedido))}">Acompanhar meu pedido</a>` : ''}`);
   $('.envio-texto', m).textContent = texto;
   navigator.clipboard?.writeText(texto).then(() => {
     $('[data-copia]', m).textContent = 'Cole a mensagem na conversa e envie. Ela já está copiada.';
@@ -885,6 +889,118 @@ function telaPraia() {
   });
 }
 
+// ---------------- Acompanhar pedido ----------------
+// A cliente chega pelo link da mensagem, pelos pedidos guardados no aparelho ou por número + CEP.
+// Os dados vêm de pedidos digitados no site: sempre passam por esc() antes de ir para a tela.
+const ETAPAS = [
+  ['novo', 'Pedido recebido', 'A Paola recebeu seu pedido. Ela confere seu tamanho e te envia o link de pagamento no WhatsApp.'],
+  ['pago', 'Pagamento confirmado', 'Deu tudo certo com o pagamento.'],
+  ['preparando', 'Preparando seu pedido', 'A Paola está separando suas peças.'],
+  ['enviado', 'Pedido enviado', 'Seu pedido está a caminho.'],
+  ['entregue', 'Pedido entregue', 'Chegou! Qualquer dúvida, é só chamar a Paola.'],
+];
+const SITE_CORREIOS = 'https://rastreamento.correios.com.br/app/index.php';
+const dataEtapa = (iso) => { const d = new Date(iso); return `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`; };
+const zapDoPedido = (numero) => (LOJA.whatsappNumero ? `https://wa.me/${LOJA.whatsappNumero}?text=${encodeURIComponent(`Oi, Paola! Quero falar sobre o pedido ${numero}.`)}` : LOJA.whatsapp);
+
+function pedidoAcompanhadoHTML(p) {
+  const atual = ETAPAS.findIndex(([id]) => id === p.status);
+  const cancelado = p.status === 'cancelado';
+  const ehCorreios = /^[A-Z]{2}\d{9}[A-Z]{2}$/.test(p.rastreio_codigo || '');
+  const linkEntrega = /^https:\/\//.test(p.rastreio_link || '') ? p.rastreio_link : ehCorreios ? SITE_CORREIOS : '';
+  const etapas = ETAPAS.map(([id, nome, texto], i) => {
+    const registro = (p.historico || []).filter((h) => h.status === id).pop();
+    const feita = i <= atual;
+    return `<li class="${feita ? 'feita' : ''} ${i === atual ? 'atual' : ''}">
+      <i>${feita ? I.ok : ''}</i>
+      <div><b>${nome}</b>${feita && registro ? `<small>${esc(dataEtapa(registro.em))}</small>` : ''}${i === atual ? `<p>${texto}</p>` : ''}</div>
+    </li>`;
+  }).join('');
+  const rastreio = !cancelado && (p.rastreio_codigo || linkEntrega) ? `<section class="acomp-rastreio">
+      <h2>Rastreio da entrega</h2>
+      ${p.rastreio_codigo ? `<div class="acomp-codigo"><b>${esc(p.rastreio_codigo)}</b><button class="link-tam" type="button" data-copiar-rastreio>Copiar</button></div>` : ''}
+      ${linkEntrega ? `<a class="btn btn-preto btn-bloco" href="${esc(linkEntrega)}" target="_blank" rel="noopener">${ehCorreios && !p.rastreio_link ? 'Abrir o site dos Correios' : 'Ver onde está a entrega'}</a>` : ''}
+      ${ehCorreios && !p.rastreio_link ? '<p class="dica-tam">Copie o código e cole no site dos Correios.</p>' : ''}
+    </section>` : '';
+  return `<span class="sobre">Pedido ${esc(p.numero)}</span>
+    <h1 class="titulo">Oi, ${esc(p.primeiro_nome)}!</h1>
+    ${cancelado ? '<p class="acomp-cancelado">Este pedido foi cancelado. Se tiver alguma dúvida, é só falar com a Paola.</p>' : `<ol class="acomp-etapas">${etapas}</ol>`}
+    ${rastreio}
+    <section class="acomp-resumo">
+      <h2>Seu pedido</h2>
+      <ul>${(p.itens || []).map((x) => `<li>${esc(x.qtd || 1)}x ${esc(x.nome)}${x.tam ? `<small>Tamanho ${esc(x.tam)}</small>` : ''}</li>`).join('')}</ul>
+      <div class="acomp-total"><span>Total</span><b>${brl(Number(p.total))}</b></div>
+      ${p.cidade ? `<p class="dica-tam">Entrega em ${esc(p.cidade)}/${esc(p.uf)}</p>` : ''}
+    </section>
+    <a class="btn btn-claro btn-bloco" href="${esc(zapDoPedido(p.numero))}" target="_blank" rel="noopener">${I.whats}Falar com a Paola sobre este pedido</a>
+    <a class="link-tam envio-copiar" href="acompanhar.html">Ver outro pedido</a>`;
+}
+
+function telaAcompanhar() {
+  const caixa = $('#acompanhar');
+  const mostrarPedido = (p) => {
+    history.replaceState(null, '', `acompanhar.html?p=${encodeURIComponent(p.id)}`);
+    caixa.innerHTML = pedidoAcompanhadoHTML(p);
+    scrollTo(0, 0);
+    $('[data-copiar-rastreio]', caixa)?.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(p.rastreio_codigo); toast('Código copiado'); } catch (e) { toast('Selecione o código e copie'); }
+    });
+  };
+  const mostrarBusca = (aviso = '') => {
+    const doAparelho = lerPedidos().filter((x) => x.id).slice(0, 5);
+    caixa.innerHTML = `<span class="sobre">Paola Corpus Fit</span>
+      <h1 class="titulo">Acompanhar meu pedido</h1>
+      ${doAparelho.length ? `<section class="acomp-meus"><h2>Seus pedidos neste aparelho</h2>
+        ${doAparelho.map((x) => `<a href="${esc(linkAcompanhar(x.id))}"><span><b>${esc(x.numero)}</b><small>${esc(new Date(x.data).toLocaleDateString('pt-BR'))} · ${brl(Number(x.total))}</small></span>${I.seta}</a>`).join('')}
+      </section>` : ''}
+      <form class="acomp-form" id="form-acomp" novalidate>
+        <p>Digite o número do pedido e o CEP de entrega. O número está na mensagem que você enviou para a Paola.</p>
+        <div class="campo"><label for="ac-numero">Número do pedido</label><input id="ac-numero" name="numero" placeholder="PCF-0411-1234" autocapitalize="characters" autocomplete="off" required></div>
+        <div class="campo"><label for="ac-cep">CEP de entrega</label><input id="ac-cep" name="cep" inputmode="numeric" placeholder="00000-000" maxlength="9" autocomplete="postal-code" required></div>
+        <p class="dica-tam erro" data-erro ${aviso ? '' : 'hidden'}>${esc(aviso)}</p>
+        <button class="btn btn-preto btn-bloco" type="submit">Ver meu pedido</button>
+      </form>
+      <a class="link-tam envio-copiar" href="${esc(LOJA.whatsapp)}" target="_blank" rel="noopener">Não achou? Fale com a Paola</a>`;
+    const form = $('#form-acomp', caixa);
+    const erro = $('[data-erro]', form);
+    form.cep.addEventListener('input', () => {
+      const d = form.cep.value.replace(/\D/g, '').slice(0, 8);
+      form.cep.value = d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
+    });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const numero = form.numero.value.trim();
+      const cep = form.cep.value.replace(/\D/g, '');
+      if (!numero || cep.length !== 8) {
+        erro.hidden = false;
+        erro.textContent = 'Preencha o número do pedido e os 8 números do CEP.';
+        return;
+      }
+      const botao = $('button[type=submit]', form);
+      botao.disabled = true;
+      try {
+        const p = await Catalogo.acompanhar({ p_numero: numero, p_cep: cep });
+        if (p) return mostrarPedido(p);
+        erro.textContent = 'Não encontramos esse pedido. Confira o número e o CEP.';
+      } catch (ex) {
+        erro.textContent = 'Não conseguimos buscar agora. Confira a internet e tente de novo.';
+      }
+      erro.hidden = false;
+      botao.disabled = false;
+    });
+  };
+
+  if (!Catalogo.ligado) {
+    caixa.innerHTML = `<h1 class="titulo">Acompanhar meu pedido</h1><p class="acomp-cancelado">Para saber do seu pedido, fale com a Paola no WhatsApp.</p><a class="btn btn-preto btn-bloco" href="${esc(LOJA.whatsapp)}" target="_blank" rel="noopener">${I.whats}Falar com a Paola</a>`;
+    return;
+  }
+  const id = new URLSearchParams(location.search).get('p');
+  if (!id) return mostrarBusca();
+  Catalogo.acompanhar({ p_id: id })
+    .then((p) => (p ? mostrarPedido(p) : mostrarBusca('Não encontramos esse pedido. Digite o número e o CEP.')))
+    .catch(() => mostrarBusca('Não conseguimos buscar agora. Confira a internet e tente de novo.'));
+}
+
 // ---------------- Movimento ao rolar ----------------
 // Leve de propósito: só opacidade e posição, sem biblioteca. A área do pedido não se mexe.
 const semMovimento = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -994,9 +1110,10 @@ Catalogo.pronto.then(() => {
   montarTopo();
   montarRodape();
   preencherValores();
-  ({ inicio: telaInicio, loja: telaLoja, produto: telaProduto, praia: telaPraia })[document.body.dataset.pagina]?.();
+  ({ inicio: telaInicio, loja: telaLoja, produto: telaProduto, praia: telaPraia, acompanhar: telaAcompanhar })[document.body.dataset.pagina]?.();
   ligarMovimento();
-  Catalogo.evento('visita');
+  // Quem veio acompanhar um pedido já comprou: não conta como visita no funil de vendas
+  if (document.body.dataset.pagina !== 'acompanhar') Catalogo.evento('visita');
 });
 
 document.addEventListener('click', (e) => {

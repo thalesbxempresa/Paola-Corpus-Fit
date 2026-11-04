@@ -32,18 +32,23 @@ const I = {
   ok: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
   caminhao: svg('<path d="M2.5 6.5h11v10h-11zM13.5 10h4l3.5 3.5v3h-7.5"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/>'),
   caixa: svg('<path d="M3.5 7.5L12 3l8.5 4.5v9L12 21l-8.5-4.5zM3.5 7.5L12 12l8.5-4.5M12 12v9"/>'),
+  casa: svg('<path d="M3.5 11L12 4l8.5 7M5.5 9.5V20h13V9.5M10 20v-5.5h4V20"/>'),
   x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
 };
 
 // ---------------- Tabelas fixas ----------------
 const STATUS = {
   novo: ['Aguardando', I.relogio],
-  pago: ['Pago', I.ok],
+  pago: ['Confirmado', I.ok],
+  preparando: ['Preparando', I.caixa],
   enviado: ['Enviado', I.caminhao],
-  entregue: ['Entregue', I.caixa],
+  entregue: ['Entregue', I.casa],
   cancelado: ['Cancelado', I.x],
 };
-const VENDA = new Set(['pago', 'enviado', 'entregue']); // Faturamento conta só o que foi pago de verdade
+const VENDA = new Set(['pago', 'preparando', 'enviado', 'entregue']); // Faturamento conta só o que foi pago de verdade
+// Caminho do pedido: a próxima etapa é sempre um botão só
+const ETAPAS = [['novo', 'Pedido recebido'], ['pago', 'Pagamento confirmado'], ['preparando', 'Preparando'], ['enviado', 'Enviado'], ['entregue', 'Entregue']];
+const PROXIMA = { novo: ['pago', 'Confirmar pagamento'], pago: ['preparando', 'Começar a preparar'], preparando: ['enviado', 'Marcar como enviado'], enviado: ['entregue', 'Marcar como entregue'] };
 const CATEGORIAS = [['cintas', 'Cintas'], ['sutias', 'Sutiã'], ['tratamento', 'Tratamento']];
 const FOCOS = [['barriga', 'Segura a barriga'], ['busto', 'Sustenta o busto'], ['bumbum', 'Valoriza o bumbum']];
 
@@ -188,7 +193,7 @@ const Nuvem = (() => {
       const lista = checar(await sb.from('pedidos').select('*').order('criado_em', { ascending: false }).limit(3000));
       return lista.map((p) => ({ ...p, data: p.criado_em }));
     },
-    async alterarPedido(id, campos) { checar(await sb.from('pedidos').update(campos).eq('id', id)); },
+    async alterarPedido(id, campos) { return checar(await sb.from('pedidos').update(campos).eq('id', id).select('*').single()); },
     async excluirPedido(id) { checar(await sb.from('pedidos').delete().eq('id', id)); },
     async eventos() { return checar(await sb.from('eventos_dia').select('*').limit(4000)); },
     async catalogo() {
@@ -764,17 +769,69 @@ addEventListener('resize', () => {
 const etiquetaStatus = (s) => `<span class="pn-st pn-st-${esc(s)}">${(STATUS[s] || STATUS.novo)[1]}${(STATUS[s] || STATUS.novo)[0]}</span>`;
 const enderecoDe = (p) => [p.rua && `${p.rua}, ${p.num}${p.complemento ? ` - ${p.complemento}` : ''}`, p.bairro && `${p.bairro} - ${p.cidade}/${p.uf}`, p.cep && `CEP ${p.cep}`].filter(Boolean).join('\n');
 
-function cartaoPedido(p) {
+const linkAcompanhar = (p) => new URL(`acompanhar.html?p=${encodeURIComponent(p.id)}`, location.href).href;
+
+function etapasHTML(p) {
+  if (p.status === 'cancelado') return '<p class="pn-etapa-cancelada">Este pedido foi cancelado.</p>';
+  const atual = ETAPAS.findIndex(([id]) => id === p.status);
+  return `<ol class="pn-etapas">${ETAPAS.map(([id, nome], i) => {
+    const registro = (p.historico || []).filter((h) => h.status === id).pop();
+    const quando = registro?.em || (id === 'novo' ? p.data : null);
+    return `<li class="${i <= atual ? 'feita' : ''} ${i === atual ? 'atual' : ''}"><i>${i <= atual ? I.ok : ''}</i><span>${nome}${quando && i <= atual ? `<small>${dataHora(quando)}</small>` : ''}</span></li>`;
+  }).join('')}</ol>`;
+}
+
+function rastreioHTML(p) {
+  const ehEnvio = !['enviado', 'entregue'].includes(p.status);
+  if (estado.enviando === p.id) {
+    return `<div class="pn-envio">
+      <div class="campo"><label for="rc-${esc(p.id)}">Código de rastreio</label><input id="rc-${esc(p.id)}" data-rastreio-codigo value="${esc(p.rastreio_codigo || '')}" placeholder="Ex.: AB123456789BR" autocapitalize="characters"><small class="pn-ajuda">Opcional, mas ajuda a cliente. Pode colocar depois.</small></div>
+      <div class="campo"><label for="rl-${esc(p.id)}">Link de rastreio</label><input id="rl-${esc(p.id)}" data-rastreio-link type="url" inputmode="url" value="${esc(p.rastreio_link || '')}" placeholder="https://"><small class="pn-ajuda">Opcional. Só se a transportadora passar um link.</small></div>
+      <button class="btn btn-preto btn-bloco" type="button" data-salvar-envio>${ehEnvio ? 'Confirmar envio' : 'Salvar rastreio'}</button>
+      <button class="pn-link" type="button" data-cancelar-envio>Voltar</button>
+    </div>`;
+  }
+  if (ehEnvio) return '';
+  return `<div class="pn-rastreio-info"><h3>Rastreio</h3>${p.rastreio_codigo ? `<p class="pn-endereco">${esc(p.rastreio_codigo)}</p>` : '<p class="pn-nota">Ainda sem código.</p>'}${p.rastreio_link ? `<a class="pn-link" href="${esc(p.rastreio_link)}" target="_blank" rel="noopener">Abrir link de rastreio</a>` : ''}
+    <button class="pn-link" type="button" data-editar-rastreio>${p.rastreio_codigo || p.rastreio_link ? 'Corrigir rastreio' : 'Colocar código de rastreio'}</button></div>`;
+}
+
+// Mensagem pronta para colar na conversa da cliente
+function avisoCliente(p) {
+  const nome = String(p.nome || '').trim().split(/\s+/)[0];
+  const n = p.numero;
+  const textos = {
+    novo: `Recebi seu pedido ${n}. Vou conferir seu tamanho e te mandar o link de pagamento.`,
+    pago: `Pagamento confirmado! Seu pedido ${n} já está garantido.`,
+    preparando: `Estou preparando seu pedido ${n}.`,
+    enviado: `Seu pedido ${n} foi enviado!${p.rastreio_codigo ? `\nCódigo de rastreio: ${p.rastreio_codigo}` : ''}`,
+    entregue: `Seu pedido ${n} consta como entregue. Qualquer dúvida, é só me chamar!`,
+    cancelado: `Seu pedido ${n} foi cancelado. Qualquer dúvida, é só me chamar.`,
+  };
+  const link = Banco.modo === 'supabase' && p.status !== 'cancelado' ? `\n\nAcompanhe por aqui: ${linkAcompanhar(p)}` : '';
+  return `Oi, ${nome}! ${textos[p.status] || textos.novo}${link}`;
+}
+
+function cartaoPedido(p, aberto = false) {
   const resumo = (p.itens || []).map((x) => `${x.qtd || 1}x ${nomeDoItem(x)}`).join(', ');
-  return `<details class="pn-ped" data-id="${esc(p.id)}">
+  const proxima = PROXIMA[p.status];
+  return `<details class="pn-ped" data-id="${esc(p.id)}" ${aberto ? 'open' : ''}>
     <summary>
       <div class="pn-ped-l1"><b>${esc(p.numero)}</b>${etiquetaStatus(p.status)}${p.conferir ? `<span class="pn-st pn-st-conferir">${I.alerta}Conferir valor</span>` : ''}</div>
       <div class="pn-ped-l2"><span>${esc(p.nome)}</span><b>${brl(p.total)}</b></div>
       <div class="pn-ped-l3">${esc(resumo)} · ${dataHora(p.data)}</div>
     </summary>
     <div class="pn-ped-corpo">
-      <div class="campo"><label for="st-${esc(p.id)}">Situação do pedido</label>
-        <select id="st-${esc(p.id)}" data-status>${Object.entries(STATUS).map(([id, [nome]]) => `<option value="${id}" ${id === p.status ? 'selected' : ''}>${nome}</option>`).join('')}</select>
+      <div class="pn-andamento">
+        ${etapasHTML(p)}
+        ${proxima && estado.enviando !== p.id ? `<button class="btn btn-preto btn-bloco" type="button" data-avancar="${proxima[0]}">${proxima[1]}</button>` : ''}
+        ${p.status === 'pago' && estado.enviando !== p.id ? '<button class="pn-link" type="button" data-avancar="enviado">Já enviei: pular para enviado</button>' : ''}
+        ${rastreioHTML(p)}
+      </div>
+      <div class="pn-aviso-cliente"><h3>Avisar a cliente</h3>
+        <p class="pn-nota">Copie e cole na conversa dela no WhatsApp.</p>
+        <button class="btn btn-claro pn-btn-p" type="button" data-copiar-aviso>Copiar aviso desta etapa</button>
+        ${Banco.modo === 'supabase' ? '<button class="pn-link" type="button" data-copiar-link>Copiar só o link de acompanhamento</button>' : ''}
       </div>
       <div><h3>Itens</h3><ul class="pn-ped-itens">${(p.itens || []).map((x) => {
         const tam = tamanhoDoItem(x);
@@ -784,6 +841,9 @@ function cartaoPedido(p) {
       <div><h3>Pagamento</h3><p>${esc(p.pagamento || 'Não informado')}</p></div>
       <div><h3>Entrega</h3><p class="pn-endereco">${esc(enderecoDe(p)) || 'Não informado'}</p>${enderecoDe(p) ? '<button class="pn-link" type="button" data-copiar>Copiar endereço</button>' : ''}</div>
       <div class="campo"><label for="nt-${esc(p.id)}">Anotação interna</label><textarea id="nt-${esc(p.id)}" data-nota rows="2" placeholder="Só aparece aqui no painel">${esc(p.nota || '')}</textarea></div>
+      <div class="campo"><label for="st-${esc(p.id)}">Corrigir a etapa ou cancelar</label>
+        <select id="st-${esc(p.id)}" data-status>${Object.entries(STATUS).map(([id, [nome]]) => `<option value="${id}" ${id === p.status ? 'selected' : ''}>${nome}</option>`).join('')}</select>
+      </div>
       <button class="pn-link pn-perigo" type="button" data-excluir>Excluir pedido</button>
     </div>
   </details>`;
@@ -792,9 +852,9 @@ function cartaoPedido(p) {
 function exportarCSV(lista) {
   // Campo escrito por cliente não pode virar fórmula ao abrir no Excel
   const celula = (v) => { const t = String(v ?? '').replace(/"/g, '""'); return `"${/^[=+\-@]/.test(t) ? `'${t}` : t}"`; };
-  const linhas = [['Número', 'Data', 'Situação', 'Nome', 'Cidade', 'UF', 'Pagamento', 'Itens', 'Total']];
+  const linhas = [['Número', 'Data', 'Situação', 'Nome', 'Cidade', 'UF', 'Pagamento', 'Itens', 'Total', 'Rastreio']];
   lista.forEach((p) => linhas.push([p.numero, dataHora(p.data), (STATUS[p.status] || STATUS.novo)[0], p.nome, p.cidade, p.uf, p.pagamento,
-    (p.itens || []).map((x) => `${x.qtd || 1}x ${nomeDoItem(x)}${tamanhoDoItem(x) ? ` (${tamanhoDoItem(x)})` : ''}`).join(' | '), Number(p.total).toFixed(2).replace('.', ',')]));
+    (p.itens || []).map((x) => `${x.qtd || 1}x ${nomeDoItem(x)}${tamanhoDoItem(x) ? ` (${tamanhoDoItem(x)})` : ''}`).join(' | '), Number(p.total).toFixed(2).replace('.', ','), p.rastreio_codigo]));
   baixar(`pedidos-${new Date().toLocaleDateString('en-CA')}.csv`, `﻿${linhas.map((l) => l.map(celula).join(';')).join('\r\n')}`, 'text/csv;charset=utf-8');
 }
 function baixar(nome, conteudo, tipo) {
@@ -825,7 +885,7 @@ async function abaPedidos(alvo) {
   const desenhar = () => {
     const lista = filtrados();
     $('#lista-pedidos').innerHTML = lista.length
-      ? lista.slice(0, 200).map(cartaoPedido).join('') + (lista.length > 200 ? `<p class="pn-nota">Mostrando os 200 mais recentes de ${num(lista.length)}. Use a busca ou baixe a planilha.</p>` : '')
+      ? lista.slice(0, 200).map((p) => cartaoPedido(p)).join('') + (lista.length > 200 ? `<p class="pn-nota">Mostrando os 200 mais recentes de ${num(lista.length)}. Use a busca ou baixe a planilha.</p>` : '')
       : `<section class="pn-card pn-comeco"><h2>${estado.pedidos.length ? 'Nada encontrado' : 'Ainda não há pedidos'}</h2>
         <p class="pn-texto">${estado.pedidos.length ? 'Tente outra busca ou outra situação.' : Banco.modo === 'local' ? 'Sem o Supabase, aparecem aqui só os pedidos feitos neste navegador. Depois de conectar, chegam os de todas as clientes.' : 'Os pedidos aparecem aqui assim que as clientes finalizarem pelo site.'}</p></section>`;
   };
@@ -842,24 +902,83 @@ async function abaPedidos(alvo) {
 
   const lista = $('#lista-pedidos');
   const pedidoDe = (el) => estado.pedidos.find((p) => String(p.id) === el.closest('.pn-ped').dataset.id);
+  const redesenharCartao = (p, el) => {
+    el.closest('.pn-ped').outerHTML = cartaoPedido(p, true);
+    $$('[data-filtro]', alvo).forEach((b) => { $('small', b).textContent = conta(b.dataset.filtro); });
+  };
+  // O banco devolve o pedido já com a data da etapa nova
+  const atualizar = async (p, el, campos, mensagem) => {
+    try {
+      const novo = await Banco.alterarPedido(p.id, campos);
+      Object.assign(p, novo || campos);
+      estado.enviando = null;
+      redesenharCartao(p, el);
+      toast(mensagem);
+    } catch (ex) { toast(`Não salvou: ${ex.message}`); }
+  };
+  const copiar = async (texto, mensagem) => {
+    try { await navigator.clipboard.writeText(texto); toast(mensagem); } catch (ex) { toast('Não deu para copiar. Tente de novo.'); }
+  };
   lista.addEventListener('change', async (e) => {
     const p = pedidoDe(e.target);
-    try {
-      if (e.target.matches('[data-status]')) {
-        const novo = e.target.value;
-        await Banco.alterarPedido(p.id, { status: novo });
-        p.status = novo;
-        const cartao = e.target.closest('.pn-ped');
-        $('.pn-ped-l1 .pn-st', cartao).outerHTML = etiquetaStatus(novo);
-        toast(`Pedido marcado como ${STATUS[novo][0].toLowerCase()}`);
-      } else if (e.target.matches('[data-nota]')) {
+    if (e.target.matches('[data-status]')) {
+      const novo = e.target.value;
+      await atualizar(p, e.target, { status: novo }, `Etapa corrigida para ${STATUS[novo][0].toLowerCase()}. Avise a cliente.`);
+    } else if (e.target.matches('[data-nota]')) {
+      try {
         await Banco.alterarPedido(p.id, { nota: e.target.value.trim() });
         p.nota = e.target.value.trim();
         toast('Anotação salva');
-      }
-    } catch (ex) { toast(`Não salvou: ${ex.message}`); }
+      } catch (ex) { toast(`Não salvou: ${ex.message}`); }
+    }
   });
   lista.addEventListener('click', async (e) => {
+    const botao = e.target.closest('button');
+    if (!botao) return;
+    if (botao.dataset.avancar) {
+      const p = pedidoDe(botao);
+      if (botao.dataset.avancar === 'enviado') {
+        estado.enviando = p.id;
+        redesenharCartao(p, botao);
+        return;
+      }
+      const novo = botao.dataset.avancar;
+      await atualizar(p, botao, { status: novo }, `Pedido em "${STATUS[novo][0]}". Avise a cliente.`);
+      return;
+    }
+    if (botao.matches('[data-editar-rastreio]')) {
+      const p = pedidoDe(botao);
+      estado.enviando = p.id;
+      redesenharCartao(p, botao);
+      return;
+    }
+    if (botao.matches('[data-cancelar-envio]')) {
+      const p = pedidoDe(botao);
+      estado.enviando = null;
+      redesenharCartao(p, botao);
+      return;
+    }
+    if (botao.matches('[data-salvar-envio]')) {
+      const p = pedidoDe(botao);
+      const caixa = botao.closest('.pn-envio');
+      const codigo = $('[data-rastreio-codigo]', caixa).value.trim().toUpperCase();
+      const link = $('[data-rastreio-link]', caixa).value.trim();
+      if (link && !/^https:\/\/\S+$/.test(link)) {
+        toast('O link precisa começar com https://');
+        return;
+      }
+      const jaEnviado = ['enviado', 'entregue'].includes(p.status);
+      await atualizar(p, botao, { ...(jaEnviado ? {} : { status: 'enviado' }), rastreio_codigo: codigo || null, rastreio_link: link || null }, jaEnviado ? 'Rastreio salvo. Avise a cliente.' : 'Pedido enviado. Avise a cliente.');
+      return;
+    }
+    if (botao.matches('[data-copiar-aviso]')) {
+      await copiar(avisoCliente(pedidoDe(botao)), 'Aviso copiado. Cole na conversa dela.');
+      return;
+    }
+    if (botao.matches('[data-copiar-link]')) {
+      await copiar(linkAcompanhar(pedidoDe(botao)), 'Link copiado');
+      return;
+    }
     if (e.target.matches('[data-copiar]')) {
       const p = pedidoDe(e.target);
       try { await navigator.clipboard.writeText(`${p.nome}\n${enderecoDe(p)}`); toast('Endereço copiado'); } catch (ex) { toast('Selecione o texto e copie'); }
