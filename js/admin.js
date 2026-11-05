@@ -1358,7 +1358,7 @@ function ligarBuscaCep(cep, form, nomes = { rua: 'rua', bairro: 'bairro', cidade
 // ---------------- Aba Produtos ----------------
 // Feita para a dona da loja: o que mais se usa fica à vista (foto, nome, preço, se está na loja); o resto vai em "Mais opções".
 const SEGMENTOS = { produtos: ['Produtos', 'Novo produto'], kits: ['Combos', 'Novo combo'], praia: ['Moda praia', 'Nova peça'] };
-const precoTxt = (v) => (v == null || Number.isNaN(v) ? '' : String(v).replace('.', ','));
+const precoTxt = (v) => (v == null || Number.isNaN(+v) ? '' : (Number.isInteger(+v) ? String(+v) : (+v).toFixed(2)).replace('.', ','));
 function lerPreco(txt) {
   let t = String(txt ?? '').replace(/[R$\s]/g, '');
   if (!t) return null;
@@ -1369,44 +1369,124 @@ function lerPreco(txt) {
 }
 const usadoEmKits = (id) => estado.catalogo.kits.filter((k) => k.itens?.includes(id) || k.escolha?.includes(id)).map((k) => k.nome);
 const eFixo = (id) => Catalogo.FIXOS.includes(id);
-const textoItem = (x) => (x.preco == null ? 'Vende só nos combos' : `${x.de ? `<s>${brl(x.de)}</s> ` : ''}${brl(x.preco)}`);
 const salvoNaLoja = () => (Banco.modo === 'local' ? 'Salvo neste navegador' : 'Salvo. Já está na loja.');
+
+const textoDaLinha = (x, seg) => (seg === 'praia' ? 'Em breve' : x.preco == null ? 'Vende só nos combos' : `No Pix: ${brl(x.preco * (1 - estado.catalogo.loja.pix))}`);
+
+// A caixa inteira é rótulo do campo: clicar no "R$" ou na borda também põe o cursor lá dentro
+const campoDaLinha = (x, qual, rotulo, extra = '') => `<div class="pn-lin-campo"><label class="pn-lin-rotulo" for="l-${qual}-${esc(x.id)}">${rotulo}</label><label class="pn-rs" for="l-${qual}-${esc(x.id)}"><i>R$</i><input id="l-${qual}-${esc(x.id)}" data-lin-preco="${qual}" type="text" inputmode="decimal" autocomplete="off" placeholder="—" value="${esc(precoTxt(x[qual]))}" ${extra}></label></div>`;
 
 function linhaItem(x, i, total, seg) {
   const naLoja = x.ativo !== false;
-  const direita = estado.ordenando
-    ? `<div class="pn-item-ordem">
+  const nome = `<div class="pn-lin-nome">
+      <button class="pn-lin-foto" type="button" data-editar="${esc(x.id)}" tabindex="-1" aria-hidden="true"><img src="${esc(x.img)}" alt="" loading="lazy"></button>
+      <div><button class="pn-lin-titulo" type="button" data-editar="${esc(x.id)}">${esc(x.nome)}</button><small data-lin-msg role="status">${esc(textoDaLinha(x, seg))}</small></div>
+    </div>`;
+  if (estado.ordenando) {
+    return `<article class="pn-lin pn-lin-ordem ${naLoja ? '' : 'oculto'}">${nome}<div class="pn-item-ordem">
         <button class="pn-ico" type="button" data-mover="-1" data-i="${i}" aria-label="Subir ${esc(x.nome)}" ${i === 0 ? 'disabled' : ''}>${I.cima}</button>
         <button class="pn-ico" type="button" data-mover="1" data-i="${i}" aria-label="Descer ${esc(x.nome)}" ${i === total - 1 ? 'disabled' : ''}>${I.baixo}</button>
-      </div>`
-    : eFixo(x.id) ? '' : `<label class="pn-sw"><input type="checkbox" data-na-loja="${esc(x.id)}" ${naLoja ? 'checked' : ''}><i aria-hidden="true"></i><span>${naLoja ? 'Na loja' : 'Fora da loja'}</span></label>`;
-  return `<article class="pn-item ${naLoja ? '' : 'oculto'}">
-    <button class="pn-item-abre" type="button" data-editar="${esc(x.id)}">
-      <img src="${esc(x.img)}" alt="" loading="lazy">
-      <span class="pn-item-txt"><b>${esc(x.nome)}</b><span>${seg === 'praia' ? 'Em breve' : textoItem(x)}</span></span>
-    </button>
-    ${direita}
+      </div></article>`;
+  }
+  const precos = seg === 'praia' ? '' : campoDaLinha(x, 'preco', 'Preço') + campoDaLinha(x, 'de', 'Preço antigo', x.preco == null ? 'disabled' : '');
+  const loja = eFixo(x.id)
+    ? '<span class="pn-lin-fixo">Sempre na loja</span>'
+    : `<label class="pn-sw"><input type="checkbox" data-na-loja="${esc(x.id)}" ${naLoja ? 'checked' : ''}><i aria-hidden="true"></i><span>${naLoja ? 'Na loja' : 'Fora da loja'}</span></label>`;
+  return `<article class="pn-lin ${seg === 'praia' ? 'pn-lin-curta' : ''} ${eFixo(x.id) ? 'pn-lin-fixa' : ''} ${naLoja ? '' : 'oculto'}" data-id="${esc(x.id)}">
+    ${nome}${precos}${loja}
+    <button class="btn btn-claro pn-btn-p pn-lin-editar" type="button" data-editar="${esc(x.id)}" aria-label="Editar ${esc(x.nome)}">Editar</button>
   </article>`;
+}
+
+function mostrarAvisoValores(alvo) {
+  const caixa = $('#aviso-valores', alvo);
+  if (!caixa) return;
+  caixa.innerHTML = estado.avisoValores ? `<p class="pn-exemplo">${I.alerta}<span><b>Você mudou um preço.</b> Estes textos citam valores e não mudam sozinhos: ${esc(estado.avisoValores.join('; '))}.</span><button class="pn-link" type="button" data-ok-aviso>Entendi</button></p>` : '';
+  $('[data-ok-aviso]', caixa)?.addEventListener('click', () => { estado.avisoValores = null; caixa.innerHTML = ''; });
+}
+
+// Mesmas regras na lista e no editor. Devolve [mensagem, campo que precisa de atenção]
+function problemaPreco(x, seg, preco, de) {
+  if (Number.isNaN(preco)) return ['O preço não parece um número. Ex.: 369,99.', 'preco'];
+  if (Number.isNaN(de)) return ['O preço antigo não parece um número. Ex.: 650.', 'de'];
+  if (preco === 0 || (preco === null && (seg === 'kits' || eFixo(x.id)))) return ['Escreva o preço de venda.', 'preco'];
+  if (de && preco && de <= preco) return ['O preço antigo precisa ser maior que o de venda. Se não houver, deixe vazio.', 'de'];
+  if (seg === 'produtos' && x.cat === 'cintas' && preco != null && !x.barbatanas) return ['Informe quantas barbatanas a cinta tem.', 'barbatanas'];
+  return null;
+}
+
+// Preço na própria lista: salva ao sair do campo e não redesenha, para não tirar quem está digitando do lugar
+async function mudarPrecoNaLinha(inp, seg, alvo) {
+  const linha = inp.closest('.pn-lin');
+  const x = estado.catalogo[seg].find((i) => i.id === linha.dataset.id);
+  const campos = { preco: $('[data-lin-preco="preco"]', linha), de: $('[data-lin-preco="de"]', linha) };
+  const msg = $('[data-lin-msg]', linha);
+  const preco = lerPreco(campos.preco.value);
+  const lidoDe = lerPreco(campos.de.value);
+  const de = lidoDe === 0 || preco === null ? null : lidoDe;
+  Object.values(campos).forEach((c) => c.parentElement.classList.remove('salvo', 'erro'));
+  const problema = problemaPreco(x, seg, preco, de);
+  if (problema) {
+    msg.className = 'erro';
+    msg.textContent = problema[0];
+    campos[problema[1]]?.parentElement.classList.add('erro');
+    return;
+  }
+  msg.className = '';
+  if ((x.preco ?? null) === preco && (x.de ?? null) === de) {
+    msg.textContent = textoDaLinha(x, seg);
+    return;
+  }
+  x.preco = preco;
+  if (de === null) delete x.de; else x.de = de;
+  campos.preco.value = precoTxt(preco);
+  campos.de.value = precoTxt(de);
+  campos.de.disabled = preco === null;
+  msg.textContent = 'Salvando…';
+  const salvou = await salvarCatalogo(salvoNaLoja());
+  const naLista = !estado.editor && location.hash.slice(1) === 'produtos';
+  if (!salvou) {
+    if (naLista) abaProdutos(alvo);
+    return;
+  }
+  const achados = textosComValor(estado.catalogo);
+  estado.avisoValores = achados.length ? achados : null;
+  if (!naLista || !linha.isConnected) return;
+  inp.parentElement.classList.add('salvo');
+  msg.className = 'ok';
+  msg.textContent = `Salvo. ${textoDaLinha(x, seg)}`;
+  mostrarAvisoValores(alvo);
 }
 
 function abaProdutos(alvo) {
   const seg = estado.segmento;
   const lista = estado.catalogo[seg];
+  const comPreco = seg !== 'praia';
+  const nota = comPreco
+    ? '<b>O preço muda aqui mesmo:</b> escreva o valor e saia do campo, que já salva. O preço antigo aparece riscado; só preencha se já foi cobrado de verdade.'
+    : 'As peças aparecem na loja como "Em breve", ainda sem preço.';
   alvo.innerHTML = `
     <div class="pn-cab"><h1 class="pn-h1">Produtos</h1><button class="btn btn-preto pn-btn-p" type="button" data-novo>${I.mais}${SEGMENTOS[seg][1]}</button></div>
     <div class="pn-filtros" role="radiogroup" aria-label="Tipo">
       ${Object.entries(SEGMENTOS).map(([id, [nome]]) => `<button class="chip" type="button" role="radio" data-seg="${id}" aria-checked="${id === seg}">${nome}</button>`).join('')}
     </div>
-    ${estado.avisoValores ? `<p class="pn-exemplo">${I.alerta}<span><b>Você mudou um preço.</b> Estes textos citam valores e não mudam sozinhos: ${esc(estado.avisoValores.join('; '))}.</span><button class="pn-link" type="button" data-ok-aviso>Entendi</button></p>` : ''}
-    <p class="pn-nota pn-dica-lista">Toque em um item para mudar foto, nome, preço ou descrição.</p>
+    <div id="aviso-valores"></div>
+    ${estado.ordenando ? '' : `<p class="pn-nota pn-dica-lista">${nota}</p>
+    <div class="pn-lin-cab ${comPreco ? '' : 'pn-lin-curta'}" aria-hidden="true"><span>Produto</span>${comPreco ? '<span>Preço</span><span>Preço antigo</span>' : ''}<span>Na loja</span><span></span></div>`}
     <section class="pn-itens">${lista.map((x, i) => linhaItem(x, i, lista.length, seg)).join('')}</section>
     ${lista.length > 1 ? `<button class="pn-link pn-ordem" type="button" data-ordenar>${estado.ordenando ? 'Pronto, terminei de ordenar' : 'Mudar a ordem na loja'}</button>` : ''}`;
+  mostrarAvisoValores(alvo);
 
   $$('[data-seg]', alvo).forEach((b) => b.addEventListener('click', () => { estado.segmento = b.dataset.seg; estado.ordenando = false; abaProdutos(alvo); }));
   $('[data-novo]', alvo).addEventListener('click', () => abrirEditor(seg, null));
-  $('[data-ok-aviso]', alvo)?.addEventListener('click', () => { estado.avisoValores = null; abaProdutos(alvo); });
   $('[data-ordenar]', alvo)?.addEventListener('click', () => { estado.ordenando = !estado.ordenando; abaProdutos(alvo); });
   $$('[data-editar]', alvo).forEach((b) => b.addEventListener('click', () => abrirEditor(seg, b.dataset.editar)));
+  $$('[data-lin-preco]', alvo).forEach((inp) => {
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
+    inp.addEventListener('change', () => mudarPrecoNaLinha(inp, seg, alvo));
+    // Libera o preço antigo já ao digitar: a tecla Tab precisa conseguir ir para ele
+    if (inp.dataset.linPreco === 'preco') inp.addEventListener('input', () => { $('[data-lin-preco="de"]', inp.closest('.pn-lin')).disabled = !inp.value.trim(); });
+  });
   $$('[data-na-loja]', alvo).forEach((c) => c.addEventListener('change', async () => {
     lista.find((x) => x.id === c.dataset.naLoja).ativo = c.checked;
     await salvarCatalogo(c.checked ? 'Voltou para a loja' : 'Saiu da loja');
@@ -1421,9 +1501,13 @@ function abaProdutos(alvo) {
   }));
 }
 
+// Uma gravação por vez: dois preços salvos em sequência não podem chegar fora de ordem
+let filaCatalogo = Promise.resolve();
 async function salvarCatalogo(msg) {
   try {
-    await Banco.salvarCatalogo(estado.catalogo);
+    const vez = filaCatalogo.then(() => Banco.salvarCatalogo(estado.catalogo));
+    filaCatalogo = vez.catch(() => {});
+    await vez;
     toast(msg);
     return true;
   } catch (e) {
@@ -1442,7 +1526,7 @@ const NOVOS = {
 function abrirEditor(seg, id) {
   const r = id ? copia(estado.catalogo[seg].find((x) => x.id === id)) : NOVOS[seg]();
   estado.ordenando = false;
-  estado.editor = { seg, id, r, sujo: false, mais: false };
+  estado.editor = { seg, id, r, sujo: false, aba: 'principal' };
   desenharEditor();
   scrollTo(0, 0);
 }
@@ -1477,30 +1561,34 @@ async function prepararFoto(arquivo) {
 const ETIQUETA = (r, exemplo) => campo('Etiqueta na foto', 'selo', r.selo, { ajuda: `Opcional. Ex.: ${exemplo}.` });
 const chaveNaLoja = (r) => (eFixo(r.id) ? '' : chave('Mostrar na loja', 'ativo', r.ativo !== false, { ajuda: 'Desligue quando acabar o estoque. Nada é apagado.' }));
 
-function secaoFotoNome(r, seg, exemplo) {
-  const novoProduto = seg === 'produtos' && !estado.editor.id;
-  return `<section class="pn-card"><h2>Foto e nome</h2>
-    ${fotoBloco('Foto principal', 'img', r.img, { grande: true, ajuda: 'É a primeira foto que a cliente vê.' })}
-    ${campo('Nome', 'nome', r.nome, { attrs: `required placeholder="Ex.: ${exemplo}"` })}
-    ${novoProduto ? seletor('Tipo de produto', 'cat', r.cat, CATEGORIAS) : ''}
-    ${novoProduto && r.cat === 'cintas' ? campo('Quantas barbatanas?', 'barbatanas', r.barbatanas, { tipo: 'number', attrs: 'inputmode="numeric" min="1"' }) : ''}
-    ${chaveNaLoja(r)}
-  </section>`;
+// O editor é dividido em partes: cada uma cabe na tela, sem rolar atrás das coisas.
+// A foto fica junto da prévia: o que se troca é o que a cliente vê.
+function capaDoItem(r, seg) {
+  return `<aside class="pn-capa" data-foto="img">
+    <small class="pn-previa-rotulo">Como aparece na loja</small>
+    <div class="pn-previa-cartao">
+      <span class="pn-previa-foto">${r.img ? `<img src="${esc(r.img)}" alt="">` : '<span class="pn-foto-vazia">Sem foto</span>'}</span>
+      <div class="pn-previa-txt" id="previa-loja">${textoPrevia(r, seg)}</div>
+    </div>
+    <label class="btn btn-claro pn-btn-p pn-btn-foto">${r.img ? 'Trocar foto' : 'Escolher foto'}<input class="pn-oculto" type="file" accept="image/*"></label>
+  </aside>`;
 }
 
-function secaoPreco(r, podeSemPreco) {
-  const ed = estado.editor;
-  if (ed.semPreco === undefined) ed.semPreco = r.preco == null && podeSemPreco && !!ed.id;
-  const sem = ed.semPreco;
-  return `<section class="pn-card"><h2>Preço</h2>
-    ${sem ? '' : `<div class="pn-2">
-      ${campo('Preço de venda', 'preco', precoTxt(r.preco), { attrs: 'inputmode="decimal" placeholder="Ex.: 369,99"' })}
-      ${campo('Preço antigo, riscado', 'de', precoTxt(r.de), { attrs: 'inputmode="decimal" placeholder="Opcional"', ajuda: 'Só preencha se esse preço já foi cobrado de verdade.' })}
+const parteCampos = (r, seg, exemplo, miolo, fim = '') => `<div class="pn-principal">
+    ${capaDoItem(r, seg)}
+    <section class="pn-card">
+      ${campo('Nome', 'nome', r.nome, { attrs: `required placeholder="Ex.: ${exemplo}"` })}
+      ${miolo}
+      ${chaveNaLoja(r)}
+      ${fim}
+    </section>
+  </div>`;
+
+const camposPreco = (r, podeSemPreco) => `<div class="pn-precos">
+      ${campo('Preço de venda', 'preco', precoTxt(r.preco), { attrs: 'inputmode="decimal" placeholder="Ex.: 369,99"', ajuda: podeSemPreco ? 'Deixe vazio se vende só nos combos.' : '' })}
+      ${campo('Preço antigo', 'de', precoTxt(r.de), { attrs: 'inputmode="decimal" placeholder="Opcional"', ajuda: 'Aparece riscado. Só preencha se já foi cobrado de verdade.' })}
     </div>
-    <p class="pn-previa-preco" id="previa-preco"></p>`}
-    ${podeSemPreco ? chave('Vende só dentro de combos, sem preço próprio', 'semPreco', sem) : ''}
-  </section>`;
-}
+    <p class="pn-previa-preco" id="previa-preco"></p>`;
 
 function blocoExcluir(seg, id) {
   if (!id || eFixo(id)) return '';
@@ -1510,37 +1598,42 @@ function blocoExcluir(seg, id) {
     : '<button class="pn-link pn-perigo" type="button" data-excluir-item>Excluir este item da loja</button>'}</div>`;
 }
 
-const maisOpcoes = (resumo, corpo) => `<details class="pn-card pn-mais" ${estado.editor.mais ? 'open' : ''}>
-    <summary><b>Mais opções</b><small>${resumo}</small></summary>
-    <div class="pn-mais-corpo">${corpo}</div>
-  </details>`;
+const campoBarbatanas = (r) => campo('Quantas barbatanas?', 'barbatanas', r.barbatanas, { tipo: 'number', attrs: 'inputmode="numeric" min="1"' });
 
-function formProduto(r) {
+// Cada parte: [identificador, nome na aba, conteúdo]
+function partesProduto(r) {
   const { id } = estado.editor;
   const fixo = eFixo(id);
-  return `
-    ${secaoFotoNome(r, 'produtos', 'Cinta Modeladora')}
-    ${secaoPreco(r, !fixo)}
-    <section class="pn-card"><h2>Descrição</h2>
-      ${area('O que dizer sobre o produto', 'desc', r.desc, { linhas: 5 })}
-      ${area('Principais vantagens', 'pontos', (r.pontos || []).join('\n'), { linhas: 4, ajuda: 'Uma em cada linha. Aparecem em lista na página do produto.' })}
-    </section>
-    ${maisOpcoes('Mais fotos, etiqueta, como usar', `
-      ${ETIQUETA(r, 'A melhor')}
+  return [
+    ['principal', 'Preço e foto', parteCampos(r, 'produtos', 'Cinta Modeladora', `
+      ${!id ? seletor('Tipo de produto', 'cat', r.cat, CATEGORIAS) : ''}
+      ${!id && r.cat === 'cintas' ? campoBarbatanas(r) : ''}
+      ${camposPreco(r, !fixo)}
+      ${area('Descrição', 'desc', r.desc, { linhas: 4 })}`)],
+    ['textos', 'Textos', `<section class="pn-card pn-duas">
+      ${area('Principais vantagens', 'pontos', (r.pontos || []).join('\n'), { linhas: 5, ajuda: 'Uma em cada linha. Aparecem em lista na página do produto.' })}
+      ${area('Como usar', 'uso', r.uso, { linhas: 5, ajuda: 'Opcional.' })}
       ${campo('Frase curta abaixo do nome', 'frase', r.frase, { ajuda: 'Opcional.' })}
-      ${area('Como usar', 'uso', r.uso, { ajuda: 'Opcional.' })}
-      <h3 class="pn-sub">Mais fotos</h3>
-      ${fotoBloco('Segunda foto do card', 'img2', r.img2, { opcional: true, ajuda: 'Aparece ao passar o mouse no computador.' })}
-      ${(r.galeria || []).map((g, i) => `<div class="pn-gal"><img src="${esc(g.src)}" alt=""><input name="g-${i}" value="${esc(g.txt || '')}" placeholder="Legenda (opcional)" aria-label="Legenda da foto ${i + 1}"><button class="pn-link pn-perigo" type="button" data-tirar-gal="${i}">Tirar</button></div>`).join('')}
-      <label class="btn btn-claro pn-btn-p pn-btn-foto pn-add">Adicionar foto na página do produto<input class="pn-oculto" type="file" accept="image/*" data-gal></label>
-      <h3 class="pn-sub">Detalhes</h3>
+      ${ETIQUETA(r, 'A melhor')}
+    </section>`],
+    ['fotos', 'Mais fotos', `<section class="pn-card">
+      <h2>Fotos da página do produto</h2>
+      <div class="pn-fotos">
+        ${(r.galeria || []).map((g, i) => `<div class="pn-fotos-item"><img src="${esc(g.src)}" alt=""><input name="g-${i}" value="${esc(g.txt || '')}" placeholder="Legenda (opcional)" aria-label="Legenda da foto ${i + 1}"><button class="pn-link pn-perigo" type="button" data-tirar-gal="${i}">Tirar</button></div>`).join('')}
+        <label class="pn-foto-nova pn-btn-foto">Adicionar foto<input class="pn-oculto" type="file" accept="image/*" data-gal></label>
+      </div>
+      <h3 class="pn-sub">Segunda foto na vitrine</h3>
+      ${fotoBloco('Segunda foto', 'img2', r.img2, { opcional: true, ajuda: 'Aparece ao passar o mouse, no computador.' })}
+    </section>`],
+    ['detalhes', 'Detalhes', `<section class="pn-card pn-duas">
       ${chave('A cliente escolhe o tamanho pela calça', 'tamanhos', r.tamanhos)}
       ${id && !fixo ? seletor('Tipo de produto', 'cat', r.cat, CATEGORIAS) : ''}
-      ${id && r.cat === 'cintas' ? campo('Quantas barbatanas?', 'barbatanas', r.barbatanas, { tipo: 'number', attrs: 'inputmode="numeric" min="1"' }) : ''}
+      ${id && r.cat === 'cintas' ? campoBarbatanas(r) : ''}
       ${campo('Nome curto', 'curto', r.curto, { ajuda: 'Opcional. Usado no pedido e nos combos. Vazio: usa o nome.' })}
       ${campo('Nome no plural', 'plural', r.plural, { ajuda: 'Opcional. Usado quando vêm 2 no combo. Ex.: Sutiãs reforçados.' })}
       ${blocoExcluir('produtos', id)}
-    `)}`;
+    </section>`],
+  ];
 }
 
 function resumoCombo(r) {
@@ -1554,56 +1647,55 @@ function resumoCombo(r) {
   return nomes.length ? `Vem: ${nomes.join(' + ')}` : 'Ainda não tem nenhum produto no combo.';
 }
 
-function formKit(r) {
+function partesKit(r) {
   const { id } = estado.editor;
   const conta = (p) => (r.itens || []).filter((i) => i === p).length;
-  return `
-    ${secaoFotoNome(r, 'kits', 'Kit Completo')}
-    ${secaoPreco(r, false)}
-    <section class="pn-card"><h2>O que vem no combo</h2>
-      <ul class="pn-compoe">${estado.catalogo.produtos.map((p) => `<li><img src="${esc(p.img)}" alt=""><span>${esc(p.curto || p.nome)}</span>
-        <div class="qtd"><button type="button" data-kit="${esc(p.id)}" data-d="-1" aria-label="Menos ${esc(p.nome)}">−</button><span>${conta(p.id)}</span><button type="button" data-kit="${esc(p.id)}" data-d="1" aria-label="Mais ${esc(p.nome)}">+</button></div></li>`).join('')}</ul>
-      <p class="pn-previa-preco">${esc(resumoCombo(r))}</p>
-      <h3 class="pn-sub">A cliente escolhe mais um item?</h3>
-      <p class="pn-nota">Opcional. Marque as opções; ela escolhe uma na hora de comprar.</p>
-      ${estado.catalogo.produtos.map((p) => chave(esc(p.curto || p.nome), 'escolha', r.escolha?.includes(p.id), { valor: esc(p.id) })).join('')}
-    </section>
-    <section class="pn-card"><h2>Descrição</h2>
-      ${area('O que dizer sobre o combo', 'desc', r.desc, { linhas: 4 })}
-    </section>
-    ${maisOpcoes('Etiqueta, segunda foto, textos do card', `
+  return [
+    ['principal', 'Preço e foto', parteCampos(r, 'kits', 'Kit Completo', `
+      ${camposPreco(r, false)}
+      ${area('Descrição', 'desc', r.desc, { linhas: 4 })}`)],
+    ['vem', 'O que vem', `<section class="pn-card pn-duas">
+      <div class="pn-bloco"><h2>O que vem no combo</h2>
+        <ul class="pn-compoe">${estado.catalogo.produtos.map((p) => `<li><img src="${esc(p.img)}" alt=""><span>${esc(p.curto || p.nome)}</span>
+          <div class="qtd"><button type="button" data-kit="${esc(p.id)}" data-d="-1" aria-label="Menos ${esc(p.nome)}">−</button><span>${conta(p.id)}</span><button type="button" data-kit="${esc(p.id)}" data-d="1" aria-label="Mais ${esc(p.nome)}">+</button></div></li>`).join('')}</ul>
+        <p class="pn-previa-preco">${esc(resumoCombo(r))}</p>
+      </div>
+      <div class="pn-bloco"><h2>A cliente escolhe mais um item?</h2>
+        <p class="pn-nota">Opcional. Marque as opções; ela escolhe uma na hora de comprar.</p>
+        ${estado.catalogo.produtos.map((p) => chave(esc(p.curto || p.nome), 'escolha', r.escolha?.includes(p.id), { valor: esc(p.id) })).join('')}
+      </div>
+    </section>`],
+    ['mais', 'Mais opções', `<section class="pn-card pn-duas">
       ${ETIQUETA(r, 'O que mais sai')}
       ${campo('Frase curta abaixo do nome', 'frase', r.frase, { ajuda: 'Opcional.' })}
-      ${campo('Destaque no card', 'gancho', r.gancho, { ajuda: 'Opcional. Vazio: mostra quanto a cliente economiza.' })}
+      ${campo('Destaque na vitrine', 'gancho', r.gancho, { ajuda: 'Opcional. Vazio: mostra quanto a cliente economiza.' })}
       ${campo('Resumo do combo', 'sub', r.sub, { ajuda: 'Opcional. Ex.: Leve 5 produtos.' })}
-      ${fotoBloco('Segunda foto do card', 'img2', r.img2, { opcional: true, ajuda: 'Aparece ao passar o mouse no computador.' })}
+      ${fotoBloco('Segunda foto na vitrine', 'img2', r.img2, { opcional: true, ajuda: 'Aparece ao passar o mouse, no computador.' })}
       ${blocoExcluir('kits', id)}
-    `)}`;
+    </section>`],
+  ];
 }
 
-function formPraia(r) {
+function partesPraia(r) {
   const { id } = estado.editor;
-  return `
-    ${secaoFotoNome(r, 'praia', 'Biquíni Cintura Alta')}
-    <section class="pn-card"><h2>O que a peça valoriza</h2>
-      <p class="pn-nota">A cliente filtra a coleção por isso.</p>
-      ${FOCOS.map(([f, nome]) => chave(nome, 'foco', r.foco?.includes(f), { valor: f })).join('')}
-      ${chave('É biquíni: entra no "Monte seu biquíni"', 'biquini', r.biquini, { ajuda: 'Top e calcinha em tamanhos diferentes.' })}
-    </section>
-    <section class="pn-card"><h2>Cores previstas</h2>
-      <div class="pn-cores">${(r.cores || []).map((c, i) => `<div><input type="color" name="cor" value="${esc(c)}" aria-label="Cor ${i + 1}">${r.cores.length > 1 ? `<button class="pn-link pn-perigo" type="button" data-tirar-cor="${i}">Tirar</button>` : ''}</div>`).join('')}</div>
-      ${(r.cores || []).length < 5 ? '<button class="pn-link pn-add" type="button" data-nova-cor>Adicionar cor</button>' : ''}
-    </section>
-    ${maisOpcoes('Etiqueta na foto', `
-      ${ETIQUETA(r, 'Destaque')}
-      ${blocoExcluir('praia', id)}
-    `)}`;
+  return [['principal', 'Peça', parteCampos(r, 'praia', 'Biquíni Cintura Alta', `
+      <div class="pn-duas">
+        <div class="pn-bloco"><h3 class="pn-sub">O que a peça valoriza</h3>
+          ${FOCOS.map(([f, nome]) => chave(nome, 'foco', r.foco?.includes(f), { valor: f })).join('')}
+          ${chave('É biquíni: entra no "Monte seu biquíni"', 'biquini', r.biquini, { ajuda: 'Top e calcinha em tamanhos diferentes.' })}
+        </div>
+        <div class="pn-bloco"><h3 class="pn-sub">Cores previstas</h3>
+          <div class="pn-cores">${(r.cores || []).map((c, i) => `<div><input type="color" name="cor" value="${esc(c)}" aria-label="Cor ${i + 1}">${r.cores.length > 1 ? `<button class="pn-link pn-perigo" type="button" data-tirar-cor="${i}">Tirar</button>` : ''}</div>`).join('')}</div>
+          ${(r.cores || []).length < 5 ? '<button class="pn-link pn-add" type="button" data-nova-cor>Adicionar cor</button>' : ''}
+        </div>
+      </div>
+      ${ETIQUETA(r, 'Destaque')}`, blocoExcluir('praia', id))]];
 }
 
 // O que a cliente vai ver, atualizado enquanto se digita
 function textoPrevia(r, seg) {
   const preco = Number.isFinite(r.preco) && r.preco > 0 ? r.preco : null;
-  const falta = estado.editor.semPreco ? 'Vende só nos combos' : 'Falta o preço';
+  const falta = seg === 'produtos' && !eFixo(estado.editor.id) ? 'Vende só nos combos' : 'Falta o preço';
   const valores = seg === 'praia' ? '<span>Em breve</span>'
     : preco ? `${r.de > preco ? `<s>${brl(r.de)}</s>` : ''}<b>${brl(preco)}</b><small>${brl(preco * (1 - estado.catalogo.loja.pix))} no Pix</small>`
       : `<span>${falta}</span>`;
@@ -1611,22 +1703,21 @@ function textoPrevia(r, seg) {
 }
 
 function desenharEditor() {
-  const { seg, id, r } = estado.editor;
+  const ed = estado.editor;
+  const { seg, id, r } = ed;
   const alvo = $('#aba');
-  const corpo = { produtos: formProduto, kits: formKit, praia: formPraia }[seg](r);
+  const partes = { produtos: partesProduto, kits: partesKit, praia: partesPraia }[seg](r);
   alvo.innerHTML = `
-    <button class="pn-voltar" type="button" data-voltar>${I.voltar}Voltar para a lista</button>
-    <div class="pn-cab"><h1 class="pn-h1">${id ? esc(r.nome) : SEGMENTOS[seg][1]}</h1>${id && seg !== 'praia' ? `<a class="pn-link" href="produto.html?id=${esc(id)}" target="_blank" rel="noopener">Ver na loja</a>` : ''}</div>
     <form id="editor" class="pn-form pn-form-produto" novalidate>
-      ${corpo}
-      <aside class="pn-previa">
-        <small class="pn-previa-rotulo">Como aparece na loja</small>
-        <div class="pn-previa-cartao">
-          <span class="pn-previa-foto">${r.img ? `<img src="${esc(r.img)}" alt="">` : ''}</span>
-          <div class="pn-previa-txt" id="previa-loja">${textoPrevia(r, seg)}</div>
-        </div>
-      </aside>
-      <div class="pn-salvar"><p class="dica-tam erro" data-erro hidden></p><button class="btn btn-preto btn-bloco" type="submit">Salvar alterações</button></div>
+      <div class="pn-ed-topo">
+        <button class="pn-voltar" type="button" data-voltar>${I.voltar}Voltar</button>
+        <h1 class="pn-h1 pn-ed-nome">${id ? esc(r.nome) : SEGMENTOS[seg][1]}</h1>
+        ${id && seg !== 'praia' ? `<a class="pn-link" href="produto.html?id=${esc(id)}" target="_blank" rel="noopener">Ver na loja</a>` : ''}
+        <div class="pn-ed-salvar"><button class="btn btn-preto" type="submit">Salvar alterações</button></div>
+        <p class="dica-tam erro pn-ed-erro" data-erro hidden></p>
+      </div>
+      ${partes.length > 1 ? `<div class="pn-filtros" role="radiogroup" aria-label="Partes do produto">${partes.map(([a, nome]) => `<button class="chip" type="button" role="radio" data-parte="${a}" aria-checked="${a === ed.aba}">${nome}</button>`).join('')}</div>` : ''}
+      ${partes.map(([a, , html]) => `<div class="pn-parte" data-painel="${a}" ${a === ed.aba ? '' : 'hidden'}>${html}</div>`).join('')}
     </form>`;
   ligarEditor(alvo);
 }
@@ -1649,10 +1740,9 @@ function lerEditor() {
     return;
   }
   ['frase', 'desc'].forEach(opcional);
+  r.preco = lerPreco(valor('preco'));
   const de = lerPreco(valor('de'));
-  if (de === null) delete r.de; else r.de = de;
-  if (el.semPreco) estado.editor.semPreco = el.semPreco.checked;
-  r.preco = estado.editor.semPreco ? null : lerPreco(valor('preco'));
+  if (de === null || de === 0 || r.preco === null) delete r.de; else r.de = de;
   if (seg === 'kits') {
     ['sub', 'gancho'].forEach(opcional);
     const escolha = marcados('escolha');
@@ -1668,20 +1758,17 @@ function lerEditor() {
   (r.galeria || []).forEach((g, i) => { const t = valor(`g-${i}`); if (t) g.txt = t; else delete g.txt; });
 }
 
-// Devolve [mensagem, campo que precisa de atenção]
+// Devolve [mensagem, campo que precisa de atenção, parte do editor quando o problema não é num campo]
 function validarEditor() {
-  const { seg, id, r, semPreco } = estado.editor;
+  const { seg, id, r } = estado.editor;
   if (!r.nome) return ['Escreva o nome.', 'nome'];
-  if (!r.img) return ['Escolha a foto principal.'];
+  if (!r.img) return ['Escolha a foto principal.', null, 'principal'];
   if (seg === 'praia') return r.cores?.length ? null : ['Deixe pelo menos uma cor.'];
-  if (Number.isNaN(r.preco)) return ['O preço de venda não parece um número. Ex.: 369,99.', 'preco'];
-  if (Number.isNaN(r.de)) return ['O preço antigo não parece um número. Ex.: 650.', 'de'];
-  if (!semPreco && !r.preco) return ['Escreva o preço de venda.', 'preco'];
-  if (r.de && r.preco && r.de <= r.preco) return ['O preço antigo precisa ser maior que o de venda. Se não houver, deixe vazio.', 'de'];
+  const preco = problemaPreco(r, seg, r.preco, r.de ?? null);
+  if (preco) return preco;
   if (!r.desc) return ['Escreva a descrição.', 'desc'];
-  if (seg === 'kits' && !r.itens?.length) return ['Coloque pelo menos um produto no combo.'];
-  if (id === 'combo-duplo' && !r.escolha?.length) return ['O Combo Duplo precisa de pelo menos uma opção para a cliente escolher.'];
-  if (seg === 'produtos' && r.cat === 'cintas' && r.preco != null && !r.barbatanas) return ['Informe quantas barbatanas a cinta tem.', 'barbatanas'];
+  if (seg === 'kits' && !r.itens?.length) return ['Coloque pelo menos um produto no combo.', null, 'vem'];
+  if (id === 'combo-duplo' && !r.escolha?.length) return ['O Combo Duplo precisa de pelo menos uma opção para a cliente escolher.', null, 'vem'];
   return null;
 }
 
@@ -1709,7 +1796,13 @@ function ligarEditor(alvo) {
   const form = $('#editor');
   const ed = estado.editor;
   const { seg, id } = ed;
-  const redesenhar = () => { lerEditor(); ed.sujo = true; desenharEditor(); };
+
+  const irParaParte = (a) => {
+    ed.aba = a;
+    $$('[data-parte]', form).forEach((b) => b.setAttribute('aria-checked', b.dataset.parte === a));
+    $$('[data-painel]', form).forEach((p) => { p.hidden = p.dataset.painel !== a; });
+  };
+  $$('[data-parte]', form).forEach((b) => b.addEventListener('click', () => irParaParte(b.dataset.parte)));
 
   // Conta do Pix, das parcelas e do desconto; e o cartão de como fica na loja
   const previaPreco = $('#previa-preco', form);
@@ -1723,8 +1816,12 @@ function ligarEditor(alvo) {
   };
   atualizarPrevias();
 
-  form.addEventListener('input', () => { ed.sujo = true; lerEditor(); atualizarPrevias(); });
-  $('.pn-mais', form)?.addEventListener('toggle', (e) => { ed.mais = e.target.open; });
+  form.addEventListener('input', () => {
+    ed.sujo = true;
+    $('[data-erro]', form).hidden = true;
+    lerEditor();
+    atualizarPrevias();
+  });
   $('[data-voltar]', alvo).addEventListener('click', () => {
     if (ed.sujo && !confirm('Sair sem salvar as alterações?')) return;
     estado.editor = null;
@@ -1737,7 +1834,6 @@ function ligarEditor(alvo) {
     ed.sujo = true;
     desenharEditor();
   });
-  form.elements.semPreco?.addEventListener('change', redesenhar);
 
   // Fotos
   const enviarFoto = async (arquivo, aoPronto) => {
@@ -1786,6 +1882,7 @@ function ligarEditor(alvo) {
     ed.r.itens = itens;
     ed.sujo = true;
     desenharEditor();
+    $(`[data-kit="${b.dataset.kit}"][data-d="${b.dataset.d}"]`)?.focus();
   }));
 
   // Moda praia: cores
@@ -1817,15 +1914,15 @@ function ligarEditor(alvo) {
     const erro = $('[data-erro]', form);
     const problema = validarEditor();
     if (problema) {
-      const [msg, nomeCampo] = problema;
+      const [msg, nomeCampo, parte] = problema;
       erro.hidden = false;
       erro.textContent = msg;
+      toast(msg);
+      // O problema pode estar em outra parte do editor: leva a pessoa até ele
       const alvoCampo = nomeCampo && form.elements[nomeCampo];
-      if (alvoCampo) {
-        const caixa = alvoCampo.closest('details');
-        if (caixa) caixa.open = true;
-        alvoCampo.focus();
-      }
+      const destino = alvoCampo?.closest('[data-painel]')?.dataset.painel || parte;
+      if (destino) irParaParte(destino);
+      alvoCampo?.focus();
       return;
     }
     erro.hidden = true;
