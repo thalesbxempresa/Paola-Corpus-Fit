@@ -811,6 +811,15 @@ section[id] { scroll-margin-top: 84px; }
 .tam-res b { display: block; font-size: 17px; }
 .tam-res small { display: block; font-size: 13px; color: var(--tinta-2); }
 .calca-ui .dica-tam a { color: var(--vinho); font-weight: 800; text-decoration: underline; }
+/* Tamanho que acabou: fica riscado e, ao tocar, explica onde ainda tem */
+.chip.esgotado, .chip.esgotado:hover { background: var(--areia-2); box-shadow: none; color: var(--tinta-3); text-decoration: line-through; cursor: not-allowed; }
+.tam-fora { margin-top: 14px; padding: 12px 14px; border-radius: 14px; background: #FBE9E7; font-size: 14px; line-height: 1.45; color: #7A2A1E; }
+.tam-fora[hidden] { display: none; }
+.tam-fora a { font-weight: 800; text-decoration: underline; }
+.item-sacola .det-fora { font-weight: 700; color: #B42318; }
+.esgotado-bloco { display: grid; gap: 10px; margin-top: 18px; padding: 16px; border-radius: 18px; background: var(--rosa-2); }
+.esgotado-bloco b { font-size: 18px; font-weight: 800; }
+.esgotado-bloco p a { color: var(--vinho); font-weight: 800; text-decoration: underline; }
 .tam-passos { margin: 20px 0 24px; }
 .tam-passos li { align-items: flex-start; }
 
@@ -829,7 +838,7 @@ section[id] { scroll-margin-top: 84px; }
 .escolha-op b { font-size: 13.5px; line-height: 1.2; }
 
 /* Peças que só saem nos combos */
-.so-combo { display: inline-block; margin-top: 6px; padding: 4px 9px; border-radius: 999px; background: var(--rosa-2); color: var(--vinho); font-size: 11.5px; font-weight: 900; }
+.so-combo { display: inline-block; width: fit-content; margin-top: 6px; padding: 4px 9px; border-radius: 999px; background: var(--rosa-2); color: var(--vinho); font-size: 11.5px; font-weight: 900; }
 .prod-info .kits { grid-template-columns: 1fr; gap: 10px; }
 @media (min-width: 900px) {
   .prod-info .kit { grid-template-columns: 96px 1fr; align-items: center; padding: 10px; }

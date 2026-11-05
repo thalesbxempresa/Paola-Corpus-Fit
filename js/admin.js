@@ -1188,7 +1188,9 @@ function abrirNovoPedido(alvo) {
 
   const linhaItem = (x, i) => {
     const it = acha(x.id);
-    const calcas = estado.catalogo.tabela.flatMap((t) => t.calca.map((c) => [String(c), `${c} (tamanho ${t.t})`]));
+    // Tamanho esgotado só ganha um aviso: quem vende aqui é a própria dona, ela sabe se ainda tem
+    const fora = tamanhosEsgotados(it);
+    const calcas = estado.catalogo.tabela.flatMap((t) => t.calca.map((c) => [String(c), `${c} (tamanho ${t.t}${fora.includes(t.t) ? ', esgotado' : ''})`]));
     return `<div class="pn-np-item" data-i="${i}">
       ${seletor('Produto', `np-id-${i}`, x.id, vendaveis.map((v) => [v.id, `${esc(v.nome)}${v.preco != null ? ` · ${brl(v.preco)}` : ''}`]), { attrs: 'data-np="id"' })}
       <div class="pn-2">
@@ -1371,7 +1373,18 @@ const usadoEmKits = (id) => estado.catalogo.kits.filter((k) => k.itens?.includes
 const eFixo = (id) => Catalogo.FIXOS.includes(id);
 const salvoNaLoja = () => (Banco.modo === 'local' ? 'Salvo neste navegador' : 'Salvo. Já está na loja.');
 
-const textoDaLinha = (x, seg) => (seg === 'praia' ? 'Em breve' : x.preco == null ? 'Vende só nos combos' : `No Pix: ${brl(x.preco * (1 - estado.catalogo.loja.pix))}`);
+// Tamanhos que acabaram, na ordem da tabela; o combo herda os da cinta que vem nele
+function tamanhosEsgotados(x) {
+  if (!x) return [];
+  const pecas = x.itens ? x.itens.map((i) => estado.catalogo.produtos.find((p) => p.id === i)) : [x];
+  const fora = pecas.flatMap((p) => (p?.tamanhos && p.esgotados) || []);
+  return estado.catalogo.tabela.map((t) => t.t).filter((t) => fora.includes(t));
+}
+const textoDaLinha = (x, seg) => {
+  if (seg === 'praia') return 'Em breve';
+  const fora = tamanhosEsgotados(x);
+  return `${x.preco == null ? 'Vende só nos combos' : `No Pix: ${brl(x.preco * (1 - estado.catalogo.loja.pix))}`}${fora.length ? ` · Acabou: ${fora.join(', ')}` : ''}`;
+};
 
 // A caixa inteira é rótulo do campo: clicar no "R$" ou na borda também põe o cursor lá dentro
 const campoDaLinha = (x, qual, rotulo, extra = '') => `<div class="pn-lin-campo"><label class="pn-lin-rotulo" for="l-${qual}-${esc(x.id)}">${rotulo}</label><label class="pn-rs" for="l-${qual}-${esc(x.id)}"><i>R$</i><input id="l-${qual}-${esc(x.id)}" data-lin-preco="${qual}" type="text" inputmode="decimal" autocomplete="off" placeholder="—" value="${esc(precoTxt(x[qual]))}" ${extra}></label></div>`;
@@ -1458,7 +1471,54 @@ async function mudarPrecoNaLinha(inp, seg, alvo) {
   mostrarAvisoValores(alvo);
 }
 
+// Abas de cima: os três tipos de item e o estoque
+const filtrosProdutos = (seg) => `<div class="pn-filtros pn-filtros-justo" role="radiogroup" aria-label="O que ver">
+    ${[...Object.entries(SEGMENTOS), ['estoque', ['Estoque']]].map(([id, [nome]]) => `<button class="chip" type="button" role="radio" data-seg="${id}" aria-checked="${id === seg}">${nome}</button>`).join('')}
+  </div>`;
+const ligarFiltrosProdutos = (alvo) => $$('[data-seg]', alvo).forEach((b) => b.addEventListener('click', () => { estado.segmento = b.dataset.seg; estado.ordenando = false; abaProdutos(alvo); }));
+
+// Estoque: marca só se tem ou se acabou, sem contar peça. Salva no toque, como o preço na lista
+function resumoEstoque(x) {
+  const fora = tamanhosEsgotados(x);
+  if (!fora.length) return 'Todos os tamanhos na loja';
+  return fora.length === estado.catalogo.tabela.length ? 'Acabou em todos os tamanhos' : `Acabou: ${fora.join(', ')}`;
+}
+function chipEstoque(x, { t, calca }) {
+  const fora = !!x.esgotados?.includes(t);
+  return `<button class="pn-est-chip ${fora ? 'fora' : ''}" type="button" data-est-tam="${esc(t)}" aria-pressed="${fora}" aria-label="Tamanho ${esc(t)}, calça ${esc(calca.join(' e '))}: ${fora ? 'acabou' : 'tem'}"><b>${esc(t)}</b><small>${fora ? 'Acabou' : 'Tem'}</small></button>`;
+}
+function telaEstoque(alvo) {
+  const { produtos, tabela } = estado.catalogo;
+  const lista = produtos.filter((x) => x.tamanhos);
+  alvo.innerHTML = `
+    <div class="pn-cab"><h1 class="pn-h1">Produtos</h1></div>
+    ${filtrosProdutos('estoque')}
+    <p class="pn-nota pn-dica-lista"><b>Toque no tamanho que acabou:</b> ele sai da loja na hora, inclusive dos combos que levam essa cinta. Toque de novo quando chegar.</p>
+    <section class="pn-itens" id="estoque">${lista.map((x) => `<article class="pn-est" data-id="${esc(x.id)}">
+      <div class="pn-est-nome"><img src="${esc(x.img)}" alt="" loading="lazy"><div><b>${esc(x.nome)}</b><small data-est-resumo role="status">${esc(resumoEstoque(x))}</small></div></div>
+      <div class="pn-est-tam" role="group" aria-label="Tamanhos de ${esc(x.nome)}">${tabela.map((t) => chipEstoque(x, t)).join('')}</div>
+    </article>`).join('')}</section>
+    <p class="pn-nota pn-est-nota">Sutiã, gel e creme não têm tamanho no site. Para tirar um deles da vitrine, use a chave "Na loja" em Produtos; os combos que levam esse item continuam à venda.</p>`;
+  ligarFiltrosProdutos(alvo);
+  $('#estoque', alvo).addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-est-tam]');
+    if (!b) return;
+    const linha = b.closest('.pn-est');
+    const x = produtos.find((p) => p.id === linha.dataset.id);
+    const t = b.dataset.estTam;
+    const acabou = !x.esgotados?.includes(t);
+    const fora = tabela.map((l) => l.t).filter((n) => (n === t ? acabou : x.esgotados?.includes(n)));
+    if (fora.length) x.esgotados = fora; else delete x.esgotados;
+    b.outerHTML = chipEstoque(x, tabela.find((l) => l.t === t));
+    $$('[data-est-tam]', linha).find((c) => c.dataset.estTam === t)?.focus();
+    $('[data-est-resumo]', linha).textContent = resumoEstoque(x);
+    const salvou = await salvarCatalogo(acabou ? `Tamanho ${t} saiu da loja` : `Tamanho ${t} voltou para a loja`);
+    if (!salvou && !estado.editor && estado.segmento === 'estoque' && location.hash.slice(1) === 'produtos') telaEstoque(alvo);
+  });
+}
+
 function abaProdutos(alvo) {
+  if (estado.segmento === 'estoque') return telaEstoque(alvo);
   const seg = estado.segmento;
   const lista = estado.catalogo[seg];
   const comPreco = seg !== 'praia';
@@ -1467,9 +1527,7 @@ function abaProdutos(alvo) {
     : 'As peças aparecem na loja como "Em breve", ainda sem preço.';
   alvo.innerHTML = `
     <div class="pn-cab"><h1 class="pn-h1">Produtos</h1><button class="btn btn-preto pn-btn-p" type="button" data-novo>${I.mais}${SEGMENTOS[seg][1]}</button></div>
-    <div class="pn-filtros" role="radiogroup" aria-label="Tipo">
-      ${Object.entries(SEGMENTOS).map(([id, [nome]]) => `<button class="chip" type="button" role="radio" data-seg="${id}" aria-checked="${id === seg}">${nome}</button>`).join('')}
-    </div>
+    ${filtrosProdutos(seg)}
     <div id="aviso-valores"></div>
     ${estado.ordenando ? '' : `<p class="pn-nota pn-dica-lista">${nota}</p>
     <div class="pn-lin-cab ${comPreco ? '' : 'pn-lin-curta'}" aria-hidden="true"><span>Produto</span>${comPreco ? '<span>Preço</span><span>Preço antigo</span>' : ''}<span>Na loja</span><span></span></div>`}
@@ -1477,7 +1535,7 @@ function abaProdutos(alvo) {
     ${lista.length > 1 ? `<button class="pn-link pn-ordem" type="button" data-ordenar>${estado.ordenando ? 'Pronto, terminei de ordenar' : 'Mudar a ordem na loja'}</button>` : ''}`;
   mostrarAvisoValores(alvo);
 
-  $$('[data-seg]', alvo).forEach((b) => b.addEventListener('click', () => { estado.segmento = b.dataset.seg; estado.ordenando = false; abaProdutos(alvo); }));
+  ligarFiltrosProdutos(alvo);
   $('[data-novo]', alvo).addEventListener('click', () => abrirEditor(seg, null));
   $('[data-ordenar]', alvo)?.addEventListener('click', () => { estado.ordenando = !estado.ordenando; abaProdutos(alvo); });
   $$('[data-editar]', alvo).forEach((b) => b.addEventListener('click', () => abrirEditor(seg, b.dataset.editar)));
@@ -1716,7 +1774,7 @@ function desenharEditor() {
         <div class="pn-ed-salvar"><button class="btn btn-preto" type="submit">Salvar alterações</button></div>
         <p class="dica-tam erro pn-ed-erro" data-erro hidden></p>
       </div>
-      ${partes.length > 1 ? `<div class="pn-filtros" role="radiogroup" aria-label="Partes do produto">${partes.map(([a, nome]) => `<button class="chip" type="button" role="radio" data-parte="${a}" aria-checked="${a === ed.aba}">${nome}</button>`).join('')}</div>` : ''}
+      ${partes.length > 1 ? `<div class="pn-filtros pn-filtros-justo" role="radiogroup" aria-label="Partes do produto">${partes.map(([a, nome]) => `<button class="chip" type="button" role="radio" data-parte="${a}" aria-checked="${a === ed.aba}">${nome}</button>`).join('')}</div>` : ''}
       ${partes.map(([a, , html]) => `<div class="pn-parte" data-painel="${a}" ${a === ed.aba ? '' : 'hidden'}>${html}</div>`).join('')}
     </form>`;
   ligarEditor(alvo);

@@ -21,6 +21,12 @@ const tamanhoPorCalca = (n) => TABELA.find((x) => x.calca.includes(Number(n)));
 const faixaCalca = (x) => x.calca.join(' e ');
 const kitsCom = (id) => KITS.filter((k) => visivel(k) && (k.itens.includes(id) || k.escolha?.includes(id)));
 const cintasAVenda = () => PRODUTOS.filter((x) => x.cat === 'cintas' && x.barbatanas && temPreco(x) && visivel(x));
+// Estoque: cada produto guarda os tamanhos que acabaram; o combo herda da cinta que vem nele
+const pecasComTamanho = (it) => (it.itens ? [...new Set(it.itens)].map(item).filter((x) => x?.tamanhos) : (it.tamanhos ? [it] : []));
+const tamanhoEsgotado = (it, t) => pecasComTamanho(it).some((x) => x.esgotados?.includes(t));
+const calcaEsgotada = (it, n) => !!(it && n) && tamanhoEsgotado(it, tamanhoPorCalca(n)?.t);
+const tudoEsgotado = (it) => pecasComTamanho(it).length > 0 && TABELA.every((x) => tamanhoEsgotado(it, x.t));
+const TAMANHO_ACABOU = 'Esse tamanho acabou nesta opção. Marque outro número ou fale com a Paola.';
 
 // O número da calça é perguntado uma vez só e vale para o site todo
 let calcaMemoria = null;
@@ -220,6 +226,8 @@ function adicionar(id, op = {}, qtd = 1, s = lerSacola()) {
 const subtotal = (s = lerSacola()) => s.reduce((t, x) => t + item(x.id).preco * x.qtd, 0);
 const nomeLinha = (x) => `${item(x.id).nome}${x.extra ? ` + ${nomeCurto(item(x.extra))}` : ''}`;
 const tamLinha = (x) => (x.calca ? `Tamanho ${tamanhoPorCalca(x.calca)?.t || ''} · calça ${x.calca}` : 'Tamanho único');
+// O tamanho pode acabar depois de a cliente colocar no pedido
+const linhaEsgotada = (x) => calcaEsgotada(item(x.id), x.calca);
 
 function desenharSacola() {
   const s = lerSacola();
@@ -243,9 +251,10 @@ function desenharSacola() {
   const sub = subtotal(s);
   const falta = Math.max(0, LOJA.freteGratis - sub);
   // Sugestão: subir um degrau (cinta 20 → 30 → combo duplo → combo de 5)
-  const base = s.find((x) => SOBE[x.id] && item(SOBE[x.id][0]).preco > item(x.id).preco && !s.some((y) => y.id === SOBE[x.id][0]));
+  const base = s.find((x) => SOBE[x.id] && item(SOBE[x.id][0]).preco > item(x.id).preco && !s.some((y) => y.id === SOBE[x.id][0]) && !calcaEsgotada(item(SOBE[x.id][0]), x.calca));
   const [paraId, chamada] = base ? SOBE[base.id] : [];
   const para = paraId && item(paraId);
+  const algumaEsgotada = s.some(linhaEsgotada);
 
   corpo.innerHTML = `
     <div class="frete">${falta > 0 ? `Faltam <b>${brl(falta)}</b> para o frete grátis` : '🎉 Você ganhou frete grátis'}<div class="trilho"><i style="width:${Math.min(100, (sub / LOJA.freteGratis) * 100)}%"></i></div></div>
@@ -254,6 +263,7 @@ function desenharSacola() {
       return `<div class="item-sacola" data-chave="${x.chave}">
         <span class="mini">${midia(it)}</span>
         <div><h3>${nomeLinha(x)}</h3><div class="det">${tamLinha(x)}</div>
+          ${linhaEsgotada(x) ? '<div class="det det-fora">Este tamanho acabou. Remova para continuar.</div>' : ''}
           <div class="qtd"><button type="button" data-q="-1" aria-label="Diminuir">−</button><span>${x.qtd}</span><button type="button" data-q="1" aria-label="Aumentar">+</button></div>
           <button class="remover" type="button">Remover</button></div>
         <span class="valor">${brl(it.preco * x.qtd)}</span>
@@ -265,8 +275,8 @@ function desenharSacola() {
   pe.innerHTML = `
     <div class="total-linha"><span>Total</span><span>${brl(sub)}</span></div>
     <div class="total-pix">ou ${brl(pix(sub))} no Pix · ${LOJA.parcelas}x de ${brl(parcela(sub))}</div>
-    <button class="btn btn-preto btn-bloco" type="button" data-finalizar>${I.whats}Enviar pedido pelo WhatsApp</button>
-    <p class="pe-nota">A Paola confirma seu tamanho e o pagamento com você na conversa.</p>`;
+    <button class="btn btn-preto btn-bloco" type="button" data-finalizar ${algumaEsgotada ? 'disabled' : ''}>${I.whats}Enviar pedido pelo WhatsApp</button>
+    <p class="pe-nota">${algumaEsgotada ? 'Remova o tamanho que acabou para enviar o pedido.' : 'A Paola confirma seu tamanho e o pagamento com você na conversa.'}</p>`;
 
   $$('.item-sacola', corpo).forEach((linha) => {
     const chave = linha.dataset.chave;
@@ -315,7 +325,7 @@ function textoPedido(p) {
 // Antes do WhatsApp: explica por que a compra fecha com uma pessoa e pede só o essencial
 function finalizar() {
   const s = lerSacola();
-  if (!s.length) return;
+  if (!s.length || s.some(linhaEsgotada)) return;
   Catalogo.evento('checkout');
   const cliente = lerJSON('pcf-cliente', {});
   let pagamento = cliente.pagamento || 'Pix';
@@ -435,26 +445,45 @@ function enviarWhatsApp(texto, depois, numero, idPedido) {
 }
 
 // ---------------- Tamanho pelo número da calça ----------------
-function calcaHTML(sel = lerCalca()) {
-  const linha = sel && tamanhoPorCalca(sel);
+// Quando o tamanho acabou, mostra onde ainda tem e deixa a conversa com a Paola a um toque
+function avisoEsgotado(it, n) {
+  const { t } = tamanhoPorCalca(n);
+  const outra = cintasAVenda().find((x) => !pecasComTamanho(it).includes(x) && !tamanhoEsgotado(x, t));
+  return `<b>O tamanho ${t} acabou nesta opção.</b> ${outra ? `Ainda tem na <a href="produto.html?id=${outra.id}&calca=${n}">cinta de ${outra.barbatanas} barbatanas</a>. ` : ''}<a href="${LOJA.whatsapp}" target="_blank" rel="noopener">Falar com a Paola</a>`;
+}
+// it: o produto em questão, para riscar os tamanhos que acabaram. Sem ele (tabela de medidas), mostra todos
+function calcaHTML(sel = lerCalca(), it = null) {
+  const fora = calcaEsgotada(it, sel);
+  const linha = !fora && sel && tamanhoPorCalca(sel);
   return `<div class="calca-ui">
-    <div class="tamanhos calcas" role="radiogroup" aria-label="Número da calça ou short">${NUMEROS.map((n) => `<button class="chip" type="button" role="radio" data-calca="${n}" aria-checked="${n === Number(sel)}">${n}</button>`).join('')}</div>
+    <div class="tamanhos calcas" role="radiogroup" aria-label="Número da calça ou short">${NUMEROS.map((n) => {
+      const sem = calcaEsgotada(it, n);
+      return `<button class="chip${sem ? ' esgotado' : ''}" type="button" role="radio" data-calca="${n}" aria-checked="${!sem && n === Number(sel)}"${sem ? ` aria-disabled="true" aria-label="${n}, esgotado"` : ''}>${n}</button>`;
+    }).join('')}</div>
     <div class="tam-res"${linha ? '' : ' hidden'}><span class="letra">${linha ? linha.t : ''}</span><div><b>Seu tamanho é <span data-letra>${linha ? linha.t : ''}</span></b><small>Para quem veste calça <span data-faixa>${linha ? faixaCalca(linha) : ''}</span></small></div></div>
+    <p class="tam-fora" role="status"${fora ? '' : ' hidden'}>${fora ? avisoEsgotado(it, sel) : ''}</p>
     <p class="dica-tam">Veste menos de 36 ou mais de 52? <a href="${LOJA.whatsapp}" target="_blank" rel="noopener">Fale com a Paola</a></p>
   </div>`;
 }
-function ligarCalca(raiz, aoMudar) {
+function ligarCalca(raiz, aoMudar, it = null) {
   $$('[data-calca]', raiz).forEach((b) => b.addEventListener('click', () => {
     const n = Number(b.dataset.calca);
     const linha = tamanhoPorCalca(n);
+    const sem = calcaEsgotada(it, n);
     gravarCalca(n);
-    $$('[data-calca]', raiz).forEach((c) => c.setAttribute('aria-checked', c === b));
+    $$('[data-calca]', raiz).forEach((c) => c.setAttribute('aria-checked', !sem && c === b));
     const res = $('.tam-res', raiz);
-    res.hidden = false;
-    $('.letra', res).textContent = linha.t;
-    $('[data-letra]', res).textContent = linha.t;
-    $('[data-faixa]', res).textContent = faixaCalca(linha);
-    if (aoMudar) aoMudar(n, linha);
+    const fora = $('.tam-fora', raiz);
+    res.hidden = sem;
+    fora.hidden = !sem;
+    fora.innerHTML = sem ? avisoEsgotado(it, n) : '';
+    if (!sem) {
+      $('.letra', res).textContent = linha.t;
+      $('[data-letra]', res).textContent = linha.t;
+      $('[data-faixa]', res).textContent = faixaCalca(linha);
+    }
+    // Número que acabou não vale para a compra, mas fica guardado: ela pode tentar em outro produto
+    if (aoMudar) aoMudar(sem ? null : n, linha);
   }));
 }
 const tabelaHTML = () => `<table class="tabela-mini"><thead><tr><th>Tamanho</th><th>Calça e short</th></tr></thead>
@@ -495,7 +524,8 @@ function ligarEscolha(raiz, aoMudar) {
 // Atalho dos cards (+): pede só o que faltar (escolha do combo e/ou calça)
 function abrirOpcoes(id, pre = {}) {
   const it = item(id);
-  const sel = { calca: pre.calca || lerCalca(), extra: pre.extra || null };
+  const salva = pre.calca || lerCalca();
+  const sel = { calca: calcaEsgotada(it, salva) ? null : salva, extra: pre.extra || null };
   const usaTam = precisaTamanho(it);
   const pronto = () => (!usaTam || sel.calca) && (!it.escolha || sel.extra);
   const concluir = () => {
@@ -509,29 +539,35 @@ function abrirOpcoes(id, pre = {}) {
     <div class="modal-topo"><h2>${it.escolha ? 'Monte seu combo' : 'Escolha o tamanho'}</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
     <p style="font-weight:700">${it.nome} · ${brl(it.preco)}</p>
     ${it.escolha ? `<div class="grupo"><div class="grupo-titulo">Escolha o 2º produto</div>${escolhaHTML(it, sel.extra)}</div>` : ''}
-    ${usaTam ? `<div class="grupo"><div class="grupo-titulo">Número da calça ou short</div>${calcaHTML(sel.calca)}</div>` : ''}
+    ${usaTam ? `<div class="grupo"><div class="grupo-titulo">Número da calça ou short</div>${calcaHTML(salva, it)}</div>` : ''}
     <p class="dica-tam erro" data-erro hidden></p>
     <button class="btn btn-preto btn-bloco" type="button" data-confirmar style="margin-top:16px">Colocar no pedido</button>
     ${usaTam ? notaPedido() : ''}`);
   if (it.escolha) ligarEscolha(m, (v) => { sel.extra = v; });
-  if (usaTam) ligarCalca(m, (n) => { sel.calca = n; });
+  if (usaTam) ligarCalca(m, (n) => { sel.calca = n; }, it);
   $('[data-confirmar]', m).addEventListener('click', () => {
     if (pronto()) return concluir();
     const erro = $('[data-erro]', m);
     erro.hidden = false;
-    erro.textContent = it.escolha && !sel.extra ? 'Escolha o gel ou o sutiã.' : 'Marque o número da sua calça.';
+    erro.textContent = it.escolha && !sel.extra ? 'Escolha o gel ou o sutiã.' : (calcaEsgotada(it, lerCalca()) ? TAMANHO_ACABOU : 'Marque o número da sua calça.');
   });
 }
 
 // ---------------- Pedido em 2 passos (página inicial) ----------------
 function montarPedido(raiz) {
-  const p = { opcao: 'combo-5', extra: null, versao: 'cinta-ziper-30' };
+  // Começa pela melhor opção que ainda tem algum tamanho
+  const cintaComEstoque = cintasAVenda().find((x) => !tudoEsgotado(x));
+  const opcaoComEstoque = OPCOES.find((o) => (o.id === 'cinta' ? cintaComEstoque : !tudoEsgotado(item(o.id))));
+  const p = { opcao: opcaoComEstoque?.id || 'combo-5', extra: null, versao: cintaComEstoque?.id || 'cinta-ziper-30' };
   const produto = () => item(p.opcao === 'cinta' ? p.versao : p.opcao);
   const resumo = () => {
     const it = produto();
     const calca = lerCalca();
     const nome = `${OPCOES.find((o) => o.id === p.opcao).titulo}${p.opcao === 'cinta' ? ` · ${it.barbatanas} barbatanas` : ''}${p.extra ? ` + ${nomeCurto(item(p.extra))}` : ''}`;
-    return `<div><small>Seu pedido</small><b>${nome}</b><small>${calca ? `Tamanho ${tamanhoPorCalca(calca).t} · calça ${calca}` : 'Falta o número da calça'}</small></div>
+    const tamanho = !calca ? 'Falta o número da calça'
+      : calcaEsgotada(it, calca) ? `Tamanho ${tamanhoPorCalca(calca).t} acabou nesta opção`
+        : `Tamanho ${tamanhoPorCalca(calca).t} · calça ${calca}`;
+    return `<div><small>Seu pedido</small><b>${nome}</b><small>${tamanho}</small></div>
       <div class="total">${brl(it.preco)}<small>${brl(pix(it.preco))} no Pix</small></div>`;
   };
   const atualizar = () => {
@@ -540,7 +576,7 @@ function montarPedido(raiz) {
   };
   const subOpcao = (o) => {
     if (o.id === 'combo-duplo') return `<div class="kit-op-sub" id="pedido-escolha"><small>Qual você quer junto?</small>${escolhaHTML(item('combo-duplo'), p.extra)}</div>`;
-    return `<div class="kit-op-sub"><div class="versoes">${cintasAVenda().map((x) => `<button type="button" data-versao="${x.id}" aria-pressed="${x.id === p.versao}"><b>${x.barbatanas} barbatanas</b><small>${x.selo ? `${x.selo} · ` : ''}${brl(x.preco)}</small></button>`).join('')}</div></div>`;
+    return `<div class="kit-op-sub"><div class="versoes">${cintasAVenda().map((x) => `<button type="button" data-versao="${x.id}" aria-pressed="${x.id === p.versao}"><b>${x.barbatanas} barbatanas</b><small>${tudoEsgotado(x) ? 'Esgotada' : `${x.selo ? `${x.selo} · ` : ''}${brl(x.preco)}`}</small></button>`).join('')}</div></div>`;
   };
 
   const desenhar = () => {
@@ -549,7 +585,7 @@ function montarPedido(raiz) {
       <div class="kits-opcoes" role="radiogroup" aria-label="O que você quer levar">${OPCOES.map((o) => {
         const it = item(o.id === 'cinta' ? p.versao : o.id);
         const marcado = p.opcao === o.id;
-        const nota = o.nota?.();
+        const nota = tudoEsgotado(it) ? 'Esgotado no momento' : o.nota?.();
         return `<button class="kit-op" type="button" role="radio" aria-checked="${marcado}" data-opcao="${o.id}">
           <span class="kit-op-foto"><img src="${it.img}" alt="" loading="lazy"></span>
           <span class="kit-op-txt">${o.selo ? `<span class="kit-op-selo">${o.selo}</span>` : ''}<b>${o.titulo}</b><small>${o.sub}</small>
@@ -558,7 +594,7 @@ function montarPedido(raiz) {
         </button>${marcado && o.id !== 'combo-5' ? subOpcao(o) : ''}`;
       }).join('')}</div>
       <div class="passo" id="passo-calca"><span class="passo-n">2</span><h3>Qual número de calça você usa?</h3></div>
-      ${calcaHTML()}
+      ${calcaHTML(lerCalca(), produto())}
       <div class="pedido-resumo">${resumo()}</div>
       <p class="dica-tam erro" data-erro hidden></p>
       <button class="btn btn-preto btn-bloco btn-pedir" type="button" data-pedir>${textoBotao(produto())}</button>
@@ -573,11 +609,13 @@ function montarPedido(raiz) {
     }));
     $$('[data-versao]', raiz).forEach((b) => b.addEventListener('click', () => { p.versao = b.dataset.versao; desenhar(); }));
     if (p.opcao === 'combo-duplo') ligarEscolha(raiz, (v) => { p.extra = v; atualizar(); });
-    ligarCalca(raiz, atualizar);
+    ligarCalca(raiz, atualizar, produto());
     $('[data-pedir]', raiz).addEventListener('click', () => {
       const calca = lerCalca();
-      const falta = (p.opcao === 'combo-duplo' && !p.extra && ['#pedido-escolha', 'Escolha o gel ou o sutiã.'])
-        || (!calca && ['#passo-calca', 'Marque o número da sua calça.']);
+      const falta = (tudoEsgotado(produto()) && ['#passo-calca', 'Esta opção está esgotada no momento. Escolha outra ou fale com a Paola.'])
+        || (p.opcao === 'combo-duplo' && !p.extra && ['#pedido-escolha', 'Escolha o gel ou o sutiã.'])
+        || (!calca && ['#passo-calca', 'Marque o número da sua calça.'])
+        || (calcaEsgotada(produto(), calca) && ['#passo-calca', TAMANHO_ACABOU]);
       if (falta) {
         const erro = $('[data-erro]', raiz);
         erro.hidden = false;
@@ -614,16 +652,17 @@ function avaliacoesHTML() {
 
 // ---------------- Cards ----------------
 function card(it) {
+  const acabou = tudoEsgotado(it);
   const preco = temPreco(it)
     ? `<div class="precos">${it.de ? `<span class="de">${brl(it.de)}</span>` : ''}<span class="por">${brl(it.preco)}</span></div>
-    <span class="parc"><b>${brl(pix(it.preco))}</b> no Pix</span>`
+    ${acabou ? '<span class="so-combo">Esgotado</span>' : `<span class="parc"><b>${brl(pix(it.preco))}</b> no Pix</span>`}`
     : '<span class="so-combo">Vem nos combos</span>';
   return `<div class="card">
     <div class="moldura">
       <a class="img" href="produto.html?id=${it.id}" aria-label="${it.nome}">
         ${it.selo ? `<span class="selo ${it.itens ? 'rosa' : ''}">${it.selo}</span>` : ''}${midia(it)}
       </a>
-      ${temPreco(it) ? `<button class="btn-add" type="button" data-add="${it.id}" aria-label="Colocar ${it.nome} no pedido">${I.mais}</button>` : ''}
+      ${temPreco(it) && !acabou ? `<button class="btn-add" type="button" data-add="${it.id}" aria-label="Colocar ${it.nome} no pedido">${I.mais}</button>` : ''}
     </div>
     <a href="produto.html?id=${it.id}"><h3>${it.nome}</h3></a>
     ${preco}
@@ -638,7 +677,7 @@ function cardKit(k) {
       <p class="itens">${listaItens(k).join(' + ')}</p>
       <div class="precos">${k.de ? `<span class="de">${brl(k.de)}</span>` : ''}<span class="por">${brl(k.preco)}</span></div>
       ${k.gancho || k.de ? `<span class="economia">${k.gancho || `Economize ${brl(k.de - k.preco)}`}</span><br>` : ''}
-      <button class="btn btn-preto" type="button" data-add="${k.id}">Quero este</button>
+      ${tudoEsgotado(k) ? '<span class="so-combo">Esgotado</span>' : `<button class="btn btn-preto" type="button" data-add="${k.id}">Quero este</button>`}
     </div>
   </div>`;
 }
@@ -679,8 +718,9 @@ function telaProduto() {
   const ehKit = !!it.itens;
   const vende = temPreco(it);
   const usaTam = vende && precisaTamanho(it);
+  const acabou = usaTam && tudoEsgotado(it);
   if (tamanhoPorCalca(busca.get('calca'))) gravarCalca(Number(busca.get('calca')));
-  let calca = lerCalca();
+  let calca = calcaEsgotada(it, lerCalca()) ? null : lerCalca();
   let extra = it.escolha?.includes(busca.get('extra')) ? busca.get('extra') : null;
   document.title = `${it.nome} | Paola Corpus Fit`;
 
@@ -692,7 +732,13 @@ function telaProduto() {
   const cat = ({ cintas: 'Cintas', sutias: 'Sutiã', tratamento: 'Tratamento', kits: 'Combos' })[it.cat];
 
   const versoes = it.cat === 'cintas' ? `<div class="grupo"><div class="grupo-titulo">Versão</div>
-    <div class="versoes">${cintasAVenda().map((p) => `<a href="produto.html?id=${p.id}" aria-current="${p.id === it.id}"><b>${p.barbatanas} barbatanas</b><small>${p.selo ? `${p.selo} · ` : ''}${brl(p.preco)}</small></a>`).join('')}</div></div>` : '';
+    <div class="versoes">${cintasAVenda().map((p) => `<a href="produto.html?id=${p.id}" aria-current="${p.id === it.id}"><b>${p.barbatanas} barbatanas</b><small>${tudoEsgotado(p) ? 'Esgotada' : `${p.selo ? `${p.selo} · ` : ''}${brl(p.preco)}`}</small></a>`).join('')}</div></div>` : '';
+
+  // Tudo acabou: em vez de um botão que não leva a nada, oferece o que ainda tem e a conversa com a Paola
+  const outraCinta = acabou ? cintasAVenda().find((x) => !pecasComTamanho(it).includes(x) && !tudoEsgotado(x)) : null;
+  const esgotadoHTML = `<div class="esgotado-bloco"><b>Esgotado no momento</b>
+      <p>${outraCinta ? `Ainda tem a <a href="produto.html?id=${outraCinta.id}">cinta de ${outraCinta.barbatanas} barbatanas</a>. ` : ''}Fale com a Paola para saber quando chega.</p>
+      <a class="btn btn-preto btn-bloco" href="${LOJA.whatsapp}" target="_blank" rel="noopener">${I.whats}Falar com a Paola</a></div>`;
 
   const precoHTML = vende ? `<div class="preco-bloco">
       <div class="linha1">${it.de ? `<span class="de">${brl(it.de)}</span>` : ''}<span class="por">${brl(it.preco)}</span>${it.de ? `<span class="economia">-${Math.round((1 - it.preco / it.de) * 100)}%</span>` : ''}</div>
@@ -705,7 +751,7 @@ function telaProduto() {
   const vemNoKit = ehKit ? `<div class="grupo"><div class="grupo-titulo">Vem no combo</div><ul class="itens-kit">${Object.entries(conta).map(([i, n]) => `<li><span class="mini">${midia(item(i))}</span>${n > 1 ? `${n} ${item(i).plural || nomeCurto(item(i))}` : item(i).nome}</li>`).join('')}${it.escolha ? `<li><span class="mini">${I.mais}</span>${it.escolha.map((i) => nomeCurto(item(i))).join(' ou ')} (você escolhe)</li>` : ''}</ul></div>` : '';
 
   const [sobeId, sobeTxt] = SOBE[it.id] || [];
-  const sobe = sobeId && item(sobeId).preco > it.preco ? item(sobeId) : null;
+  const sobe = sobeId && item(sobeId).preco > it.preco && !tudoEsgotado(item(sobeId)) ? item(sobeId) : null;
   const junto = sobe ? `<div class="junto">
       <div class="grupo-titulo" style="margin:0">Por só ${brl(sobe.preco - it.preco)} a mais</div>
       <div class="junto-pecas"><span class="mini">${midia(sobe)}</span></div>
@@ -726,11 +772,11 @@ function telaProduto() {
         ${vemNoKit}
         ${versoes}
         ${vende && it.escolha ? `<div class="grupo" id="escolha"><div class="grupo-titulo">Qual você quer junto?</div>${escolhaHTML(it, extra)}</div>` : ''}
-        ${usaTam ? `<div class="grupo" id="tamanho">
+        ${usaTam && !acabou ? `<div class="grupo" id="tamanho">
           <div class="grupo-titulo">Número da calça ou short <button class="link-tam" type="button" data-tabela>${I.regua}Tabela</button></div>
-          ${calcaHTML(calca)}
+          ${calcaHTML(lerCalca(), it)}
         </div>` : ''}
-        ${vende ? `<p class="dica-tam erro" id="erro-compra" hidden></p>
+        ${acabou ? esgotadoHTML : vende ? `<p class="dica-tam erro" id="erro-compra" hidden></p>
         <button class="btn btn-preto btn-bloco btn-pedir" type="button" id="adicionar">${textoBotao(it)}</button>
         ${usaTam ? notaPedido() : ''}` : `<div class="grupo"><div class="grupo-titulo">Leve nos combos</div><div class="kits">${kitsCom(it.id).map(cardKit).join('')}</div></div>
         <a class="btn btn-claro btn-bloco" href="${LOJA.whatsapp}" target="_blank" rel="noopener" style="margin-top:14px">${I.whats}Perguntar no WhatsApp</a>`}
@@ -750,12 +796,12 @@ function telaProduto() {
   $('#dia-a-dia').hidden = !usaTam;
   $('#avaliacoes').innerHTML = avaliacoesHTML();
   $('#relacionados').innerHTML = [...KITS, ...PRODUTOS].filter((x) => visivel(x) && x.id !== it.id).slice(0, 4).map(card).join('');
-  if (!vende) return;
+  if (!vende || acabou) return;
 
   const erro = $('#erro-compra');
   if (usaTam) {
     const caixa = $('#tamanho');
-    ligarCalca(caixa, (n) => { calca = n; erro.hidden = true; });
+    ligarCalca(caixa, (n) => { calca = n; erro.hidden = true; }, it);
     $('[data-tabela]', caixa).addEventListener('click', (e) => {
       e.stopPropagation();
       abrirTabela((n) => $(`[data-calca="${n}"]`, caixa).click());
@@ -764,7 +810,7 @@ function telaProduto() {
   if (it.escolha) ligarEscolha($('#escolha'), (v) => { extra = v; erro.hidden = true; });
   const comprar = () => {
     const falta = (it.escolha && !extra && ['escolha', 'Escolha o gel ou o sutiã para continuar.'])
-      || (usaTam && !calca && ['tamanho', 'Marque o número da sua calça para continuar.']);
+      || (usaTam && !calca && ['tamanho', calcaEsgotada(it, lerCalca()) ? TAMANHO_ACABOU : 'Marque o número da sua calça para continuar.']);
     if (falta) {
       erro.hidden = false;
       erro.textContent = falta[1];
