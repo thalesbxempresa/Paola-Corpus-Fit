@@ -226,6 +226,25 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .pn-lin-curta .pn-sw, .pn-lin-curta .pn-lin-fixo { grid-column: auto; }
 }
 
+/* ---------- Aviso de pedido novo ---------- */
+.pn-faixa { position: sticky; top: 68px; z-index: 35; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 12px; padding: 10px 12px; border-radius: 14px; background: var(--tinta); color: var(--branco); font-size: 14px; line-height: 1.35; box-shadow: var(--sombra); }
+.pn-faixa[hidden] { display: none; }
+.pn-faixa > svg { flex: none; width: 22px; height: 22px; }
+.pn-faixa > span { flex: 1 1 170px; min-width: 0; }
+.pn-faixa .btn { min-height: 40px; background: var(--branco); color: var(--tinta); }
+.pn-faixa .pn-ico { width: 36px; height: 36px; color: inherit; }
+.pn-faixa .pn-ico:hover { background: rgba(255, 255, 255, .15); }
+.pn-aviso-caixa { width: 100%; }
+.pn-aviso-caixa:empty { display: none; }
+#aviso-loja { margin-bottom: 14px; }
+.pn-aviso { display: flex; align-items: flex-start; gap: 12px; padding: 14px; border-radius: 18px; background: var(--rosa-2); }
+.pn-aviso > svg { flex: none; width: 24px; height: 24px; color: var(--vinho); }
+.pn-aviso b { display: block; font-size: 15px; font-weight: 800; }
+.pn-aviso p { margin-top: 2px; font-size: 14px; line-height: 1.45; color: var(--tinta-2); }
+.pn-aviso .pn-aviso-lista { font-size: 13px; font-weight: 700; }
+.pn-aviso .pn-acoes:not(:empty) { margin-top: 10px; }
+@media (min-width: 900px) { .pn-faixa { top: 8px; } }
+
 /* ---------- Estoque por tamanho ---------- */
 .pn-est { display: grid; gap: 10px; padding: 10px; border-radius: 16px; background: var(--branco); }
 .pn-est-nome { display: flex; align-items: center; gap: 10px; min-width: 0; }

@@ -45,6 +45,18 @@ Com o cadastro fechado, crie a conta dela em *Authentication > Users > Add user 
 
 A cliente acompanha em `acompanhar.html`, pelo link que vai na mensagem do pedido ou digitando o número do pedido e o CEP. Ela vê etapas, datas, rastreio, itens, cidade e o primeiro nome. Endereço, sobrenome e anotações internas nunca aparecem. As datas de cada etapa são registradas pelo próprio banco.
 
+## Aviso de pedido novo
+
+A cada pedido do site, o banco chama a função `avisar-pedido`, que manda uma notificação aos aparelhos que ligaram o aviso no painel (Início ou Loja). Não usa serviço pago nem chave para configurar: as chaves do envio são geradas pela própria função e ficam numa tabela que só o servidor lê. O aviso vai vazio de propósito, para nome, endereço e valor não passarem pelos servidores do Google e da Apple.
+
+Para instalar em um projeto novo:
+
+1. Em `schema.sql`, troque o endereço em `pedido_avisar` pelo do novo projeto e rode o arquivo.
+2. Em *Edge Functions*, crie a função `avisar-pedido` com o conteúdo de `supabase/functions/avisar-pedido/index.ts`.
+3. Nos detalhes da função, desligue *Enforce JWT verification*: quem chama é o banco, sem login.
+
+No iPhone (iOS 16.4 ou mais novo), o aviso só funciona com o painel adicionado à tela de início: Compartilhar > Adicionar à Tela de Início, e abrir pelo ícone. Cada aparelho precisa ligar o aviso uma vez.
+
 ## O que cada um pode fazer
 
 | Quem | Pode | Não pode |

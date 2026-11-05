@@ -98,6 +98,52 @@ alter table public.pedidos add column if not exists valor numeric(10, 2);
 alter table public.pedidos add column if not exists origem text not null default 'site';
 update public.pedidos set valor = total where valor is null;
 
+-- ---------- Aviso de pedido novo ----------
+-- Cada aparelho que ligou o aviso no painel. O endereço só serve para mandar a notificação a ele.
+create table if not exists public.push_assinaturas (
+  endpoint text primary key check (endpoint like 'https://%'),
+  aparelho text,
+  criado_em timestamptz not null default now()
+);
+-- Chaves do envio: a função avisar-pedido gera na primeira vez. Ninguém do site lê, só o servidor.
+create table if not exists public.push_chaves (
+  id int primary key default 1 check (id = 1),
+  publica text not null,
+  privada jsonb not null
+);
+-- Evita avisar duas vezes o mesmo pedido
+alter table public.pedidos add column if not exists avisado_em timestamptz;
+
+-- Sem pg_net o banco continua funcionando, só não avisa o celular
+do $$
+begin
+  create extension if not exists pg_net;
+exception when others then
+  raise notice 'pg_net indisponivel: o aviso no celular fica desligado';
+end;
+$$;
+
+-- Só pedido do site avisa: venda registrada à mão foi a própria loja que fez.
+-- Em projeto novo, troque o endereço pelo do novo projeto (veja LEIA-ME.md).
+create or replace function public.pedido_avisar() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  perform net.http_post(
+    url := 'https://jtqxvxghgncqiyougsgs.supabase.co/functions/v1/avisar-pedido',
+    body := jsonb_build_object('id', new.id),
+    headers := jsonb_build_object('Content-Type', 'application/json'),
+    timeout_milliseconds := 5000
+  );
+  return null;
+exception when others then
+  return null; -- O aviso nunca pode impedir um pedido de entrar
+end;
+$$;
+revoke all on function public.pedido_avisar() from public, anon, authenticated;
+drop trigger if exists pedido_avisar on public.pedidos;
+create trigger pedido_avisar after insert on public.pedidos
+  for each row when (new.origem = 'site') execute function public.pedido_avisar();
+
 -- ---------- Contadores do funil (por dia, sem dado pessoal) ----------
 create table if not exists public.eventos_dia (
   dia date not null,
@@ -228,11 +274,20 @@ alter table public.loja_config enable row level security;
 alter table public.itens enable row level security;
 alter table public.pedidos enable row level security;
 alter table public.eventos_dia enable row level security;
+alter table public.push_assinaturas enable row level security;
+alter table public.push_chaves enable row level security;
 
-revoke all on public.admins, public.loja_config, public.itens, public.pedidos, public.eventos_dia from anon, authenticated;
+revoke all on public.admins, public.loja_config, public.itens, public.pedidos, public.eventos_dia, public.push_assinaturas, public.push_chaves from anon, authenticated;
 grant select, insert, update, delete on public.loja_config, public.itens to authenticated;
 grant select, insert, update, delete on public.pedidos to authenticated;
 grant select on public.eventos_dia to authenticated;
+grant select, insert, update, delete on public.push_assinaturas to authenticated;
+-- A função do aviso entra como service_role: tabela nova neste projeto não nasce liberada para ninguém
+grant select, insert, delete on public.push_assinaturas, public.push_chaves to service_role;
+grant select, update on public.pedidos to service_role;
+
+drop policy if exists admin_push on public.push_assinaturas;
+create policy admin_push on public.push_assinaturas for all to authenticated using (public.eh_admin()) with check (public.eh_admin());
 
 drop policy if exists admin_config on public.loja_config;
 create policy admin_config on public.loja_config for all to authenticated using (public.eh_admin()) with check (public.eh_admin());

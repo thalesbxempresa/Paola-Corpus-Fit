@@ -35,6 +35,7 @@ const I = {
   casa: svg('<path d="M3.5 11L12 4l8.5 7M5.5 9.5V20h13V9.5M10 20v-5.5h4V20"/>'),
   x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
   imprimir: svg('<path d="M7 8V3.5h10V8M7 17H4.5v-7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v7H17"/><path d="M7 14h10v6.5H7z"/>'),
+  sino: svg('<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15zM10 21a2.2 2.2 0 0 0 4 0"/>'),
   whats: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.5-.3z"/></svg>',
 };
 
@@ -135,6 +136,7 @@ const Local = {
   async criarPedido(p) {
     gravarJSON('pcf-pedidos', [{ ...p, data: new Date().toISOString() }, ...lerJSON('pcf-pedidos', [])].slice(0, 50));
   },
+  async pedidosRecentes() { return (await this.pedidos()).slice(0, 5); },
   async eventos() {
     const proprios = Object.entries(lerJSON('pcf-eventos', {})).flatMap(([dia, t]) => Object.entries(t).map(([tipo, total]) => ({ dia, tipo, total })));
     const ex = lerJSON(EXEMPLOS, null);
@@ -221,6 +223,14 @@ const Nuvem = (() => {
     async alterarPedido(id, campos) { return checar(await sb.from('pedidos').update(campos).eq('id', id).select('*').single()); },
     async excluirPedido(id) { checar(await sb.from('pedidos').delete().eq('id', id)); },
     async criarPedido(p) { checar(await sb.from('pedidos').insert(p)); },
+    // Consulta leve, para checar de tempos em tempos se chegou pedido
+    async pedidosRecentes() {
+      const lista = checar(await sb.from('pedidos').select('id,numero,nome,valor,total,origem,criado_em').order('criado_em', { ascending: false }).limit(5));
+      return lista.map((p) => ({ ...p, data: p.criado_em }));
+    },
+    async salvarAviso(endpoint, aparelho) { checar(await sb.from('push_assinaturas').upsert({ endpoint, aparelho })); },
+    async tirarAviso(endpoint) { checar(await sb.from('push_assinaturas').delete().eq('endpoint', endpoint)); },
+    async aparelhosComAviso() { return checar(await sb.from('push_assinaturas').select('aparelho').order('criado_em')).map((a) => a.aparelho || 'Aparelho'); },
     async eventos() { return checar(await sb.from('eventos_dia').select('*').limit(4000)); },
     async catalogo() {
       const doc = checar(await sb.rpc('catalogo_publico'));
@@ -410,6 +420,7 @@ function montarPainel() {
       </nav>
       <main class="pn-main">
         ${Banco.modo === 'local' ? '<p class="pn-modo"><b>Modo neste navegador.</b> Só você vê estas alterações. As clientes continuam vendo os dados atuais do site até o Supabase ser conectado. <a href="#loja">Como conectar</a></p>' : ''}
+        <div class="pn-faixa" id="faixa-pedido" role="status" aria-live="polite" hidden></div>
         <div id="aba"></div>
       </main>
     </div>`;
@@ -423,6 +434,8 @@ function montarPainel() {
     if (e.target.closest('a[href^="#"]') && estado.editor?.sujo && !confirm('Sair sem salvar as alterações deste produto?')) e.preventDefault();
   });
   abrirAba();
+  iniciarVigiaDePedidos();
+  manterAviso().catch(() => {});
 }
 
 function abrirAba() {
@@ -443,7 +456,10 @@ function abrirAba() {
     $('[data-de-novo]', alvo).addEventListener('click', abrirAba);
   });
 }
-addEventListener('hashchange', abrirAba);
+addEventListener('hashchange', () => {
+  if (location.hash === '#pedidos') limparFaixaPedido();
+  abrirAba();
+});
 
 async function abrirPainel() {
   const usuario = await Banco.sessao();
@@ -459,9 +475,11 @@ async function abrirPainel() {
 }
 
 let ultimaCarga = 0;
+let pedidoMaisNovo = 0; // Data do pedido mais recente já visto, para perceber quando chega outro
 const carregarDados = async () => {
   [estado.pedidos, estado.eventos] = await Promise.all([Banco.pedidos(), Banco.eventos()]);
   ultimaCarga = Date.now();
+  estado.pedidos.forEach((p) => { pedidoMaisNovo = Math.max(pedidoMaisNovo, new Date(p.data).getTime()); });
   atualizarSelo();
 };
 // Número ao lado de Pedidos: quantos estão esperando alguma ação
@@ -478,12 +496,213 @@ function atualizarSelo() {
   }
   selo.textContent = n;
 }
-// Ao voltar para o painel, traz os pedidos novos, sem atrapalhar quem está mexendo em algo
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible' || !$('#aba') || Date.now() - ultimaCarga < 60000) return;
-  if (estado.editor || estado.novoAberto || estado.enviando || $('.pn-ped[open]')) return;
+// Redesenha a tela com os pedidos novos, sem atrapalhar quem está mexendo em algo
+function atualizarTelaSeLivre() {
+  if (estado.editor || estado.novoAberto || estado.enviando || $('.pn-ped[open]') || document.activeElement?.matches('input, textarea, select')) return;
   if (['', 'resumo', 'pedidos'].includes(location.hash.slice(1))) abrirAba();
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !$('#aba')) return;
+  checarPedidosNovos();
+  if (Date.now() - ultimaCarga >= 60000) atualizarTelaSeLivre();
 });
+
+// ---------------- Aviso de pedido novo ----------------
+// Com o painel aberto: faixa na tela, som e número no título. Com o painel fechado: notificação no aparelho.
+let novosAvisados = [];
+let checando = false;
+let vigia = null;
+let somAviso = null;
+const TITULO_PAINEL = document.title;
+
+function limparFaixaPedido() {
+  novosAvisados = [];
+  const faixa = $('#faixa-pedido');
+  if (faixa) faixa.hidden = true;
+  document.title = TITULO_PAINEL;
+}
+function mostrarFaixaPedido(novos) {
+  const faixa = $('#faixa-pedido');
+  if (!faixa) return;
+  novosAvisados = [...novos, ...novosAvisados];
+  const n = novosAvisados.length;
+  const [p] = novosAvisados;
+  faixa.hidden = false;
+  faixa.innerHTML = `${I.sino}<span>${n === 1 ? `<b>Chegou pedido novo:</b> ${esc(p.numero)} · ${esc(primeiroNome(p))} · ${brl(valorDe(p))}` : `<b>Chegaram ${n} pedidos novos</b>`}</span>
+    <button class="btn pn-btn-p" type="button" data-ver-novo>${n === 1 ? 'Ver pedido' : 'Ver pedidos'}</button>
+    <button class="pn-ico" type="button" data-fechar-faixa aria-label="Fechar aviso">${I.x}</button>`;
+  document.title = `(${n}) Pedido novo | ${TITULO_PAINEL}`;
+  $('[data-fechar-faixa]', faixa).addEventListener('click', limparFaixaPedido);
+  $('[data-ver-novo]', faixa).addEventListener('click', () => {
+    if (estado.editor?.sujo && !confirm('Sair sem salvar as alterações deste produto?')) return;
+    estado.abrirPedido = n === 1 ? p.id : null;
+    estado.filtro = 'abertos';
+    estado.busca = '';
+    limparFaixaPedido();
+    if (location.hash === '#pedidos') abrirAba(); else location.hash = 'pedidos';
+  });
+}
+// Dois toques curtos, gerados aqui mesmo. O navegador só libera som depois do primeiro clique na página
+function tocarAviso() {
+  try {
+    if (!somAviso || somAviso.state !== 'running') return;
+    [[880, 0], [1175, 0.2]].forEach(([freq, quando]) => {
+      const nota = somAviso.createOscillator();
+      const volume = somAviso.createGain();
+      const t = somAviso.currentTime + quando;
+      nota.frequency.value = freq;
+      volume.gain.setValueAtTime(0.0001, t);
+      volume.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+      volume.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      nota.connect(volume).connect(somAviso.destination);
+      nota.start(t);
+      nota.stop(t + 0.36);
+    });
+  } catch (e) { /* sem som: a faixa e o título continuam avisando */ }
+}
+addEventListener('pointerdown', () => {
+  try {
+    const Som = window.AudioContext || window.webkitAudioContext;
+    somAviso = somAviso || new Som();
+    somAviso.resume();
+  } catch (e) { /* navegador sem som */ }
+}, { passive: true });
+
+async function checarPedidosNovos() {
+  if (checando || !$('#aba') || !ultimaCarga) return;
+  checando = true;
+  try {
+    const novos = (await Banco.pedidosRecentes()).filter((p) => new Date(p.data).getTime() > pedidoMaisNovo);
+    if (!novos.length) return;
+    await carregarDados();
+    // Venda registrada à mão foi a própria loja que fez: não precisa de aviso
+    const doSite = novos.filter((p) => p.origem !== 'manual');
+    if (!doSite.length) return;
+    mostrarFaixaPedido(doSite);
+    tocarAviso();
+    atualizarTelaSeLivre();
+  } catch (e) { /* sem internet ou sessão encerrada: tenta de novo na próxima */ } finally {
+    checando = false;
+  }
+}
+function iniciarVigiaDePedidos() {
+  if (vigia) return;
+  vigia = setInterval(checarPedidosNovos, 45000);
+  navigator.serviceWorker?.addEventListener('message', (e) => {
+    if (e.data?.tipo === 'pedido-novo') checarPedidosNovos();
+    if (e.data?.tipo === 'abrir-pedidos' && !estado.editor?.sujo) { limparFaixaPedido(); location.hash = 'pedidos'; }
+  });
+}
+
+// Notificação no aparelho. Cada aparelho liga uma vez e o endereço dele fica no banco
+const funcaoAviso = () => `${PCF_SUPABASE.url}/functions/v1/avisar-pedido`;
+const ehIphone = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const instalado = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const recebeAviso = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const nomeDoAparelho = () => (ehIphone() ? 'iPhone' : /android/i.test(navigator.userAgent) ? 'Android' : 'Computador');
+const chaveEmBytes = (t) => Uint8Array.from(atob(t.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(t.length / 4) * 4, '=')), (c) => c.charCodeAt(0));
+
+async function assinaturaAtual() {
+  const reg = await navigator.serviceWorker.getRegistration();
+  return reg ? reg.pushManager.getSubscription() : null;
+}
+async function situacaoAviso() {
+  if (Banco.modo === 'local') return 'indisponivel';
+  if (!recebeAviso()) return ehIphone() && !instalado() ? 'iphone' : 'indisponivel';
+  if (Notification.permission === 'denied') return 'bloqueado';
+  return Notification.permission === 'granted' && (await assinaturaAtual()) ? 'ligado' : 'desligado';
+}
+async function testarAviso() {
+  const s = await assinaturaAtual();
+  const r = await fetch(funcaoAviso(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ teste: s.endpoint }) });
+  const d = await r.json().catch(() => ({}));
+  if (!d.ok) throw new Error('o teste não saiu');
+}
+async function ligarAvisos() {
+  const permissao = await Notification.requestPermission();
+  if (permissao === 'denied') throw new Error('Os avisos foram bloqueados neste navegador.');
+  if (permissao !== 'granted') throw new Error('Os avisos ficaram desligados.');
+  const r = await fetch(funcaoAviso());
+  if (!r.ok) throw new Error('Não deu para ligar os avisos agora. Tente de novo.');
+  const { publica } = await r.json();
+  await navigator.serviceWorker.register('aviso-sw.js', { scope: './admin' });
+  const reg = await navigator.serviceWorker.ready;
+  const s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: chaveEmBytes(publica) });
+  await Banco.salvarAviso(s.endpoint, nomeDoAparelho());
+}
+async function desligarAvisos() {
+  const s = await assinaturaAtual();
+  if (!s) return;
+  await Banco.tirarAviso(s.endpoint);
+  await s.unsubscribe();
+}
+// O endereço do aparelho pode mudar sem aviso: a cada abertura do painel, confirma o atual no banco
+async function manterAviso() {
+  if (Banco.modo === 'local' || !recebeAviso() || Notification.permission !== 'granted') return;
+  const s = await assinaturaAtual();
+  if (s) await Banco.salvarAviso(s.endpoint, nomeDoAparelho());
+}
+
+const TEXTO_AVISO = {
+  desligado: 'O aparelho avisa na hora que chega pedido, mesmo com o painel fechado.',
+  iphone: 'No iPhone, o aviso só funciona com o painel na tela de início. Toque em Compartilhar, depois em Adicionar à Tela de Início, e abra o painel pelo ícone novo.',
+  bloqueado: 'Os avisos estão bloqueados neste navegador. Libere as notificações deste site nas configurações do navegador e volte aqui.',
+  indisponivel: 'Este navegador não recebe avisos. Abra o painel no Chrome ou, no iPhone, pela tela de início.',
+  ligado: 'Ligado neste aparelho. Ele avisa na hora que chega pedido, mesmo com o painel fechado.',
+};
+// Mesmo cartão no Início (some quando já está ligado ou se ela dispensar) e na aba Loja (sempre visível)
+async function desenharAviso(caixa, noInicio = false) {
+  if (!caixa) return;
+  const s = await situacaoAviso();
+  if (!caixa.isConnected) return;
+  if (noInicio && (s === 'ligado' || s === 'indisponivel' || lerJSON('pcf-aviso-dispensado', false))) {
+    caixa.innerHTML = '';
+    return;
+  }
+  const aparelhos = noInicio ? [] : await Banco.aparelhosComAviso().catch(() => []);
+  if (!caixa.isConnected) return;
+  caixa.innerHTML = `<div class="pn-aviso">${I.sino}<div>
+      <b>${noInicio ? 'Receba um aviso quando chegar pedido' : 'Aviso de pedido novo'}</b>
+      <p>${TEXTO_AVISO[s]}</p>
+      ${aparelhos.length ? `<p class="pn-aviso-lista">Recebem aviso: ${esc(aparelhos.join(', '))}</p>` : ''}
+      <div class="pn-acoes">
+        ${s === 'desligado' ? '<button class="btn btn-preto pn-btn-p" type="button" data-ligar-aviso>Ligar avisos neste aparelho</button>' : ''}
+        ${s === 'ligado' ? '<button class="btn btn-claro pn-btn-p" type="button" data-testar-aviso>Enviar aviso de teste</button><button class="pn-link pn-perigo" type="button" data-desligar-aviso>Desligar neste aparelho</button>' : ''}
+        ${noInicio ? '<button class="pn-link" type="button" data-dispensar-aviso>Agora não</button>' : ''}
+      </div>
+    </div></div>`;
+  const redesenhar = () => desenharAviso(caixa, noInicio);
+  const testar = async () => {
+    try {
+      await testarAviso();
+      toast('Aviso de teste enviado. Nenhum pedido foi criado.');
+    } catch (e) { toast('Não deu para enviar o aviso de teste. Tente de novo.'); }
+  };
+  $('[data-ligar-aviso]', caixa)?.addEventListener('click', async (e) => {
+    e.currentTarget.disabled = true;
+    try {
+      await ligarAvisos();
+      await testar();
+    } catch (ex) {
+      console.error(ex);
+      toast(/avisos/i.test(ex.message) ? ex.message : 'Não deu para ligar os avisos agora. Tente de novo.');
+    }
+    redesenhar();
+  });
+  $('[data-testar-aviso]', caixa)?.addEventListener('click', testar);
+  $('[data-desligar-aviso]', caixa)?.addEventListener('click', async () => {
+    try {
+      await desligarAvisos();
+      toast('Avisos desligados neste aparelho');
+    } catch (ex) { toast('Não deu para desligar agora. Tente de novo.'); }
+    redesenhar();
+  });
+  $('[data-dispensar-aviso]', caixa)?.addEventListener('click', () => {
+    gravarJSON('pcf-aviso-dispensado', true);
+    caixa.innerHTML = '';
+    toast('Você pode ligar depois, na aba Loja');
+  });
+}
 const temExemplos = () => Banco.modo === 'local' && !!lerJSON(EXEMPLOS, null);
 const avisoExemplos = () => (temExemplos() ? `<p class="pn-exemplo">${I.alerta}<span><b>Dados de exemplo ligados.</b> Estes números são fictícios, só para visualizar o painel.</span><button class="pn-link" type="button" data-tirar-exemplos>Remover</button></p>` : '');
 function ligarExemplos(alvo) {
@@ -714,6 +933,7 @@ function fazerHTML() {
     ${tem ? '' : `<p class="pn-em-dia">${I.ok}<span>${estado.pedidos.length ? 'Tudo em dia: nenhum pedido esperando por você.' : 'Nenhum pedido ainda. Eles aparecem aqui assim que chegarem.'}</span></p>`}
     ${estado.pedidos.length ? `<div class="pn-filas">${filas.map((f) => `<a class="pn-fila ${f.n ? 'tem' : ''}" href="#pedidos" data-fila="${f.id}"><strong>${num(f.n)}</strong><span>${f.nome}</span><small>${f.dica}</small></a>`).join('')}</div>` : ''}
     <a class="pn-link" href="#pedidos" data-registrar-venda>Registrar uma venda feita fora do site</a>
+    <div class="pn-aviso-caixa" id="aviso-inicio"></div>
   </section>
   <h2 class="pn-titulo-secao">Como estão as vendas</h2>`;
 }
@@ -830,6 +1050,7 @@ function desenharResumo(alvo) {
   $('[data-ver-novos]', alvo)?.addEventListener('click', () => { estado.filtro = 'novo'; });
   $$('[data-fila]', alvo).forEach((a) => a.addEventListener('click', () => { estado.filtro = a.dataset.fila; estado.busca = ''; }));
   $('[data-registrar-venda]', alvo)?.addEventListener('click', () => { estado.abrirNovo = true; });
+  desenharAviso($('#aviso-inicio', alvo), true);
   ligarExemplos(alvo);
 }
 
@@ -1049,8 +1270,10 @@ async function abaPedidos(alvo) {
       ? lista.slice(0, 200).map((p) => cartaoPedido(p, p.id === estado.abrirPedido)).join('') + (lista.length > 200 ? `<p class="pn-nota">Mostrando 200 de ${num(lista.length)}. Use a busca ou baixe a planilha.</p>` : '')
       : `<section class="pn-card pn-comeco"><h2>${vazioAberto ? 'Tudo em dia' : estado.pedidos.length ? 'Nada encontrado' : 'Ainda não há pedidos'}</h2>
         <p class="pn-texto">${vazioAberto ? 'Nenhum pedido esperando por você agora.' : estado.pedidos.length ? 'Tente outra busca ou outra situação.' : Banco.modo === 'local' ? 'Sem o Supabase, aparecem aqui só os pedidos feitos neste navegador. Depois de conectar, chegam os de todas as clientes.' : 'Os pedidos do site aparecem aqui sozinhos. Vendeu pelo Instagram ou WhatsApp? Use o botão Novo pedido.'}</p></section>`;
+    const foco = estado.abrirPedido;
     estado.abrirPedido = null;
     atualizarAcoes();
+    if (foco) $('.pn-ped[open]')?.scrollIntoView({ block: 'center' });
   };
   desenhar();
 
@@ -2012,6 +2235,7 @@ function abaLoja(alvo) {
   const local = Banco.modo === 'local';
   alvo.innerHTML = `
     <div class="pn-cab"><h1 class="pn-h1">Loja</h1></div>
+    ${local ? '' : '<div class="pn-aviso-caixa pn-espaco" id="aviso-loja"></div>'}
     <form id="form-loja" class="pn-form" novalidate>
       <section class="pn-card"><h2>Contato</h2>
         ${campo('Número do WhatsApp', 'whatsappNumero', l.whatsappNumero, { attrs: 'inputmode="numeric" placeholder="5521999999999"', ajuda: 'Só números, com 55 e DDD. Com ele, o pedido já abre escrito na conversa.' })}
@@ -2075,6 +2299,7 @@ function abaLoja(alvo) {
       </div>
     </section>`;
 
+  desenharAviso($('#aviso-loja', alvo));
   const form = $('#form-loja');
   const tabela = $('#tabela-tam', form);
   ligarBuscaCep(form.elements.remCep, form, { rua: 'remRua', bairro: 'remBairro', cidade: 'remCidade', uf: 'remUf', num: 'remNum' });
