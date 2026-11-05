@@ -57,6 +57,20 @@ Para instalar em um projeto novo:
 
 No iPhone (iOS 16.4 ou mais novo), o aviso só funciona com o painel adicionado à tela de início: Compartilhar > Adicionar à Tela de Início, e abrir pelo ícone. Cada aparelho precisa ligar o aviso uma vez.
 
+## Pagamento online (InfinitePay)
+
+Vem desligado. A Paola escolhe no painel (aba Loja) como a cliente paga: combinando no WhatsApp (como hoje), por um link gerado no pedido, ou no próprio site logo depois de pedir. Quem fala com a InfinitePay é a função `pagamento-infinitepay`, que monta a cobrança com o valor do banco e só marca o pedido como pago depois de confirmar com a InfinitePay (o aviso dela não tem assinatura).
+
+Para ligar:
+
+1. Rode o `schema.sql` de novo (coluna `infinitepay` em pedidos e permissão de leitura da configuração para a função).
+2. Em *Edge Functions*, crie a função `pagamento-infinitepay` com o conteúdo de `supabase/functions/pagamento-infinitepay/index.ts` e desligue *Verify JWT* nela: quem chama é a loja e a InfinitePay, sem login.
+3. Opcional, mas recomendado: no app da InfinitePay, crie a chave do Checkout Integrado e cadastre em *Edge Functions > Secrets* com o nome `INFINITEPAY_API_KEY`. Com ela, cada link leva o desconto do Pix, as parcelas sem juros do painel e vale para um pagamento só. Sem ela, valem as configurações do app.
+4. No painel, aba Loja: InfiniteTag, como a cliente paga e, para cobrar no site, nome, CPF ou CNPJ e endereço da loja.
+5. Teste com um pedido de R$ 1,00 (valor a cobrar mudado à mão no painel) e estorne no app. A InfinitePay não tem ambiente de teste.
+
+A chave da API nunca entra no site nem no GitHub.
+
 ## O que cada um pode fazer
 
 | Quem | Pode | Não pode |

@@ -137,6 +137,8 @@ const Local = {
     gravarJSON('pcf-pedidos', [{ ...p, data: new Date().toISOString() }, ...lerJSON('pcf-pedidos', [])].slice(0, 50));
   },
   async pedidosRecentes() { return (await this.pedidos()).slice(0, 5); },
+  async situacaoPagamento() { return { instalada: false }; },
+  async criarLinkPagamento() { throw new Error('conecte o Supabase primeiro'); },
   async eventos() {
     const proprios = Object.entries(lerJSON('pcf-eventos', {})).flatMap(([dia, t]) => Object.entries(t).map(([tipo, total]) => ({ dia, tipo, total })));
     const ex = lerJSON(EXEMPLOS, null);
@@ -231,13 +233,26 @@ const Nuvem = (() => {
     async salvarAviso(endpoint, aparelho) { checar(await sb.from('push_assinaturas').upsert({ endpoint, aparelho })); },
     async tirarAviso(endpoint) { checar(await sb.from('push_assinaturas').delete().eq('endpoint', endpoint)); },
     async aparelhosComAviso() { return checar(await sb.from('push_assinaturas').select('aparelho').order('criado_em')).map((a) => a.aparelho || 'Aparelho'); },
+    // Pagamento online: a função no servidor fala com a InfinitePay; o painel só pede e mostra
+    async situacaoPagamento() {
+      const r = await fetch(`${PCF_SUPABASE.url}/functions/v1/pagamento-infinitepay`).catch(() => null);
+      if (!r || r.status === 404) return { instalada: false };
+      return { instalada: r.ok, ...(await r.json().catch(() => ({}))) };
+    },
+    async criarLinkPagamento(id) {
+      const r = await fetch(`${PCF_SUPABASE.url}/functions/v1/pagamento-infinitepay`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'criar', id }) });
+      const d = await r.json().catch(() => ({}));
+      if (d.pago) throw new Error('Este pedido já foi pago.');
+      if (!r.ok || !d.url) throw new Error(d.erro || 'a InfinitePay não respondeu');
+      return d.url;
+    },
     async eventos() { return checar(await sb.from('eventos_dia').select('*').limit(4000)); },
     async catalogo() {
       const doc = checar(await sb.rpc('catalogo_publico'));
       if (Catalogo.valido(doc)) {
         // O endereço de quem envia é privado: não vem no catálogo público
         const privado = checar(await sb.from('loja_config').select('dados').eq('id', 1).maybeSingle());
-        return { ...doc, loja: { ...Catalogo.doc().loja, ...doc.loja }, remetente: privado?.dados?.remetente || {} };
+        return { ...doc, loja: { ...Catalogo.doc().loja, ...doc.loja }, remetente: privado?.dados?.remetente || {}, pagamento: privado?.dados?.pagamento || {} };
       }
       // Banco recém-criado: leva o catálogo atual do site na primeira entrada
       const atual = Catalogo.doc();
@@ -250,7 +265,7 @@ const Nuvem = (() => {
         ...doc.kits.map((x, i) => linha(x, 'kit', i)),
         ...doc.praia.map((x, i) => linha(x, 'praia', i)),
       ];
-      checar(await sb.from('loja_config').upsert({ id: 1, dados: { loja: doc.loja, tabela: doc.tabela, remetente: doc.remetente || {} } }));
+      checar(await sb.from('loja_config').upsert({ id: 1, dados: { loja: doc.loja, tabela: doc.tabela, remetente: doc.remetente || {}, pagamento: doc.pagamento || {} } }));
       checar(await sb.from('itens').upsert(linhas));
       checar(await sb.from('itens').delete().not('id', 'in', `(${linhas.map((l) => l.id).join(',')})`));
     },
@@ -1105,8 +1120,11 @@ function rastreioHTML(p) {
 // Mensagem pronta para a cliente, de acordo com a etapa do pedido
 function avisoCliente(p) {
   const n = p.numero;
+  const linkPagar = p.status === 'novo' && !p.infinitepay?.pago_em ? p.infinitepay?.link : null;
   const textos = {
-    novo: `Recebi seu pedido ${n}. Vou conferir seu tamanho e te mandar o link de pagamento.`,
+    novo: linkPagar
+      ? `Recebi seu pedido ${n}. Para pagar no Pix ou no cartão, é só usar este link:\n${linkPagar}`
+      : `Recebi seu pedido ${n}. Vou conferir seu tamanho e te mandar o link de pagamento.`,
     pago: `Pagamento confirmado! Seu pedido ${n} já está garantido.`,
     preparando: `Estou preparando seu pedido ${n}.`,
     enviado: `Seu pedido ${n} foi enviado!${p.rastreio_codigo ? `\nCódigo de rastreio: ${p.rastreio_codigo}` : ''}`,
@@ -1120,6 +1138,22 @@ function zapCliente(p) {
   const d = soNumeros(p.telefone);
   if (d.length < 10) return null;
   return `https://wa.me/${d.length <= 11 ? `55${d}` : d}?text=${encodeURIComponent(avisoCliente(p))}`;
+}
+
+// Pagamento pela InfinitePay dentro do cartão do pedido: gerar o link, mandar e ver o que foi pago
+const modoPagamento = () => (Banco.modo === 'supabase' && estado.catalogo.pagamento?.handle ? estado.catalogo.pagamento.modo || 'desligado' : 'desligado');
+const comoPagou = (ip) => (ip.capture_method === 'pix' ? 'Pix' : `cartão${ip.installments > 1 ? ` em ${ip.installments}x` : ''}`);
+function pagamentoOnlineHTML(p) {
+  const ip = p.infinitepay || {};
+  if (ip.pago_em) {
+    return `<p class="pn-pago-online">${I.ok}<span>Pago pela InfinitePay no ${comoPagou(ip)}, em ${dataHora(ip.pago_em)}.${ip.receipt_url ? ` <a href="${esc(ip.receipt_url)}" target="_blank" rel="noopener">Ver comprovante</a>` : ''}</span></p>`;
+  }
+  if (modoPagamento() === 'desligado' || p.status !== 'novo') return '';
+  if (ip.link) {
+    return `<div class="pn-link-pagamento"><small>Link de pagamento</small><span>${esc(ip.link)}</span>
+      <div class="pn-acoes-linha"><button class="pn-link" type="button" data-copiar-pagamento>Copiar link</button><button class="pn-link" type="button" data-gerar-pagamento>Atualizar com o valor a cobrar</button></div></div>`;
+  }
+  return '<button class="btn btn-claro pn-btn-p" type="button" data-gerar-pagamento>Gerar link de pagamento</button>';
 }
 
 // Quanto tempo o pedido está parado na etapa atual, para o que está atrasado aparecer
@@ -1160,6 +1194,7 @@ function cartaoPedido(p, aberto = false) {
       <div class="pn-cobranca"><h3>Pagamento: ${esc(p.pagamento || 'não informado')}</h3>
         <div class="campo"><label for="vl-${esc(p.id)}">Valor a cobrar</label><input id="vl-${esc(p.id)}" data-valor inputmode="decimal" value="${esc(precoTxt(valorDe(p)))}"></div>
         <small class="pn-ajuda">${comDesconto ? `Já com o desconto do Pix (preço cheio: ${brl(p.total)}). ` : ''}Mude se somar frete ou der outro desconto. É este valor que entra no faturamento.</small>
+        ${pagamentoOnlineHTML(p)}
       </div>
       <div><h3>Itens</h3><ul class="pn-ped-itens">${(p.itens || []).map((x) => {
         const tam = tamanhoDoItem(x);
@@ -1322,7 +1357,8 @@ async function abaPedidos(alvo) {
         e.target.value = precoTxt(valorDe(p));
         return;
       }
-      await atualizar(p, e.target, { valor }, 'Valor salvo');
+      const temLink = p.infinitepay?.link && !p.infinitepay?.pago_em;
+      await atualizar(p, e.target, { valor }, temLink ? 'Valor salvo. Atualize o link de pagamento antes de mandar.' : 'Valor salvo');
     } else if (e.target.matches('[data-nota]')) {
       try {
         await Banco.alterarPedido(p.id, { nota: e.target.value.trim() });
@@ -1343,6 +1379,24 @@ async function abaPedidos(alvo) {
       }
       const novo = botao.dataset.avancar;
       await atualizar(p, botao, { status: novo }, `Pedido em "${STATUS[novo][0]}". Avise a cliente.`);
+      return;
+    }
+    if (botao.matches('[data-gerar-pagamento]')) {
+      const p = pedidoDe(botao);
+      botao.disabled = true;
+      try {
+        const url = await Banco.criarLinkPagamento(p.id);
+        p.infinitepay = { ...(p.infinitepay || {}), link: url };
+        redesenharCartao(p, botao);
+        await copiar(url, 'Link criado e copiado. Mande para a cliente.');
+      } catch (ex) {
+        botao.disabled = false;
+        toast(`Não criou o link: ${ex.message}`);
+      }
+      return;
+    }
+    if (botao.matches('[data-copiar-pagamento]')) {
+      await copiar(pedidoDe(botao).infinitepay.link, 'Link de pagamento copiado');
       return;
     }
     if (botao.matches('[data-editar-rastreio]')) {
@@ -2232,6 +2286,7 @@ function ligarEditor(alvo) {
 function abaLoja(alvo) {
   const l = estado.catalogo.loja;
   const rem = estado.catalogo.remetente || {};
+  const pg = estado.catalogo.pagamento || {};
   const local = Banco.modo === 'local';
   alvo.innerHTML = `
     <div class="pn-cab"><h1 class="pn-h1">Loja</h1></div>
@@ -2255,6 +2310,20 @@ function abaLoja(alvo) {
         </div>
         ${campo('Lançamento da moda praia', 'lancamentoPraia', (l.lancamentoPraia || '').slice(0, 16), { tipo: 'datetime-local', ajuda: 'Vazio: a contagem regressiva não aparece. Só use data real.' })}
       </section>
+      ${local ? '' : `<section class="pn-card"><h2>Pagamento online (InfinitePay)</h2>
+        <p class="pn-texto" id="situacao-pagamento">Conferindo a ligação com a InfinitePay…</p>
+        ${seletor('Como a cliente paga', 'ipModo', pg.modo || 'desligado', [
+          ['desligado', 'Combinando com você no WhatsApp, como hoje'],
+          ['link', 'Pelo link que você gera no pedido e manda no WhatsApp'],
+          ['site', 'Aqui no site, logo depois de fazer o pedido'],
+        ])}
+        ${campo('InfiniteTag da sua conta', 'ipHandle', pg.handle, { attrs: 'autocomplete="off" autocapitalize="none" placeholder="Ex.: paolacorpusfit"', ajuda: 'Está no app da InfinitePay. Pode escrever com ou sem o $.' })}
+        <h3 class="pn-sub">Dados da loja no rodapé do site</h3>
+        <p class="pn-nota">Para vender pela internet, a lei pede nome, CPF ou CNPJ e endereço à vista no site (Decreto 7.962/2013). Obrigatório para cobrar no site.</p>
+        ${campo('Nome ou razão social', 'empresa', l.empresa)}
+        <div class="pn-2">${campo('CNPJ ou CPF', 'documento', l.documento, { attrs: 'inputmode="numeric"' })}${campo('E-mail de contato', 'email', l.email, { tipo: 'email' })}</div>
+        ${campo('Endereço que aparece no site', 'enderecoLoja', l.enderecoLoja, { ajuda: 'Pode ser o endereço comercial. Aparece para qualquer pessoa.' })}
+      </section>`}
       <section class="pn-card"><h2>Endereço de envio</h2>
         <p class="pn-texto">De onde saem os pedidos. Aparece só na etiqueta impressa, nunca na loja.</p>
         ${campo('Nome de quem envia', 'remNome', rem.nome || 'Paola Corpus Fit')}
@@ -2300,6 +2369,7 @@ function abaLoja(alvo) {
     </section>`;
 
   desenharAviso($('#aviso-loja', alvo));
+  mostrarSituacaoPagamento($('#situacao-pagamento', alvo));
   const form = $('#form-loja');
   const tabela = $('#tabela-tam', form);
   ligarBuscaCep(form.elements.remCep, form, { rua: 'remRua', bairro: 'remBairro', cidade: 'remCidade', uf: 'remUf', num: 'remNum' });
@@ -2320,6 +2390,15 @@ function abaLoja(alvo) {
     if (frete === null || Number.isNaN(frete)) return falhar('O frete grátis precisa ser um valor. Ex.: 299.');
     if (pixPct === null || Number.isNaN(pixPct) || pixPct > 50) return falhar('O desconto no Pix precisa ficar entre 0 e 50%.');
     if (!Number.isInteger(parcelas) || parcelas < 1 || parcelas > 24) return falhar('As parcelas precisam ficar entre 1 e 24.');
+    const ipModo = el.ipModo?.value || 'desligado';
+    const ipHandle = (el.ipHandle?.value || '').trim().replace(/^\$/, '');
+    if (ipModo !== 'desligado' && !/^[a-z0-9._-]{2,40}$/i.test(ipHandle)) return falhar('Para cobrar pela InfinitePay, escreva a InfiniteTag da conta (sem espaços).');
+    if (ipModo !== 'desligado' && parcelas > 12) return falhar('A InfinitePay parcela em até 12x. Ajuste as parcelas sem juros.');
+    if (ipModo === 'site' && (!el.empresa.value.trim() || soNumeros(el.documento.value).length < 11 || !el.enderecoLoja.value.trim())) {
+      return falhar('Para cobrar no site, preencha nome, CPF ou CNPJ e endereço da loja.');
+    }
+    if (ipModo === 'site' && estado.catalogo.pagamento?.modo !== 'site'
+      && !confirm('A loja vai passar a cobrar no site, logo depois do pedido. Já fez o teste de R$ 1,00 com a InfinitePay?')) return;
     const linhas = $$('.pn-tam', form).map((d) => ({
       t: $('[data-t]', d).value.trim().toUpperCase(),
       calca: $('[data-c]', d).value.split(/[^\d]+/).filter(Boolean).map(Number),
@@ -2341,7 +2420,15 @@ function abaLoja(alvo) {
       pix: pixPct / 100,
       parcelas,
       lancamentoPraia: dataPraia ? `${dataPraia}:00-03:00` : '',
+      ...(el.ipModo ? {
+        pagarNoSite: ipModo === 'site',
+        empresa: el.empresa.value.trim(),
+        documento: el.documento.value.trim(),
+        email: el.email.value.trim(),
+        enderecoLoja: el.enderecoLoja.value.trim(),
+      } : {}),
     };
+    if (el.ipModo) estado.catalogo.pagamento = { modo: ipModo, handle: ipHandle };
     estado.catalogo.tabela = linhas;
     estado.catalogo.remetente = {
       nome: el.remNome.value.trim(),
@@ -2377,6 +2464,19 @@ function abaLoja(alvo) {
   });
   ligarExemplos(alvo);
 }
+// O que falta para a InfinitePay funcionar, dito em uma frase
+async function mostrarSituacaoPagamento(caixa) {
+  if (!caixa) return;
+  const s = await Banco.situacaoPagamento().catch(() => ({ instalada: false }));
+  if (!caixa.isConnected) return;
+  const pg = estado.catalogo.pagamento || {};
+  caixa.innerHTML = !s.instalada
+    ? '<b>Ainda não está ligado.</b> Falta instalar a função de pagamento no Supabase (veja supabase/LEIA-ME.md).'
+    : !pg.handle || pg.modo === 'desligado' ? '<b>Desligado.</b> Escolha como a cliente paga e informe a InfiniteTag.'
+      : s.chave ? '<b>Ligado, com a chave da API.</b> O link leva o desconto do Pix e as parcelas sem juros desta página.'
+        : '<b>Ligado, sem a chave da API.</b> O desconto do Pix e as parcelas sem juros seguem o que estiver configurado no app da InfinitePay.';
+}
+
 const linhaTamanho = (x) => `<div class="pn-tam"><input data-t value="${esc(x.t)}" placeholder="P" aria-label="Tamanho"><input data-c value="${esc(x.calca.join(', '))}" inputmode="numeric" placeholder="36, 38" aria-label="Números de calça"><button class="pn-link pn-perigo" type="button" data-tirar-tam>Tirar</button></div>`;
 
 // ---------------- Início ----------------

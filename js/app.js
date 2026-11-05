@@ -27,6 +27,8 @@ const tamanhoEsgotado = (it, t) => pecasComTamanho(it).some((x) => x.esgotados?.
 const calcaEsgotada = (it, n) => !!(it && n) && tamanhoEsgotado(it, tamanhoPorCalca(n)?.t);
 const tudoEsgotado = (it) => pecasComTamanho(it).length > 0 && TABELA.every((x) => tamanhoEsgotado(it, x.t));
 const TAMANHO_ACABOU = 'Esse tamanho acabou nesta opção. Marque outro número ou fale com a Paola.';
+// Pagamento no site pela InfinitePay. Desligado (padrão): a cliente fecha com a Paola no WhatsApp, como sempre
+const pagaNoSite = () => Catalogo.ligado && LOJA.pagarNoSite === true;
 
 // O número da calça é perguntado uma vez só e vale para o site todo
 let calcaMemoria = null;
@@ -98,7 +100,7 @@ const MENU = [
 function montarTopo() {
   const pagina = document.body.dataset.pagina;
   const kit = item('combo-5');
-  const avisos = [`${kit.sub || kit.nome} por ${brl(kit.preco)}`, 'Você só paga depois de falar com a Paola', `Frete grátis acima de ${brl(LOJA.freteGratis)}`];
+  const avisos = [`${kit.sub || kit.nome} por ${brl(kit.preco)}`, pagaNoSite() ? 'Pague no Pix ou no cartão aqui no site' : 'Você só paga depois de falar com a Paola', `Frete grátis acima de ${brl(LOJA.freteGratis)}`];
   $('#topo').innerHTML = `
   <div class="aviso" aria-live="off"><span>${avisos[0]}</span></div>
   <header class="cab">
@@ -162,10 +164,12 @@ function montarRodape() {
           <li><a href="${LOJA.antesDepois}" target="_blank" rel="noopener">Antes e depois de clientes</a></li>
         </ul>
           <h4 style="margin-top:22px">Pagamento</h4>
-          <div class="pagamentos"><span>Pix</span><span>Crédito ${LOJA.parcelas}x</span><span>Boleto</span></div>
+          <div class="pagamentos"><span>Pix</span><span>Crédito ${LOJA.parcelas}x</span>${pagaNoSite() ? '' : '<span>Boleto</span>'}</div>
         </div>
       </div>
-      <div class="rodape-base">© 2026 Paola Corpus Fit · Protótipo visual de demonstração: nenhum pedido é cobrado.</div>
+      <div class="rodape-base">${pagaNoSite()
+        ? `© 2026 ${esc(LOJA.empresa)} · ${esc(LOJA.documento)} · ${esc(LOJA.enderecoLoja)}${LOJA.email ? ` · ${esc(LOJA.email)}` : ''} · Pagamentos pela InfinitePay`
+        : '© 2026 Paola Corpus Fit · Protótipo visual de demonstração: nenhum pedido é cobrado.'}</div>
     </div>
   </footer>`;
 }
@@ -329,7 +333,18 @@ function finalizar() {
   Catalogo.evento('checkout');
   const cliente = lerJSON('pcf-cliente', {});
   let pagamento = cliente.pagamento || 'Pix';
-  const m = abrirModal(`
+  const noSite = pagaNoSite();
+  const m = abrirModal(`${noSite ? `
+    <div class="modal-topo"><h2>Falta só o pagamento</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
+    <div class="aviso-real">
+      <span class="aviso-ico">${I.chat}</span>
+      <p><b>Você paga aqui mesmo, no Pix ou no cartão.</b> O pagamento é feito na página da InfinitePay e a Paola recebe seu pedido na hora.</p>
+    </div>
+    <ul class="espera-lista aviso-lista">
+      <li>Pix com ${pctPix()} de desconto ou cartão em até ${LOJA.parcelas}x sem juros</li>
+      <li>A Paola confere seu tamanho antes de enviar e, se precisar, te chama no WhatsApp</li>
+      <li>Você acompanha cada etapa pelo link do pedido</li>
+    </ul>` : `
     <div class="modal-topo"><h2>Você vai finalizar com a Paola</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
     <div class="aviso-real">
       <span class="aviso-ico">${I.chat}</span>
@@ -339,7 +354,7 @@ function finalizar() {
       <li>Ela confere seu tamanho antes de enviar e, se precisar, pede uma foto de frente</li>
       <li>Você recebe dela o link de pagamento: Pix com ${pctPix()} de desconto ou cartão em até ${LOJA.parcelas}x</li>
       <li>Nada é cobrado agora</li>
-    </ul>
+    </ul>`}
     <form class="checkout" id="form-checkout" novalidate>
       <div class="campo"><label for="ck-nome">Seu nome</label><input id="ck-nome" name="nome" autocomplete="name" required></div>
       <div class="campo"><label for="ck-tel">Seu WhatsApp</label><input id="ck-tel" name="telefone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="(21) 99999-9999" maxlength="15" required><small class="ck-status">A Paola usa para te avisar quando o pedido for enviado.</small></div>
@@ -360,7 +375,7 @@ function finalizar() {
       </div>
       <div class="ck-total"><span>Total do pedido</span><b>${brl(subtotal(s))}</b></div>
       <p class="dica-tam erro" data-erro hidden></p>
-      <button class="btn btn-preto btn-bloco btn-pedir" type="submit">${I.whats}Continuar no WhatsApp</button>
+      <button class="btn btn-preto btn-bloco btn-pedir" type="submit">${noSite ? 'Ir para o pagamento' : `${I.whats}Continuar no WhatsApp`}</button>
     </form>`);
   const form = $('#form-checkout', m);
   const CAMPOS = ['nome', 'telefone', 'cep', 'rua', 'num', 'complemento', 'bairro', 'cidade', 'uf'];
@@ -397,7 +412,7 @@ function finalizar() {
     pagamento = b.dataset.pag;
     $$('[data-pag]', m).forEach((c) => c.setAttribute('aria-checked', c === b));
   }));
-  form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const d = Object.fromEntries(CAMPOS.map((c) => [c, form[c].value.trim()]));
     d.uf = d.uf.toUpperCase();
@@ -413,6 +428,18 @@ function finalizar() {
     gravarJSON('pcf-cliente', { ...d, pagamento });
     const pedido = registrarPedido(s, { ...d, pagamento });
     gravarSacola([]);
+    if (noSite) {
+      const botao = $('.btn-pedir', form);
+      botao.disabled = true;
+      botao.textContent = 'Abrindo o pagamento…';
+      try {
+        location.href = await Catalogo.pagar(pedido);
+        return;
+      } catch (ex) {
+        // A venda nunca se perde: sem o link, o pedido segue pelo WhatsApp e a Paola manda o pagamento
+        toast('Não deu para abrir o pagamento agora. Seu pedido foi registrado.');
+      }
+    }
     enviarWhatsApp(textoPedido(pedido), 'A Paola confere seu tamanho e te envia o link de pagamento', pedido.numero, pedido.id);
   });
 }
@@ -489,7 +516,9 @@ function ligarCalca(raiz, aoMudar, it = null) {
 const tabelaHTML = () => `<table class="tabela-mini"><thead><tr><th>Tamanho</th><th>Calça e short</th></tr></thead>
   <tbody>${TABELA.map((x) => `<tr data-linha="${x.t}"><td>${x.t}</td><td>${faixaCalca(x)}</td></tr>`).join('')}</tbody></table>`;
 // Reduz o risco na hora do clique: nada é cobrado no site e o tamanho é conferido antes
-const notaPedido = () => `<p class="pedido-nota">${I.escudo}<span>Você só paga depois de falar com a Paola no WhatsApp. Ela confirma seu tamanho antes de enviar.</span></p>`;
+const notaPedido = () => `<p class="pedido-nota">${I.escudo}<span>${pagaNoSite()
+  ? 'Você paga no Pix ou no cartão aqui no site. A Paola confere seu tamanho antes de enviar.'
+  : 'Você só paga depois de falar com a Paola no WhatsApp. Ela confirma seu tamanho antes de enviar.'}</span></p>`;
 // O botão fala do que a cliente ganha, não do que ela precisa fazer
 const textoBotao = (it) => (it.itens ? 'Quero meu kit' : 'Quero minha cinta');
 
@@ -957,8 +986,10 @@ const SITE_CORREIOS = 'https://rastreamento.correios.com.br/app/index.php';
 const dataEtapa = (iso) => { const d = new Date(iso); return `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`; };
 const zapDoPedido = (numero) => (LOJA.whatsappNumero ? `https://wa.me/${LOJA.whatsappNumero}?text=${encodeURIComponent(`Oi, Paola! Quero falar sobre o pedido ${numero}.`)}` : LOJA.whatsapp);
 
-function pedidoAcompanhadoHTML(p) {
+function pedidoAcompanhadoHTML(p, volta = null) {
   const atual = ETAPAS.findIndex(([id]) => id === p.status);
+  const pagar = p.status === 'novo' && /^https:\/\/[^/]*infinitepay/.test(p.link_pagamento || '') ? p.link_pagamento : null;
+  const textoNovo = pagar || pagaNoSite() ? 'Recebemos seu pedido. Assim que o pagamento for aprovado, esta etapa muda sozinha.' : null;
   const cancelado = p.status === 'cancelado';
   const ehCorreios = /^[A-Z]{2}\d{9}[A-Z]{2}$/.test(p.rastreio_codigo || '');
   const linkEntrega = /^https:\/\//.test(p.rastreio_link || '') ? p.rastreio_link : ehCorreios ? SITE_CORREIOS : '';
@@ -967,7 +998,7 @@ function pedidoAcompanhadoHTML(p) {
     const feita = i <= atual;
     return `<li class="${feita ? 'feita' : ''} ${i === atual ? 'atual' : ''}">
       <i>${feita ? I.ok : ''}</i>
-      <div><b>${nome}</b>${feita && registro ? `<small>${esc(dataEtapa(registro.em))}</small>` : ''}${i === atual ? `<p>${texto}</p>` : ''}</div>
+      <div><b>${nome}</b>${feita && registro ? `<small>${esc(dataEtapa(registro.em))}</small>` : ''}${i === atual ? `<p>${id === 'novo' && textoNovo ? textoNovo : texto}</p>` : ''}</div>
     </li>`;
   }).join('');
   const rastreio = !cancelado && (p.rastreio_codigo || linkEntrega) ? `<section class="acomp-rastreio">
@@ -976,8 +1007,13 @@ function pedidoAcompanhadoHTML(p) {
       ${linkEntrega ? `<a class="btn btn-preto btn-bloco" href="${esc(linkEntrega)}" target="_blank" rel="noopener">${ehCorreios && !p.rastreio_link ? 'Abrir o site dos Correios' : 'Ver onde está a entrega'}</a>` : ''}
       ${ehCorreios && !p.rastreio_link ? '<p class="dica-tam">Copie o código e cole no site dos Correios.</p>' : ''}
     </section>` : '';
+  // Volta da InfinitePay: diz na hora se deu certo, sem a cliente precisar entender as etapas
+  const aviso = volta === 'pago' ? `<p class="acomp-pago">${I.ok}<span><b>Pagamento aprovado!</b> A Paola já recebeu seu pedido e confere seu tamanho antes de enviar.</span></p>`
+    : volta === 'esperando' ? '<p class="acomp-esperando">Recebemos sua volta do pagamento. Assim que a InfinitePay confirmar, esta página mostra o pedido como pago.</p>' : '';
   return `<span class="sobre">Pedido ${esc(p.numero)}</span>
     <h1 class="titulo">Oi, ${esc(p.primeiro_nome)}!</h1>
+    ${aviso}
+    ${pagar && volta !== 'esperando' ? `<a class="btn btn-preto btn-bloco acomp-pagar" href="${esc(pagar)}">Pagar agora no Pix ou no cartão</a>` : ''}
     ${cancelado ? '<p class="acomp-cancelado">Este pedido foi cancelado. Se tiver alguma dúvida, é só falar com a Paola.</p>' : `<ol class="acomp-etapas">${etapas}</ol>`}
     ${rastreio}
     <section class="acomp-resumo">
@@ -992,9 +1028,9 @@ function pedidoAcompanhadoHTML(p) {
 
 function telaAcompanhar() {
   const caixa = $('#acompanhar');
-  const mostrarPedido = (p) => {
+  const mostrarPedido = (p, volta = null) => {
     history.replaceState(null, '', `acompanhar.html?p=${encodeURIComponent(p.id)}`);
-    caixa.innerHTML = pedidoAcompanhadoHTML(p);
+    caixa.innerHTML = pedidoAcompanhadoHTML(p, volta);
     scrollTo(0, 0);
     $('[data-copiar-rastreio]', caixa)?.addEventListener('click', async () => {
       try { await navigator.clipboard.writeText(p.rastreio_codigo); toast('Código copiado'); } catch (e) { toast('Selecione o código e copie'); }
@@ -1048,8 +1084,25 @@ function telaAcompanhar() {
     caixa.innerHTML = `<h1 class="titulo">Acompanhar meu pedido</h1><p class="acomp-cancelado">Para saber do seu pedido, fale com a Paola no WhatsApp.</p><a class="btn btn-preto btn-bloco" href="${esc(LOJA.whatsapp)}" target="_blank" rel="noopener">${I.whats}Falar com a Paola</a>`;
     return;
   }
-  const id = new URLSearchParams(location.search).get('p');
+  const busca = new URLSearchParams(location.search);
+  const id = busca.get('p') || busca.get('order_nsu');
   if (!id) return mostrarBusca();
+  // A InfinitePay devolve a cliente com os dados do pagamento na URL: confirma com ela e mostra o resultado
+  const slug = busca.get('slug');
+  const transacao = busca.get('transaction_nsu');
+  if (slug && transacao) {
+    caixa.innerHTML = '<p class="acomp-carregando">Confirmando seu pagamento…</p>';
+    const tentar = async (vez) => {
+      const r = await Catalogo.confirmarPagamento({ id, slug, transaction_nsu: transacao, receipt_url: busca.get('receipt_url') || '' }).catch(() => ({}));
+      const p = await Catalogo.acompanhar({ p_id: id }).catch(() => null);
+      if (!p) return mostrarBusca('Não encontramos esse pedido. Digite o número e o CEP.');
+      if (r.pago || p.status !== 'novo') return mostrarPedido(p, 'pago');
+      if (vez < 3) return setTimeout(() => tentar(vez + 1), 4000);
+      return mostrarPedido(p, 'esperando');
+    };
+    tentar(1);
+    return;
+  }
   Catalogo.acompanhar({ p_id: id })
     .then((p) => (p ? mostrarPedido(p) : mostrarBusca('Não encontramos esse pedido. Digite o número e o CEP.')))
     .catch(() => mostrarBusca('Não conseguimos buscar agora. Confira a internet e tente de novo.'));
@@ -1157,6 +1210,14 @@ function preencherValores() {
   };
   $$('[data-v]').forEach((el) => { el.textContent = valores[el.dataset.v]; });
   $$('[data-so-de]').forEach((el) => { el.hidden = !kit.de; });
+  // Com o pagamento no site ligado, os textos fixos da página deixam de dizer que se paga pelo WhatsApp
+  if (pagaNoSite()) {
+    const textos = {
+      hero: 'Pague no Pix ou no cartão aqui no site. A Paola confere seu tamanho antes de enviar.',
+      faq: `<summary>Como é o pagamento?</summary><p>Você paga aqui no site, na página da InfinitePay: no Pix (com ${pctPix()} de desconto) ou no cartão em até ${LOJA.parcelas}x sem juros. Depois, a Paola confere seu tamanho e envia do ${esc(LOJA.cidade.split(',')[0])} para todo o Brasil.</p>`,
+    };
+    $$('[data-texto-site]').forEach((el) => { el.innerHTML = textos[el.dataset.textoSite]; });
+  }
 }
 
 // ---------------- Início ----------------

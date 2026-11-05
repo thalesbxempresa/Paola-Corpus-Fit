@@ -872,6 +872,10 @@ section[id] { scroll-margin-top: 84px; }
 .acomp .titulo { margin-top: -10px; font-size: clamp(1.8rem, 7vw, 2.4rem); }
 .acomp h2 { margin: 0 0 10px; font-size: 15px; font-weight: 900; letter-spacing: .02em; }
 .acomp-carregando { padding: 48px 0; color: var(--tinta-2); text-align: center; }
+.acomp-pago { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 16px; padding: 14px 16px; border-radius: 14px; background: #E3F3E9; color: #1F5C39; line-height: 1.45; }
+.acomp-pago svg { flex: none; width: 20px; height: 20px; margin-top: 2px; }
+.acomp-esperando { margin: 0 0 16px; padding: 14px 16px; border-radius: 14px; background: #FFF3DC; color: #5F3F00; line-height: 1.45; }
+.acomp-pagar { margin: 0 0 18px; }
 .acomp-etapas { display: grid; margin: 0; padding: 20px 18px 8px; border-radius: 20px; background: var(--branco); list-style: none; }
 .acomp-etapas li { position: relative; display: flex; gap: 12px; padding-bottom: 18px; color: var(--tinta-3); }
 .acomp-etapas li:not(:last-child)::before { content: ''; position: absolute; left: 13px; top: 28px; bottom: 0; width: 2px; background: var(--areia-3); }

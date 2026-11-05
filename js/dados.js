@@ -18,6 +18,8 @@ const LOJA = {
   freteGratis: 299,
   pix: 0.05,
   parcelas: 6,
+  // Pagamento no site pela InfinitePay: liga pelo painel (aba Loja). Desligado, a Paola manda o link no WhatsApp
+  pagarNoSite: false,
 };
 
 const PRODUTOS = [

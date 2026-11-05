@@ -123,6 +123,11 @@ exception when others then
 end;
 $$;
 
+-- ---------- Pagamento online (InfinitePay) ----------
+-- Link de pagamento do pedido e, depois de pago, o que a InfinitePay confirmou (método, parcelas, comprovante).
+-- Quem grava é a função pagamento-infinitepay. A InfiniteTag e o modo ficam em loja_config.dados.pagamento.
+alter table public.pedidos add column if not exists infinitepay jsonb;
+
 -- Só pedido do site avisa: venda registrada à mão foi a própria loja que fez.
 -- Em projeto novo, troque o endereço pelo do novo projeto (veja LEIA-ME.md).
 create or replace function public.pedido_avisar() returns trigger
@@ -255,7 +260,9 @@ language sql stable security definer set search_path = '' as $$
     'itens', coalesce((select jsonb_agg(jsonb_build_object('nome', i ->> 'nome', 'tam', i ->> 'tam', 'qtd', i -> 'qtd')) from jsonb_array_elements(p.itens) i), '[]'::jsonb),
     'total', p.total,
     'rastreio_codigo', p.rastreio_codigo,
-    'rastreio_link', p.rastreio_link
+    'rastreio_link', p.rastreio_link,
+    -- Quem ainda não pagou pode voltar a pagar pela página do pedido
+    'link_pagamento', case when p.status = 'novo' then p.infinitepay ->> 'link' end
   )
   from public.pedidos p
   where p.id = p_id
@@ -285,6 +292,7 @@ grant select, insert, update, delete on public.push_assinaturas to authenticated
 -- A função do aviso entra como service_role: tabela nova neste projeto não nasce liberada para ninguém
 grant select, insert, delete on public.push_assinaturas, public.push_chaves to service_role;
 grant select, update on public.pedidos to service_role;
+grant select on public.loja_config to service_role;
 
 drop policy if exists admin_push on public.push_assinaturas;
 create policy admin_push on public.push_assinaturas for all to authenticated using (public.eh_admin()) with check (public.eh_admin());
