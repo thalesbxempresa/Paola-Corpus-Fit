@@ -34,6 +34,8 @@ const I = {
   caixa: svg('<path d="M3.5 7.5L12 3l8.5 4.5v9L12 21l-8.5-4.5zM3.5 7.5L12 12l8.5-4.5M12 12v9"/>'),
   casa: svg('<path d="M3.5 11L12 4l8.5 7M5.5 9.5V20h13V9.5M10 20v-5.5h4V20"/>'),
   x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+  imprimir: svg('<path d="M7 8V3.5h10V8M7 17H4.5v-7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v7H17"/><path d="M7 14h10v6.5H7z"/>'),
+  whats: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.5-.3z"/></svg>',
 };
 
 // ---------------- Tabelas fixas ----------------
@@ -49,10 +51,30 @@ const VENDA = new Set(['pago', 'preparando', 'enviado', 'entregue']); // Faturam
 // Caminho do pedido: a próxima etapa é sempre um botão só
 const ETAPAS = [['novo', 'Pedido recebido'], ['pago', 'Pagamento confirmado'], ['preparando', 'Preparando'], ['enviado', 'Enviado'], ['entregue', 'Entregue']];
 const PROXIMA = { novo: ['pago', 'Confirmar pagamento'], pago: ['preparando', 'Começar a preparar'], preparando: ['enviado', 'Marcar como enviado'], enviado: ['entregue', 'Marcar como entregue'] };
+const valorDe = (p) => Number(p.valor ?? p.total ?? 0); // O que foi cobrado de fato: com desconto do Pix ou ajustado à mão
+// O que a Paola precisa fazer: cada fila abre os pedidos daquela etapa
+const FILTROS = {
+  abertos: ['Em aberto', (p) => ['novo', 'pago', 'preparando'].includes(p.status)],
+  novo: ['Aguardando', (p) => p.status === 'novo'],
+  pago: ['Confirmado', (p) => p.status === 'pago'],
+  preparando: ['Preparando', (p) => p.status === 'preparando'],
+  enviado: ['Enviado', (p) => p.status === 'enviado'],
+  semrastreio: ['Sem código', (p) => p.status === 'enviado' && !p.rastreio_codigo && !p.rastreio_link],
+  entregue: ['Entregue', (p) => p.status === 'entregue'],
+  cancelado: ['Cancelado', (p) => p.status === 'cancelado'],
+  todos: ['Todos', () => true],
+};
+const FILAS_A_FAZER = new Set(['abertos', 'novo', 'pago', 'preparando', 'semrastreio']);
+const FILAS = [
+  ['novo', 'Aguardando pagamento', 'Confirme quando ela pagar'],
+  ['pago', 'Para preparar', 'Pagamento já confirmado'],
+  ['preparando', 'Para enviar', 'Imprima a etiqueta e poste'],
+  ['semrastreio', 'Enviados sem código', 'Coloque o rastreio'],
+];
 const CATEGORIAS = [['cintas', 'Cintas'], ['sutias', 'Sutiã'], ['tratamento', 'Tratamento']];
 const FOCOS = [['barriga', 'Segura a barriga'], ['busto', 'Sustenta o busto'], ['bumbum', 'Valoriza o bumbum']];
 
-const estado = { catalogo: null, pedidos: [], eventos: [], periodo: 30, busca: '', filtro: 'todos', segmento: 'produtos', editor: null, avisoValores: null };
+const estado = { catalogo: null, pedidos: [], eventos: [], periodo: 30, busca: '', filtro: 'abertos', segmento: 'produtos', editor: null, avisoValores: null };
 
 // ---------------- Conta: ajudantes de criptografia ----------------
 const ITERACOES = 210000;
@@ -110,6 +132,9 @@ const Local = {
     gravarJSON(EXTRAS, { ...extras, [id]: { ...extras[id], ...campos } });
   },
   async excluirPedido(id) { await this.alterarPedido(id, { excluido: true }); },
+  async criarPedido(p) {
+    gravarJSON('pcf-pedidos', [{ ...p, data: new Date().toISOString() }, ...lerJSON('pcf-pedidos', [])].slice(0, 50));
+  },
   async eventos() {
     const proprios = Object.entries(lerJSON('pcf-eventos', {})).flatMap(([dia, t]) => Object.entries(t).map(([tipo, total]) => ({ dia, tipo, total })));
     const ex = lerJSON(EXEMPLOS, null);
@@ -195,10 +220,15 @@ const Nuvem = (() => {
     },
     async alterarPedido(id, campos) { return checar(await sb.from('pedidos').update(campos).eq('id', id).select('*').single()); },
     async excluirPedido(id) { checar(await sb.from('pedidos').delete().eq('id', id)); },
+    async criarPedido(p) { checar(await sb.from('pedidos').insert(p)); },
     async eventos() { return checar(await sb.from('eventos_dia').select('*').limit(4000)); },
     async catalogo() {
       const doc = checar(await sb.rpc('catalogo_publico'));
-      if (Catalogo.valido(doc)) return { ...doc, loja: { ...Catalogo.doc().loja, ...doc.loja } };
+      if (Catalogo.valido(doc)) {
+        // O endereço de quem envia é privado: não vem no catálogo público
+        const privado = checar(await sb.from('loja_config').select('dados').eq('id', 1).maybeSingle());
+        return { ...doc, loja: { ...Catalogo.doc().loja, ...doc.loja }, remetente: privado?.dados?.remetente || {} };
+      }
       // Banco recém-criado: leva o catálogo atual do site na primeira entrada
       const atual = Catalogo.doc();
       await this.salvarCatalogo(atual);
@@ -210,7 +240,7 @@ const Nuvem = (() => {
         ...doc.kits.map((x, i) => linha(x, 'kit', i)),
         ...doc.praia.map((x, i) => linha(x, 'praia', i)),
       ];
-      checar(await sb.from('loja_config').upsert({ id: 1, dados: { loja: doc.loja, tabela: doc.tabela } }));
+      checar(await sb.from('loja_config').upsert({ id: 1, dados: { loja: doc.loja, tabela: doc.tabela, remetente: doc.remetente || {} } }));
       checar(await sb.from('itens').upsert(linhas));
       checar(await sb.from('itens').delete().not('id', 'in', `(${linhas.map((l) => l.id).join(',')})`));
     },
@@ -360,7 +390,7 @@ function telaAcesso(modo, aviso = '') {
 
 // ---------------- Estrutura do painel ----------------
 const ABAS = {
-  resumo: { nome: 'Resumo', ico: I.resumo, abrir: abaResumo },
+  resumo: { nome: 'Início', ico: I.resumo, abrir: abaResumo },
   pedidos: { nome: 'Pedidos', ico: I.pedidos, abrir: abaPedidos },
   produtos: { nome: 'Produtos', ico: I.produtos, abrir: abaProdutos },
   loja: { nome: 'Loja', ico: I.loja, abrir: abaLoja },
@@ -368,7 +398,7 @@ const ABAS = {
 
 function montarPainel() {
   $('#painel').innerHTML = `
-    <div class="ad">
+    <div class="pn-app">
       <header class="pn-topo">
         <span class="logo"><b>Paola</b><small>Corpus Fit</small></span>
         <div class="pn-topo-dir"><a class="pn-link" href="index.html" target="_blank" rel="noopener">Ver a loja</a><button class="pn-ico" type="button" data-sair aria-label="Sair">${I.sair}</button></div>
@@ -400,6 +430,7 @@ function abrirAba() {
   const pedido = location.hash.slice(1);
   const id = ABAS[pedido] ? pedido : 'resumo';
   estado.editor = null;
+  estado.novoAberto = false;
   $$('.pn-nav a[href^="#"]').forEach((a) => {
     if (a.getAttribute('href') === `#${id}`) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
@@ -423,9 +454,36 @@ async function abrirPainel() {
   }
   estado.catalogo = await Banco.catalogo();
   montarPainel();
+  // Quem abre direto em Produtos ou Loja também vê quantos pedidos estão esperando
+  if (['produtos', 'loja'].includes(location.hash.slice(1))) carregarDados().catch(() => {});
 }
 
-const carregarDados = async () => { [estado.pedidos, estado.eventos] = await Promise.all([Banco.pedidos(), Banco.eventos()]); };
+let ultimaCarga = 0;
+const carregarDados = async () => {
+  [estado.pedidos, estado.eventos] = await Promise.all([Banco.pedidos(), Banco.eventos()]);
+  ultimaCarga = Date.now();
+  atualizarSelo();
+};
+// Número ao lado de Pedidos: quantos estão esperando alguma ação
+function atualizarSelo() {
+  const link = $('.pn-nav a[href="#pedidos"]');
+  if (!link) return;
+  const n = estado.pedidos.filter(FILTROS.abertos[1]).length;
+  let selo = $('.pn-selo', link);
+  if (!n) { selo?.remove(); return; }
+  if (!selo) {
+    selo = document.createElement('em');
+    selo.className = 'pn-selo';
+    link.append(selo);
+  }
+  selo.textContent = n;
+}
+// Ao voltar para o painel, traz os pedidos novos, sem atrapalhar quem está mexendo em algo
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !$('#aba') || Date.now() - ultimaCarga < 60000) return;
+  if (estado.editor || estado.novoAberto || estado.enviando || $('.pn-ped[open]')) return;
+  if (['', 'resumo', 'pedidos'].includes(location.hash.slice(1))) abrirAba();
+});
 const temExemplos = () => Banco.modo === 'local' && !!lerJSON(EXEMPLOS, null);
 const avisoExemplos = () => (temExemplos() ? `<p class="pn-exemplo">${I.alerta}<span><b>Dados de exemplo ligados.</b> Estes números são fictícios, só para visualizar o painel.</span><button class="pn-link" type="button" data-tirar-exemplos>Remover</button></p>` : '');
 function ligarExemplos(alvo) {
@@ -598,7 +656,7 @@ function recorte(dias) {
 
 function medir(lista) {
   const vendas = lista.filter((p) => VENDA.has(p.status));
-  const faturamento = vendas.reduce((t, p) => t + Number(p.total), 0);
+  const faturamento = vendas.reduce((t, p) => t + valorDe(p), 0);
   const aguardando = lista.filter((p) => p.status === 'novo');
   return {
     registrados: lista.length,
@@ -607,7 +665,7 @@ function medir(lista) {
     ticket: vendas.length ? faturamento / vendas.length : 0,
     taxa: lista.length ? vendas.length / lista.length : 0,
     aguardando: aguardando.length,
-    aguardandoValor: aguardando.reduce((t, p) => t + Number(p.total), 0),
+    aguardandoValor: aguardando.reduce((t, p) => t + valorDe(p), 0),
   };
 }
 
@@ -626,7 +684,7 @@ function serieFaturamento(vendas, ini, fim) {
   vendas.forEach((p) => {
     const d = new Date(p.data);
     const b = pontos.find((x) => d >= x.de && d < x.ate);
-    if (b) { b.valor += Number(p.total); b.n += 1; }
+    if (b) { b.valor += valorDe(p); b.n += 1; }
   });
   return pontos;
 }
@@ -645,6 +703,19 @@ function deltaHTML(atual, antes, rotulo, pontosPct = false) {
 async function abaResumo(alvo) {
   await carregarDados();
   desenharResumo(alvo);
+}
+
+// Primeira coisa ao abrir o painel: o que está esperando por ela, antes dos números
+function fazerHTML() {
+  const filas = FILAS.map(([id, nome, dica]) => ({ id, nome, dica, n: estado.pedidos.filter(FILTROS[id][1]).length }));
+  const tem = filas.some((f) => f.n);
+  return `<section class="pn-fazer">
+    <h1 class="pn-h1">O que fazer agora</h1>
+    ${tem ? '' : `<p class="pn-em-dia">${I.ok}<span>${estado.pedidos.length ? 'Tudo em dia: nenhum pedido esperando por você.' : 'Nenhum pedido ainda. Eles aparecem aqui assim que chegarem.'}</span></p>`}
+    ${estado.pedidos.length ? `<div class="pn-filas">${filas.map((f) => `<a class="pn-fila ${f.n ? 'tem' : ''}" href="#pedidos" data-fila="${f.id}"><strong>${num(f.n)}</strong><span>${f.nome}</span><small>${f.dica}</small></a>`).join('')}</div>` : ''}
+    <a class="pn-link" href="#pedidos" data-registrar-venda>Registrar uma venda feita fora do site</a>
+  </section>
+  <h2 class="pn-titulo-secao">Como estão as vendas</h2>`;
 }
 
 function desenharResumo(alvo) {
@@ -704,6 +775,7 @@ function desenharResumo(alvo) {
 
   alvo.innerHTML = `
     ${avisoExemplos()}
+    ${fazerHTML()}
     <div class="pn-filtros" role="radiogroup" aria-label="Período">
       ${[[7, '7 dias'], [30, '30 dias'], [90, '90 dias'], [0, 'Tudo']].map(([d, n]) => `<button class="chip" type="button" role="radio" data-periodo="${d}" aria-checked="${d === estado.periodo}">${n}</button>`).join('')}
     </div>
@@ -715,7 +787,7 @@ function desenharResumo(alvo) {
         <span class="pn-rotulo">Faturamento</span>
         <strong>${brl(m.faturamento)}</strong>
         ${deltaHTML(m.faturamento, ma?.faturamento, rotuloAntes)}
-        <small>Soma dos pedidos pagos, enviados e entregues. Pedido só registrado não conta.</small>
+        <small>Soma do valor cobrado nos pedidos com pagamento confirmado. Pedido só registrado não conta.</small>
       </div>
       <div class="pn-kpis">
         <div class="pn-card pn-kpi"><span class="pn-rotulo">Pedidos registrados</span><strong>${num(m.registrados)}</strong>${deltaHTML(m.registrados, ma?.registrados, rotuloAntes)}</div>
@@ -756,6 +828,8 @@ function desenharResumo(alvo) {
 
   $$('[data-periodo]', alvo).forEach((b) => b.addEventListener('click', () => { estado.periodo = Number(b.dataset.periodo); desenharResumo(alvo); }));
   $('[data-ver-novos]', alvo)?.addEventListener('click', () => { estado.filtro = 'novo'; });
+  $$('[data-fila]', alvo).forEach((a) => a.addEventListener('click', () => { estado.filtro = a.dataset.fila; estado.busca = ''; }));
+  $('[data-registrar-venda]', alvo)?.addEventListener('click', () => { estado.abrirNovo = true; });
   ligarExemplos(alvo);
 }
 
@@ -768,8 +842,19 @@ addEventListener('resize', () => {
 // ---------------- Aba Pedidos ----------------
 const etiquetaStatus = (s) => `<span class="pn-st pn-st-${esc(s)}">${(STATUS[s] || STATUS.novo)[1]}${(STATUS[s] || STATUS.novo)[0]}</span>`;
 const enderecoDe = (p) => [p.rua && `${p.rua}, ${p.num}${p.complemento ? ` - ${p.complemento}` : ''}`, p.bairro && `${p.bairro} - ${p.cidade}/${p.uf}`, p.cep && `CEP ${p.cep}`].filter(Boolean).join('\n');
-
 const linkAcompanhar = (p) => new URL(`acompanhar.html?p=${encodeURIComponent(p.id)}`, location.href).href;
+const primeiroNome = (p) => String(p.nome || '').trim().split(/\s+/)[0];
+const soNumeros = (t) => String(t || '').replace(/\D/g, '');
+function telefoneBonito(t) {
+  const d = soNumeros(t);
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return d;
+}
+const itemCurto = (x) => {
+  const tam = tamanhoDoItem(x);
+  return `${x.qtd || 1}x ${nomeDoItem(x)}${x.extra ? ` + ${nomeDoItem({ id: x.extra })}` : ''}${tam ? ` · ${tam}` : ''}`;
+};
 
 function etapasHTML(p) {
   if (p.status === 'cancelado') return '<p class="pn-etapa-cancelada">Este pedido foi cancelado.</p>';
@@ -796,9 +881,8 @@ function rastreioHTML(p) {
     <button class="pn-link" type="button" data-editar-rastreio>${p.rastreio_codigo || p.rastreio_link ? 'Corrigir rastreio' : 'Colocar código de rastreio'}</button></div>`;
 }
 
-// Mensagem pronta para colar na conversa da cliente
+// Mensagem pronta para a cliente, de acordo com a etapa do pedido
 function avisoCliente(p) {
-  const nome = String(p.nome || '').trim().split(/\s+/)[0];
   const n = p.numero;
   const textos = {
     novo: `Recebi seu pedido ${n}. Vou conferir seu tamanho e te mandar o link de pagamento.`,
@@ -809,37 +893,60 @@ function avisoCliente(p) {
     cancelado: `Seu pedido ${n} foi cancelado. Qualquer dúvida, é só me chamar.`,
   };
   const link = Banco.modo === 'supabase' && p.status !== 'cancelado' ? `\n\nAcompanhe por aqui: ${linkAcompanhar(p)}` : '';
-  return `Oi, ${nome}! ${textos[p.status] || textos.novo}${link}`;
+  return `Oi, ${primeiroNome(p)}! ${textos[p.status] || textos.novo}${link}`;
+}
+function zapCliente(p) {
+  const d = soNumeros(p.telefone);
+  if (d.length < 10) return null;
+  return `https://wa.me/${d.length <= 11 ? `55${d}` : d}?text=${encodeURIComponent(avisoCliente(p))}`;
+}
+
+// Quanto tempo o pedido está parado na etapa atual, para o que está atrasado aparecer
+function tempoNaEtapa(p) {
+  if (!FILTROS.abertos[1](p)) return '';
+  const desde = (p.historico || []).at(-1)?.em || p.data;
+  const dias = Math.floor((inicioDoDia(new Date()) - inicioDoDia(desde)) / 864e5);
+  if (dias < 1) return '';
+  return `<span class="pn-parado">${dias === 1 ? 'Nesta etapa desde ontem' : `Nesta etapa há ${dias} dias`}</span>`;
 }
 
 function cartaoPedido(p, aberto = false) {
-  const resumo = (p.itens || []).map((x) => `${x.qtd || 1}x ${nomeDoItem(x)}`).join(', ');
   const proxima = PROXIMA[p.status];
+  const enviando = estado.enviando === p.id;
+  const zap = zapCliente(p);
+  const comDesconto = p.pagamento === 'Pix' && valorDe(p) < Number(p.total);
   return `<details class="pn-ped" data-id="${esc(p.id)}" ${aberto ? 'open' : ''}>
     <summary>
       <div class="pn-ped-l1"><b>${esc(p.numero)}</b>${etiquetaStatus(p.status)}${p.conferir ? `<span class="pn-st pn-st-conferir">${I.alerta}Conferir valor</span>` : ''}</div>
-      <div class="pn-ped-l2"><span>${esc(p.nome)}</span><b>${brl(p.total)}</b></div>
-      <div class="pn-ped-l3">${esc(resumo)} · ${dataHora(p.data)}</div>
+      <div class="pn-ped-l2"><span>${esc(p.nome)}</span><b>${brl(valorDe(p))}</b></div>
+      <div class="pn-ped-itens-resumo">${(p.itens || []).map((x) => `<span>${esc(itemCurto(x))}</span>`).join('')}</div>
+      <div class="pn-ped-l3">${dataHora(p.data)}${p.origem === 'manual' ? ' · Venda fora do site' : ''}${tempoNaEtapa(p)}</div>
     </summary>
     <div class="pn-ped-corpo">
       <div class="pn-andamento">
         ${etapasHTML(p)}
-        ${proxima && estado.enviando !== p.id ? `<button class="btn btn-preto btn-bloco" type="button" data-avancar="${proxima[0]}">${proxima[1]}</button>` : ''}
-        ${p.status === 'pago' && estado.enviando !== p.id ? '<button class="pn-link" type="button" data-avancar="enviado">Já enviei: pular para enviado</button>' : ''}
+        ${proxima && !enviando ? `<button class="btn btn-preto btn-bloco" type="button" data-avancar="${proxima[0]}">${proxima[1]}</button>` : ''}
+        ${p.status === 'pago' && !enviando ? '<button class="pn-link" type="button" data-avancar="enviado">Já enviei: pular para enviado</button>' : ''}
         ${rastreioHTML(p)}
       </div>
       <div class="pn-aviso-cliente"><h3>Avisar a cliente</h3>
-        <p class="pn-nota">Copie e cole na conversa dela no WhatsApp.</p>
-        <button class="btn btn-claro pn-btn-p" type="button" data-copiar-aviso>Copiar aviso desta etapa</button>
+        ${p.telefone ? `<p>${esc(telefoneBonito(p.telefone))}</p>` : ''}
+        ${zap ? `<a class="btn btn-claro pn-btn-p" href="${esc(zap)}" target="_blank" rel="noopener">${I.whats}Avisar ${esc(primeiroNome(p))} no WhatsApp</a><p class="pn-nota">Abre a conversa com a mensagem desta etapa já escrita.</p>` : '<p class="pn-nota">Copie e cole na conversa dela no WhatsApp.</p>'}
+        <button class="${zap ? 'pn-link' : 'btn btn-claro pn-btn-p'}" type="button" data-copiar-aviso>Copiar aviso desta etapa</button>
         ${Banco.modo === 'supabase' ? '<button class="pn-link" type="button" data-copiar-link>Copiar só o link de acompanhamento</button>' : ''}
+      </div>
+      ${p.conferir ? '<p class="pn-exemplo">O valor enviado pelo site não bateu com o preço do banco. Confira antes de mandar o link de pagamento.</p>' : ''}
+      <div class="pn-cobranca"><h3>Pagamento: ${esc(p.pagamento || 'não informado')}</h3>
+        <div class="campo"><label for="vl-${esc(p.id)}">Valor a cobrar</label><input id="vl-${esc(p.id)}" data-valor inputmode="decimal" value="${esc(precoTxt(valorDe(p)))}"></div>
+        <small class="pn-ajuda">${comDesconto ? `Já com o desconto do Pix (preço cheio: ${brl(p.total)}). ` : ''}Mude se somar frete ou der outro desconto. É este valor que entra no faturamento.</small>
       </div>
       <div><h3>Itens</h3><ul class="pn-ped-itens">${(p.itens || []).map((x) => {
         const tam = tamanhoDoItem(x);
-        return `<li><span>${x.qtd || 1}x ${esc(nomeDoItem(x))}${x.extra ? ` + ${esc(nomeDoItem({ id: x.extra }))}` : ''}${tam ? `<small>Tamanho ${esc(tam)} · veste calça ${esc(x.calca)}</small>` : ''}</span>${x.preco != null ? `<b>${brl(x.preco * (x.qtd || 1))}</b>` : ''}</li>`;
+        return `<li><span>${x.qtd || 1}x ${esc(nomeDoItem(x))}${x.extra ? ` + ${esc(nomeDoItem({ id: x.extra }))}` : ''}${tam ? `<small>Tamanho ${esc(tam)}${x.calca ? ` · veste calça ${esc(x.calca)}` : ''}</small>` : ''}</span>${x.preco != null ? `<b>${brl(x.preco * (x.qtd || 1))}</b>` : ''}</li>`;
       }).join('')}</ul></div>
-      ${p.conferir ? '<p class="pn-exemplo">O valor enviado pelo site não bateu com o preço do banco. Confira antes de mandar o link de pagamento.</p>' : ''}
-      <div><h3>Pagamento</h3><p>${esc(p.pagamento || 'Não informado')}</p></div>
-      <div><h3>Entrega</h3><p class="pn-endereco">${esc(enderecoDe(p)) || 'Não informado'}</p>${enderecoDe(p) ? '<button class="pn-link" type="button" data-copiar>Copiar endereço</button>' : ''}</div>
+      <div><h3>Entrega</h3><p class="pn-endereco">${esc(enderecoDe(p)) || 'Sem endereço no pedido'}</p>
+        <div class="pn-acoes-linha">${enderecoDe(p) ? `<button class="pn-link" type="button" data-copiar>Copiar endereço</button><button class="pn-link" type="button" data-imprimir>${I.imprimir}Imprimir etiqueta</button>` : ''}</div>
+      </div>
       <div class="campo"><label for="nt-${esc(p.id)}">Anotação interna</label><textarea id="nt-${esc(p.id)}" data-nota rows="2" placeholder="Só aparece aqui no painel">${esc(p.nota || '')}</textarea></div>
       <div class="campo"><label for="st-${esc(p.id)}">Corrigir a etapa ou cancelar</label>
         <select id="st-${esc(p.id)}" data-status>${Object.entries(STATUS).map(([id, [nome]]) => `<option value="${id}" ${id === p.status ? 'selected' : ''}>${nome}</option>`).join('')}</select>
@@ -852,9 +959,9 @@ function cartaoPedido(p, aberto = false) {
 function exportarCSV(lista) {
   // Campo escrito por cliente não pode virar fórmula ao abrir no Excel
   const celula = (v) => { const t = String(v ?? '').replace(/"/g, '""'); return `"${/^[=+\-@]/.test(t) ? `'${t}` : t}"`; };
-  const linhas = [['Número', 'Data', 'Situação', 'Nome', 'Cidade', 'UF', 'Pagamento', 'Itens', 'Total', 'Rastreio']];
-  lista.forEach((p) => linhas.push([p.numero, dataHora(p.data), (STATUS[p.status] || STATUS.novo)[0], p.nome, p.cidade, p.uf, p.pagamento,
-    (p.itens || []).map((x) => `${x.qtd || 1}x ${nomeDoItem(x)}${tamanhoDoItem(x) ? ` (${tamanhoDoItem(x)})` : ''}`).join(' | '), Number(p.total).toFixed(2).replace('.', ','), p.rastreio_codigo]));
+  const linhas = [['Número', 'Data', 'Situação', 'Nome', 'WhatsApp', 'Cidade', 'UF', 'Pagamento', 'Itens', 'Valor cobrado', 'Rastreio']];
+  lista.forEach((p) => linhas.push([p.numero, dataHora(p.data), (STATUS[p.status] || STATUS.novo)[0], p.nome, telefoneBonito(p.telefone), p.cidade, p.uf, p.pagamento,
+    (p.itens || []).map(itemCurto).join(' | '), valorDe(p).toFixed(2).replace('.', ','), p.rastreio_codigo]));
   baixar(`pedidos-${new Date().toLocaleDateString('en-CA')}.csv`, `﻿${linhas.map((l) => l.map(celula).join(';')).join('\r\n')}`, 'text/csv;charset=utf-8');
 }
 function baixar(nome, conteudo, tipo) {
@@ -865,46 +972,107 @@ function baixar(nome, conteudo, tipo) {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
+// Etiqueta: a parte de cima vai colada na caixa (sem dizer o que tem dentro); a de baixo fica para conferir
+function etiquetaHTML(p) {
+  const r = estado.catalogo.remetente || {};
+  const remetente = [r.nome || 'Paola Corpus Fit', r.rua && `${r.rua}, ${r.num || 's/n'}${r.complemento ? ` - ${r.complemento}` : ''}`, r.bairro && `${r.bairro} - ${r.cidade}/${r.uf}`, r.cep && `CEP ${r.cep}`, r.telefone && `Tel. ${telefoneBonito(r.telefone)}`].filter(Boolean);
+  return `<article class="etq">
+    <div class="etq-cola">
+      <small>Para</small>
+      <b>${esc(p.nome)}</b>
+      <p>${esc(enderecoDe(p)) || 'Entrega a combinar'}</p>
+      ${p.telefone ? `<p>Tel. ${esc(telefoneBonito(p.telefone))}</p>` : ''}
+      <small class="etq-de">De</small>
+      <p class="etq-remetente">${remetente.map(esc).join('<br>')}</p>
+    </div>
+    <div class="etq-confere">
+      <small>Conferir antes de fechar (não colar)</small>
+      <b>${esc(p.numero)}</b>
+      <ul>${(p.itens || []).map((x) => `<li>${esc(itemCurto(x))}</li>`).join('')}</ul>
+      ${p.nota ? `<p>${esc(p.nota)}</p>` : ''}
+    </div>
+  </article>`;
+}
+function imprimirEtiquetas(lista) {
+  if (!estado.catalogo.remetente?.rua) toast('Falta o seu endereço na etiqueta: preencha em Loja, "Endereço de envio".');
+  let caixa = $('#impressao');
+  if (!caixa) {
+    caixa = document.createElement('div');
+    caixa.id = 'impressao';
+    document.body.append(caixa);
+  }
+  caixa.innerHTML = lista.map(etiquetaHTML).join('');
+  window.print();
+}
+
 async function abaPedidos(alvo) {
   await carregarDados();
-  const conta = (s) => estado.pedidos.filter((p) => s === 'todos' || p.status === s).length;
+  if (estado.abrirNovo) {
+    estado.abrirNovo = false;
+    abrirNovoPedido(alvo);
+    return;
+  }
+  const conta = (f) => estado.pedidos.filter(FILTROS[f][1]).length;
+  const paraEnviar = () => estado.pedidos.filter((p) => p.status === 'preparando' && enderecoDe(p));
+  const chips = () => Object.entries(FILTROS)
+    .filter(([id]) => id !== 'semrastreio' || conta(id) > 0 || estado.filtro === id)
+    .map(([id, [nome]]) => `<button class="chip" type="button" role="radio" data-filtro="${id}" aria-checked="${id === estado.filtro}">${nome} <small>${conta(id)}</small></button>`).join('');
   alvo.innerHTML = `
     ${avisoExemplos()}
-    <div class="pn-cab"><h1 class="pn-h1">Pedidos</h1><button class="btn btn-claro pn-btn-p" type="button" data-csv>Baixar planilha</button></div>
-    <div class="pn-filtros" role="radiogroup" aria-label="Situação">
-      ${[['todos', 'Todos'], ...Object.entries(STATUS).map(([id, [nome]]) => [id, nome])].map(([id, nome]) => `<button class="chip" type="button" role="radio" data-filtro="${id}" aria-checked="${id === estado.filtro}">${nome} <small>${conta(id)}</small></button>`).join('')}
-    </div>
-    <div class="campo pn-busca"><label for="busca">Buscar por número, nome ou cidade</label><input id="busca" type="search" value="${esc(estado.busca)}" placeholder="Ex.: PCF-0311 ou Maria"></div>
-    <div id="lista-pedidos"></div>`;
+    <div class="pn-cab"><h1 class="pn-h1">Pedidos</h1><button class="btn btn-preto pn-btn-p" type="button" data-novo-pedido>${I.mais}Novo pedido</button></div>
+    <div class="pn-filtros" id="filtros-pedidos" role="radiogroup" aria-label="Situação">${chips()}</div>
+    <div class="campo pn-busca"><label for="busca">Buscar por número, nome ou cidade</label><input id="busca" type="search" value="${esc(estado.busca)}" placeholder="Ex.: PCF-0411 ou Maria"></div>
+    <div id="lista-pedidos"></div>
+    <div class="pn-acoes-linha pn-pe-pedidos">
+      <button class="pn-link" type="button" data-imprimir-todos></button>
+      <button class="pn-link" type="button" data-csv>Baixar planilha</button>
+    </div>`;
 
   const filtrados = () => {
     const termo = estado.busca.trim().toLowerCase();
-    return estado.pedidos.filter((p) => (estado.filtro === 'todos' || p.status === estado.filtro)
+    const lista = estado.pedidos.filter((p) => FILTROS[estado.filtro][1](p)
       && (!termo || `${p.numero} ${p.nome} ${p.cidade}`.toLowerCase().includes(termo)));
+    // No que ainda precisa de ação, o mais antigo vem primeiro
+    return FILAS_A_FAZER.has(estado.filtro) ? [...lista].sort((a, b) => new Date(a.data) - new Date(b.data)) : lista;
+  };
+  const atualizarAcoes = () => {
+    const b = $('[data-imprimir-todos]', alvo);
+    const n = paraEnviar().length;
+    b.hidden = !n;
+    b.innerHTML = `${I.imprimir}Imprimir etiquetas dos pedidos para enviar (${n})`;
+    atualizarSelo();
   };
   const desenhar = () => {
     const lista = filtrados();
+    const vazioAberto = estado.filtro === 'abertos' && !estado.busca.trim() && estado.pedidos.length;
     $('#lista-pedidos').innerHTML = lista.length
-      ? lista.slice(0, 200).map((p) => cartaoPedido(p)).join('') + (lista.length > 200 ? `<p class="pn-nota">Mostrando os 200 mais recentes de ${num(lista.length)}. Use a busca ou baixe a planilha.</p>` : '')
-      : `<section class="pn-card pn-comeco"><h2>${estado.pedidos.length ? 'Nada encontrado' : 'Ainda não há pedidos'}</h2>
-        <p class="pn-texto">${estado.pedidos.length ? 'Tente outra busca ou outra situação.' : Banco.modo === 'local' ? 'Sem o Supabase, aparecem aqui só os pedidos feitos neste navegador. Depois de conectar, chegam os de todas as clientes.' : 'Os pedidos aparecem aqui assim que as clientes finalizarem pelo site.'}</p></section>`;
+      ? lista.slice(0, 200).map((p) => cartaoPedido(p, p.id === estado.abrirPedido)).join('') + (lista.length > 200 ? `<p class="pn-nota">Mostrando 200 de ${num(lista.length)}. Use a busca ou baixe a planilha.</p>` : '')
+      : `<section class="pn-card pn-comeco"><h2>${vazioAberto ? 'Tudo em dia' : estado.pedidos.length ? 'Nada encontrado' : 'Ainda não há pedidos'}</h2>
+        <p class="pn-texto">${vazioAberto ? 'Nenhum pedido esperando por você agora.' : estado.pedidos.length ? 'Tente outra busca ou outra situação.' : Banco.modo === 'local' ? 'Sem o Supabase, aparecem aqui só os pedidos feitos neste navegador. Depois de conectar, chegam os de todas as clientes.' : 'Os pedidos do site aparecem aqui sozinhos. Vendeu pelo Instagram ou WhatsApp? Use o botão Novo pedido.'}</p></section>`;
+    estado.abrirPedido = null;
+    atualizarAcoes();
   };
   desenhar();
 
-  $$('[data-filtro]', alvo).forEach((b) => b.addEventListener('click', () => {
+  $('#filtros-pedidos', alvo).addEventListener('click', (e) => {
+    const b = e.target.closest('[data-filtro]');
+    if (!b) return;
     estado.filtro = b.dataset.filtro;
-    $$('[data-filtro]', alvo).forEach((c) => c.setAttribute('aria-checked', c === b));
+    $('#filtros-pedidos', alvo).innerHTML = chips();
     desenhar();
-  }));
+  });
   $('#busca').addEventListener('input', (e) => { estado.busca = e.target.value; desenhar(); });
+  $('[data-novo-pedido]', alvo).addEventListener('click', () => abrirNovoPedido(alvo));
   $('[data-csv]', alvo).addEventListener('click', () => exportarCSV(filtrados()));
+  $('[data-imprimir-todos]', alvo).addEventListener('click', () => imprimirEtiquetas(paraEnviar()));
   ligarExemplos(alvo);
 
   const lista = $('#lista-pedidos');
   const pedidoDe = (el) => estado.pedidos.find((p) => String(p.id) === el.closest('.pn-ped').dataset.id);
   const redesenharCartao = (p, el) => {
     el.closest('.pn-ped').outerHTML = cartaoPedido(p, true);
-    $$('[data-filtro]', alvo).forEach((b) => { $('small', b).textContent = conta(b.dataset.filtro); });
+    $('#filtros-pedidos', alvo).innerHTML = chips();
+    atualizarAcoes();
   };
   // O banco devolve o pedido já com a data da etapa nova
   const atualizar = async (p, el, campos, mensagem) => {
@@ -924,6 +1092,14 @@ async function abaPedidos(alvo) {
     if (e.target.matches('[data-status]')) {
       const novo = e.target.value;
       await atualizar(p, e.target, { status: novo }, `Etapa corrigida para ${STATUS[novo][0].toLowerCase()}. Avise a cliente.`);
+    } else if (e.target.matches('[data-valor]')) {
+      const valor = lerPreco(e.target.value);
+      if (!valor) {
+        toast('O valor não parece um número. Ex.: 479,00');
+        e.target.value = precoTxt(valorDe(p));
+        return;
+      }
+      await atualizar(p, e.target, { valor }, 'Valor salvo');
     } else if (e.target.matches('[data-nota]')) {
       try {
         await Banco.alterarPedido(p.id, { nota: e.target.value.trim() });
@@ -979,20 +1155,203 @@ async function abaPedidos(alvo) {
       await copiar(linkAcompanhar(pedidoDe(botao)), 'Link copiado');
       return;
     }
-    if (e.target.matches('[data-copiar]')) {
-      const p = pedidoDe(e.target);
-      try { await navigator.clipboard.writeText(`${p.nome}\n${enderecoDe(p)}`); toast('Endereço copiado'); } catch (ex) { toast('Selecione o texto e copie'); }
+    if (botao.matches('[data-imprimir]')) {
+      imprimirEtiquetas([pedidoDe(botao)]);
+      return;
     }
-    if (e.target.matches('[data-excluir]')) {
-      const p = pedidoDe(e.target);
-      if (!confirm(`Excluir o pedido ${p.numero} de ${p.nome}? Isso não pode ser desfeito.`)) return;
+    if (botao.matches('[data-copiar]')) {
+      const p = pedidoDe(botao);
+      await copiar(`${p.nome}\n${enderecoDe(p)}`, 'Endereço copiado');
+      return;
+    }
+    if (botao.matches('[data-excluir]')) {
+      const p = pedidoDe(botao);
+      if (!confirm(`Excluir o pedido ${p.numero} de ${p.nome}? Isso não pode ser desfeito. Para venda desfeita, prefira cancelar.`)) return;
       try {
         await Banco.excluirPedido(p.id);
         estado.pedidos = estado.pedidos.filter((x) => x !== p);
+        $('#filtros-pedidos', alvo).innerHTML = chips();
         desenhar();
         toast('Pedido excluído');
       } catch (ex) { toast(`Não excluiu: ${ex.message}`); }
     }
+  });
+}
+
+// Venda feita fora do site (Instagram, WhatsApp, pessoalmente): entra igual às outras nas etapas e no faturamento
+function abrirNovoPedido(alvo) {
+  const vendaveis = [...estado.catalogo.kits, ...estado.catalogo.produtos].filter((x) => x.ativo !== false);
+  const acha = (id) => [...estado.catalogo.kits, ...estado.catalogo.produtos].find((x) => x.id === id);
+  const pedeTamanho = (it) => (it.itens ? it.itens.some((i) => acha(i)?.tamanhos) : !!it.tamanhos);
+  const np = { itens: [{ id: vendaveis[0].id, calca: '', extra: '', qtd: 1 }], pagamento: 'Pix', valorManual: false };
+  estado.novoAberto = true;
+
+  const linhaItem = (x, i) => {
+    const it = acha(x.id);
+    const calcas = estado.catalogo.tabela.flatMap((t) => t.calca.map((c) => [String(c), `${c} (tamanho ${t.t})`]));
+    return `<div class="pn-np-item" data-i="${i}">
+      ${seletor('Produto', `np-id-${i}`, x.id, vendaveis.map((v) => [v.id, `${esc(v.nome)}${v.preco != null ? ` · ${brl(v.preco)}` : ''}`]), { attrs: 'data-np="id"' })}
+      <div class="pn-2">
+        ${pedeTamanho(it) ? seletor('Número da calça', `np-calca-${i}`, x.calca, [['', 'Escolha'], ...calcas], { attrs: 'data-np="calca"' }) : ''}
+        ${it.escolha ? seletor('Item à escolha', `np-extra-${i}`, x.extra, [['', 'Escolha'], ...it.escolha.map((e) => [e, esc(acha(e)?.curto || acha(e)?.nome || e)])], { attrs: 'data-np="extra"' }) : ''}
+        ${campo('Quantidade', `np-qtd-${i}`, x.qtd, { tipo: 'number', attrs: 'data-np="qtd" inputmode="numeric" min="1" max="99"' })}
+      </div>
+      ${np.itens.length > 1 ? '<button class="pn-link pn-perigo" type="button" data-np-tirar>Tirar este item</button>' : ''}
+    </div>`;
+  };
+
+  alvo.innerHTML = `
+    <button class="pn-voltar" type="button" data-voltar>${I.voltar}Voltar para os pedidos</button>
+    <div class="pn-cab"><h1 class="pn-h1">Novo pedido</h1></div>
+    <p class="pn-nota pn-dica-lista">Para vendas feitas no Instagram, no WhatsApp ou pessoalmente.</p>
+    <form id="form-novo" class="pn-form" novalidate>
+      <section class="pn-card"><h2>Cliente</h2>
+        ${campo('Nome', 'nome', '', { attrs: 'autocomplete="off" required' })}
+        ${campo('WhatsApp', 'telefone', '', { tipo: 'tel', attrs: 'inputmode="tel" placeholder="(21) 99999-9999" autocomplete="off"', ajuda: 'Opcional, mas com ele você avisa a cliente em um toque.' })}
+      </section>
+      <section class="pn-card"><h2>O que ela comprou</h2>
+        <div id="np-itens" class="pn-np-itens"></div>
+        <button class="pn-link pn-add" type="button" data-np-add>Adicionar outro item</button>
+      </section>
+      <section class="pn-card"><h2>Pagamento</h2>
+        ${seletor('Forma de pagamento', 'pagamento', np.pagamento, [['Pix', 'Pix'], ['Cartão', 'Cartão'], ['Dinheiro', 'Dinheiro']])}
+        ${campo('Valor a cobrar', 'valor', '', { attrs: 'inputmode="decimal"', ajuda: 'Calculado pelos preços da loja. Pode mudar à vontade.' })}
+        ${chave('Já está pago', 'pago', false, { ajuda: 'Marque se ela já pagou. O pedido entra como confirmado.' })}
+      </section>
+      <section class="pn-card"><h2>Entrega</h2>
+        <p class="pn-nota">Deixe vazio se a entrega for em mãos.</p>
+        ${campo('CEP', 'cep', '', { attrs: 'inputmode="numeric" placeholder="00000-000" maxlength="9"' })}
+        ${campo('Rua', 'rua', '')}
+        <div class="pn-2">${campo('Número', 'num', '')}${campo('Complemento', 'complemento', '')}</div>
+        ${campo('Bairro', 'bairro', '')}
+        <div class="pn-2">${campo('Cidade', 'cidade', '')}${campo('UF', 'uf', '', { attrs: 'maxlength="2" autocapitalize="characters"' })}</div>
+      </section>
+      <section class="pn-card"><h2>Anotação</h2>
+        ${area('Só aparece aqui no painel', 'nota', '', { linhas: 2 })}
+      </section>
+      <div class="pn-salvar"><p class="dica-tam erro" data-erro hidden></p><button class="btn btn-preto btn-bloco" type="submit">Salvar pedido</button></div>
+    </form>`;
+
+  const form = $('#form-novo', alvo);
+  const caixaItens = $('#np-itens', form);
+  const somaItens = () => np.itens.reduce((t, x) => t + (acha(x.id)?.preco || 0) * (Number(x.qtd) || 1), 0);
+  const sugerirValor = () => {
+    if (np.valorManual) return;
+    const soma = somaItens();
+    const pix = form.elements.pagamento.value === 'Pix' ? estado.catalogo.loja.pix : 0;
+    form.elements.valor.value = soma ? precoTxt(Math.round(soma * (1 - pix) * 100) / 100) : '';
+  };
+  const desenharItens = () => {
+    caixaItens.innerHTML = np.itens.map(linhaItem).join('');
+    sugerirValor();
+  };
+  desenharItens();
+  form.elements.nome.focus();
+
+  caixaItens.addEventListener('change', (e) => {
+    const qual = e.target.dataset.np;
+    if (!qual) return;
+    const x = np.itens[Number(e.target.closest('.pn-np-item').dataset.i)];
+    x[qual] = e.target.value;
+    if (qual === 'id') { x.calca = ''; x.extra = ''; desenharItens(); } else sugerirValor();
+  });
+  caixaItens.addEventListener('click', (e) => {
+    if (!e.target.matches('[data-np-tirar]')) return;
+    np.itens.splice(Number(e.target.closest('.pn-np-item').dataset.i), 1);
+    desenharItens();
+  });
+  $('[data-np-add]', form).addEventListener('click', () => {
+    np.itens.push({ id: vendaveis[0].id, calca: '', extra: '', qtd: 1 });
+    desenharItens();
+  });
+  form.elements.pagamento.addEventListener('change', sugerirValor);
+  form.elements.valor.addEventListener('input', () => { np.valorManual = true; });
+  form.elements.telefone.addEventListener('input', (e) => { e.target.value = mascaraTelefone(e.target.value); });
+  ligarBuscaCep(form.elements.cep, form);
+  $('[data-voltar]', alvo).addEventListener('click', () => { estado.novoAberto = false; abaPedidos(alvo); scrollTo(0, 0); });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const el = form.elements;
+    const erro = $('[data-erro]', form);
+    const falhar = (msg, campoAlvo) => { erro.hidden = false; erro.textContent = msg; campoAlvo?.focus(); };
+    const nome = el.nome.value.trim();
+    const valor = lerPreco(el.valor.value);
+    const tel = soNumeros(el.telefone.value);
+    if (!nome) return falhar('Escreva o nome da cliente.', el.nome);
+    if (tel && tel.length < 10) return falhar('O WhatsApp precisa ter DDD e número.', el.telefone);
+    if (!valor) return falhar('Escreva o valor a cobrar. Ex.: 479,00.', el.valor);
+    const semEscolha = np.itens.find((x) => acha(x.id).escolha && !x.extra);
+    if (semEscolha) return falhar('Escolha o item do combo.');
+    erro.hidden = true;
+    const agora = new Date();
+    const dois = (n) => String(n).padStart(2, '0');
+    const itens = np.itens.map((x) => {
+      const it = acha(x.id);
+      const calca = x.calca ? Number(x.calca) : null;
+      return { id: x.id, nome: it.nome, calca, tam: estado.catalogo.tabela.find((t) => t.calca.includes(calca))?.t || null, extra: x.extra || null, qtd: Number(x.qtd) || 1, preco: it.preco ?? null };
+    });
+    const novo = {
+      id: crypto.randomUUID(),
+      numero: `PCF-${dois(agora.getDate())}${dois(agora.getMonth() + 1)}-${Math.floor(1000 + Math.random() * 9000)}`,
+      nome,
+      telefone: tel || null,
+      cep: el.cep.value.trim() || null,
+      rua: el.rua.value.trim() || null,
+      num: el.num.value.trim() || null,
+      complemento: el.complemento.value.trim() || null,
+      bairro: el.bairro.value.trim() || null,
+      cidade: el.cidade.value.trim() || null,
+      uf: el.uf.value.trim().toUpperCase() || null,
+      pagamento: el.pagamento.value,
+      itens,
+      total: somaItens() || valor,
+      valor,
+      status: el.pago.checked ? 'pago' : 'novo',
+      nota: el.nota.value.trim() || null,
+      origem: 'manual',
+    };
+    const botao = $('button[type=submit]', form);
+    botao.disabled = true;
+    try {
+      await Banco.criarPedido(novo);
+      estado.novoAberto = false;
+      estado.filtro = 'abertos';
+      estado.abrirPedido = novo.id;
+      await abaPedidos(alvo);
+      scrollTo(0, 0);
+      toast('Pedido criado');
+    } catch (ex) {
+      botao.disabled = false;
+      falhar(`Não salvou: ${ex.message}`);
+    }
+  });
+}
+
+const mascaraTelefone = (v) => {
+  const d = soNumeros(v).slice(0, 11);
+  if (d.length <= 2) return d;
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  return d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+};
+// Pelo CEP, o endereço se preenche sozinho (ViaCEP, serviço público e gratuito); se falhar, é só digitar
+function ligarBuscaCep(cep, form, nomes = { rua: 'rua', bairro: 'bairro', cidade: 'cidade', uf: 'uf', num: 'num' }) {
+  let ultimo = '';
+  cep.addEventListener('input', async () => {
+    const d = soNumeros(cep.value).slice(0, 8);
+    cep.value = d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
+    if (d.length !== 8 || d === ultimo) return;
+    ultimo = d;
+    try {
+      const r = await fetch(`https://viacep.com.br/ws/${d}/json/`).then((x) => x.json());
+      if (r.erro) return;
+      const el = form.elements;
+      el[nomes.rua].value = r.logradouro || el[nomes.rua].value;
+      el[nomes.bairro].value = r.bairro || el[nomes.bairro].value;
+      el[nomes.cidade].value = r.localidade || '';
+      el[nomes.uf].value = r.uf || '';
+      el[nomes.num].focus();
+    } catch (e) { /* sem internet ou CEP fora do ar: digita à mão */ }
   });
 }
 
@@ -1494,6 +1853,7 @@ function ligarEditor(alvo) {
 // ---------------- Aba Loja ----------------
 function abaLoja(alvo) {
   const l = estado.catalogo.loja;
+  const rem = estado.catalogo.remetente || {};
   const local = Banco.modo === 'local';
   alvo.innerHTML = `
     <div class="pn-cab"><h1 class="pn-h1">Loja</h1></div>
@@ -1515,6 +1875,16 @@ function abaLoja(alvo) {
           ${campo('Parcelas sem juros', 'parcelas', l.parcelas, { tipo: 'number', attrs: 'inputmode="numeric" min="1" max="24"' })}
         </div>
         ${campo('Lançamento da moda praia', 'lancamentoPraia', (l.lancamentoPraia || '').slice(0, 16), { tipo: 'datetime-local', ajuda: 'Vazio: a contagem regressiva não aparece. Só use data real.' })}
+      </section>
+      <section class="pn-card"><h2>Endereço de envio</h2>
+        <p class="pn-texto">De onde saem os pedidos. Aparece só na etiqueta impressa, nunca na loja.</p>
+        ${campo('Nome de quem envia', 'remNome', rem.nome || 'Paola Corpus Fit')}
+        ${campo('CEP', 'remCep', rem.cep, { attrs: 'inputmode="numeric" placeholder="00000-000" maxlength="9"' })}
+        ${campo('Rua', 'remRua', rem.rua)}
+        <div class="pn-2">${campo('Número', 'remNum', rem.num)}${campo('Complemento', 'remComplemento', rem.complemento)}</div>
+        ${campo('Bairro', 'remBairro', rem.bairro)}
+        <div class="pn-2">${campo('Cidade', 'remCidade', rem.cidade)}${campo('UF', 'remUf', rem.uf, { attrs: 'maxlength="2" autocapitalize="characters"' })}</div>
+        ${campo('Telefone', 'remTelefone', rem.telefone ? telefoneBonito(rem.telefone) : '', { tipo: 'tel', attrs: 'inputmode="tel" placeholder="(21) 99999-9999"', ajuda: 'Opcional.' })}
       </section>
       <section class="pn-card"><h2>Tabela de tamanhos</h2>
         <p class="pn-texto">O número de calça que cada tamanho veste. Vale para toda a loja.</p>
@@ -1552,6 +1922,8 @@ function abaLoja(alvo) {
 
   const form = $('#form-loja');
   const tabela = $('#tabela-tam', form);
+  ligarBuscaCep(form.elements.remCep, form, { rua: 'remRua', bairro: 'remBairro', cidade: 'remCidade', uf: 'remUf', num: 'remNum' });
+  form.elements.remTelefone.addEventListener('input', (e) => { e.target.value = mascaraTelefone(e.target.value); });
   $('[data-novo-tam]', form).addEventListener('click', () => tabela.insertAdjacentHTML('beforeend', linhaTamanho({ t: '', calca: [] })));
   tabela.addEventListener('click', (e) => { if (e.target.matches('[data-tirar-tam]')) e.target.closest('.pn-tam').remove(); });
 
@@ -1591,6 +1963,17 @@ function abaLoja(alvo) {
       lancamentoPraia: dataPraia ? `${dataPraia}:00-03:00` : '',
     };
     estado.catalogo.tabela = linhas;
+    estado.catalogo.remetente = {
+      nome: el.remNome.value.trim(),
+      cep: el.remCep.value.trim(),
+      rua: el.remRua.value.trim(),
+      num: el.remNum.value.trim(),
+      complemento: el.remComplemento.value.trim(),
+      bairro: el.remBairro.value.trim(),
+      cidade: el.remCidade.value.trim(),
+      uf: el.remUf.value.trim().toUpperCase(),
+      telefone: soNumeros(el.remTelefone.value),
+    };
     await salvarCatalogo('Dados da loja salvos');
   });
 

@@ -332,6 +332,7 @@ function finalizar() {
     </ul>
     <form class="checkout" id="form-checkout" novalidate>
       <div class="campo"><label for="ck-nome">Seu nome</label><input id="ck-nome" name="nome" autocomplete="name" required></div>
+      <div class="campo"><label for="ck-tel">Seu WhatsApp</label><input id="ck-tel" name="telefone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="(21) 99999-9999" maxlength="15" required><small class="ck-status">A Paola usa para te avisar quando o pedido for enviado.</small></div>
       <h3 class="ck-sub">Onde entregar</h3>
       <div class="campo"><label for="ck-cep">CEP</label><input id="ck-cep" name="cep" inputmode="numeric" autocomplete="postal-code" placeholder="00000-000" maxlength="9" required><small class="ck-status" data-status></small></div>
       <div class="campo"><label for="ck-rua">Rua</label><input id="ck-rua" name="rua" autocomplete="address-line1" required></div>
@@ -352,8 +353,14 @@ function finalizar() {
       <button class="btn btn-preto btn-bloco btn-pedir" type="submit">${I.whats}Continuar no WhatsApp</button>
     </form>`);
   const form = $('#form-checkout', m);
-  const CAMPOS = ['nome', 'cep', 'rua', 'num', 'complemento', 'bairro', 'cidade', 'uf'];
+  const CAMPOS = ['nome', 'telefone', 'cep', 'rua', 'num', 'complemento', 'bairro', 'cidade', 'uf'];
   CAMPOS.forEach((c) => { form[c].value = cliente[c] || ''; });
+  form.telefone.addEventListener('input', () => {
+    const d = form.telefone.value.replace(/\D/g, '').slice(0, 11);
+    form.telefone.value = d.length <= 2 ? d
+      : d.length <= 6 ? `(${d.slice(0, 2)}) ${d.slice(2)}`
+        : d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  });
   // Pelo CEP, o endereço se preenche sozinho (ViaCEP, serviço público e gratuito); se falhar, ela digita
   const status = $('[data-status]', m);
   let ultimoCep = '';
@@ -386,6 +393,7 @@ function finalizar() {
     d.uf = d.uf.toUpperCase();
     const erro = $('[data-erro]', m);
     const falta = (!d.nome && ['nome', 'Escreva seu nome.'])
+      || (d.telefone.replace(/\D/g, '').length < 10 && ['telefone', 'Escreva seu WhatsApp com DDD.'])
       || (d.cep.replace(/\D/g, '').length !== 8 && ['cep', 'Digite os 8 números do CEP.'])
       || (!d.rua && ['rua', 'Escreva a rua.'])
       || (!d.num && ['num', 'Escreva o número da casa ou prédio.'])

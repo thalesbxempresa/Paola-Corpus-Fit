@@ -90,6 +90,14 @@ update public.pedidos
   set historico = jsonb_build_array(jsonb_build_object('status', status, 'em', criado_em))
   where historico = '[]'::jsonb;
 
+-- ---------- Rotina da loja ----------
+-- telefone: para avisar a cliente. valor: o que cobrar de fato (com desconto do Pix, ou ajustado com frete).
+-- origem: 'site' ou 'manual', quando a Paola registra uma venda feita fora do site.
+alter table public.pedidos add column if not exists telefone text;
+alter table public.pedidos add column if not exists valor numeric(10, 2);
+alter table public.pedidos add column if not exists origem text not null default 'site';
+update public.pedidos set valor = total where valor is null;
+
 -- ---------- Contadores do funil (por dia, sem dado pessoal) ----------
 create table if not exists public.eventos_dia (
   dia date not null,
@@ -123,6 +131,7 @@ declare
   v_total numeric := 0;
   v_informado numeric := coalesce((p ->> 'total')::numeric, 0);
   v_conferir boolean := false;
+  v_pix numeric := coalesce((select (c.dados -> 'loja' ->> 'pix')::numeric from public.loja_config c where c.id = 1), 0);
 begin
   if pg_column_size(p) > 20000 or jsonb_typeof(v_itens) <> 'array' or jsonb_array_length(v_itens) not between 1 and 20 then
     raise exception 'pedido invalido';
@@ -156,14 +165,17 @@ begin
     v_conferir := true;
   end if;
 
-  insert into public.pedidos (id, numero, nome, cep, rua, num, complemento, bairro, cidade, uf, pagamento, itens, total, conferir)
+  insert into public.pedidos (id, numero, nome, telefone, cep, rua, num, complemento, bairro, cidade, uf, pagamento, itens, total, valor, conferir)
   values (
     (p ->> 'id')::uuid,
     left(p ->> 'numero', 30),
     left(trim(p ->> 'nome'), 120),
+    nullif(left(regexp_replace(coalesce(p ->> 'telefone', ''), '\D', '', 'g'), 15), ''),
     left(p ->> 'cep', 10), left(p ->> 'rua', 160), left(p ->> 'num', 20), left(p ->> 'complemento', 80),
     left(p ->> 'bairro', 80), left(p ->> 'cidade', 80), upper(left(p ->> 'uf', 2)), left(p ->> 'pagamento', 20),
-    v_limpos, v_total, v_conferir
+    v_limpos, v_total,
+    case when p ->> 'pagamento' = 'Pix' then round(v_total * (1 - v_pix), 2) else v_total end,
+    v_conferir
   )
   on conflict (id) do nothing;
 end;
@@ -219,7 +231,7 @@ alter table public.eventos_dia enable row level security;
 
 revoke all on public.admins, public.loja_config, public.itens, public.pedidos, public.eventos_dia from anon, authenticated;
 grant select, insert, update, delete on public.loja_config, public.itens to authenticated;
-grant select, update, delete on public.pedidos to authenticated;
+grant select, insert, update, delete on public.pedidos to authenticated;
 grant select on public.eventos_dia to authenticated;
 
 drop policy if exists admin_config on public.loja_config;

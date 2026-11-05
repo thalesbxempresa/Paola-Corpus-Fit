@@ -54,7 +54,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .pn-exemplo .pn-link { min-height: 28px; color: inherit; }
 
 @media (min-width: 900px) {
-  .ad { display: grid; grid-template-columns: 216px minmax(0, 1fr); }
+  .pn-app { display: grid; grid-template-columns: 216px minmax(0, 1fr); }
   .pn-topo { display: none; }
   .pn-nav { position: sticky; top: 0; left: auto; right: auto; bottom: auto; display: flex; flex-direction: column; gap: 4px; height: 100dvh; padding: 22px 12px; border-top: 0; border-right: 1px solid var(--areia-3); }
   .pn-nav-logo { display: inline-flex; align-self: flex-start; margin: 0 8px 22px; }
@@ -310,3 +310,55 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .pn-aviso-cliente { display: grid; justify-items: start; gap: 6px; padding-top: 12px; border-top: 1px solid var(--areia-2); }
 .pn-aviso-cliente h3 { margin-bottom: 0; }
 .pn-ped-corpo .pn-andamento > .pn-link { justify-self: center; }
+
+/* ---------- O que fazer agora ---------- */
+.pn-fazer { display: grid; gap: 12px; justify-items: start; margin-bottom: 22px; }
+.pn-filas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; width: 100%; }
+.pn-fila { display: grid; align-content: start; gap: 2px; padding: 14px; border-radius: 18px; background: var(--branco); color: var(--tinta-3); }
+.pn-fila strong { font-size: 30px; font-weight: 800; line-height: 1.1; }
+.pn-fila span { font-size: 14px; font-weight: 700; line-height: 1.25; }
+.pn-fila small { font-size: 12.5px; line-height: 1.3; color: var(--tinta-3); }
+.pn-fila.tem { color: var(--tinta); box-shadow: inset 0 0 0 2px var(--tinta); }
+.pn-fila.tem small { color: var(--tinta-2); }
+.pn-em-dia { display: flex; align-items: center; gap: 10px; width: 100%; padding: 14px 16px; border-radius: 16px; background: #E3F3E9; color: #1F5C39; font-size: 15px; font-weight: 700; }
+.pn-em-dia svg { flex: none; width: 22px; height: 22px; stroke-width: 2.6; }
+.pn-titulo-secao { margin: 0 0 12px; font-size: 20px; font-weight: 800; letter-spacing: -.01em; }
+.pn-nav > a { position: relative; }
+.pn-selo { position: absolute; top: 4px; left: calc(50% + 8px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--vinho); color: var(--branco); font-size: 11px; font-style: normal; font-weight: 800; line-height: 18px; text-align: center; }
+@media (min-width: 700px) { .pn-filas { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 900px) { .pn-selo { position: static; margin-left: auto; } }
+
+/* ---------- Pedidos no dia a dia ---------- */
+.pn-ped-itens-resumo { display: grid; gap: 1px; font-size: 14px; font-weight: 600; }
+.pn-parado { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: #FFF3DC; color: #6B4700; font-weight: 700; white-space: nowrap; }
+.pn-cobranca { display: grid; gap: 8px; }
+.pn-cobranca h3 { margin-bottom: 0; }
+.pn-acoes-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 18px; }
+.pn-acoes-linha .pn-link { gap: 6px; }
+.pn-acoes-linha .pn-link svg { flex: none; width: 18px; height: 18px; }
+.pn-acoes-linha .pn-link[hidden] { display: none; }
+.pn-pe-pedidos { margin-top: 10px; }
+.pn-aviso-cliente .btn svg { flex: none; }
+.pn-np-itens { display: grid; gap: 14px; }
+.pn-np-item { display: grid; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--areia-2); }
+.pn-np-item .pn-perigo { justify-self: start; }
+.pn-np-item .campo select { width: 100%; }
+
+/* ---------- Etiqueta de envio (só na impressão) ---------- */
+#impressao { display: none; }
+@media print {
+  @page { margin: 12mm; }
+  body { background: #fff; }
+  body > *:not(#impressao) { display: none !important; }
+  #impressao { display: block; color: #000; font-size: 13pt; line-height: 1.35; }
+  .etq { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 8mm; margin-bottom: 8mm; padding-bottom: 8mm; border-bottom: 1px dashed #000; break-inside: avoid; }
+  .etq small { display: block; font-size: 9pt; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .etq b { display: block; font-size: 16pt; font-weight: 800; }
+  .etq p { margin: 2mm 0 0; white-space: pre-line; }
+  .etq-cola { padding: 5mm; border: 2px solid #000; border-radius: 3mm; }
+  .etq-de { margin-top: 4mm; }
+  .etq-remetente { font-size: 10pt; }
+  .etq-confere { font-size: 10.5pt; }
+  .etq-confere b { font-size: 12pt; margin-top: 1mm; }
+  .etq-confere ul { margin: 2mm 0 0; padding-left: 4mm; }
+}
