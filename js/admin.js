@@ -237,6 +237,8 @@ const Nuvem = (() => {
     async situacaoPagamento() {
       const r = await fetch(`${PCF_SUPABASE.url}/functions/v1/pagamento-infinitepay`).catch(() => null);
       if (!r || r.status === 404) return { instalada: false };
+      // 401: a função existe, mas o Supabase ainda exige login para chamá-la
+      if (r.status === 401) return { instalada: false, bloqueada: true };
       return { instalada: r.ok, ...(await r.json().catch(() => ({}))) };
     },
     async criarLinkPagamento(id) {
@@ -2470,8 +2472,10 @@ async function mostrarSituacaoPagamento(caixa) {
   const s = await Banco.situacaoPagamento().catch(() => ({ instalada: false }));
   if (!caixa.isConnected) return;
   const pg = estado.catalogo.pagamento || {};
-  caixa.innerHTML = !s.instalada
-    ? '<b>Ainda não está ligado.</b> Falta instalar a função de pagamento no Supabase (veja supabase/LEIA-ME.md).'
+  caixa.innerHTML = s.bloqueada
+    ? '<b>Ainda não está ligado.</b> A função de pagamento já está no Supabase, mas falta desligar "Verify JWT" nos ajustes dela.'
+    : !s.instalada
+      ? '<b>Ainda não está ligado.</b> Falta instalar a função de pagamento no Supabase (veja supabase/LEIA-ME.md).'
     : !pg.handle || pg.modo === 'desligado' ? '<b>Desligado.</b> Escolha como a cliente paga e informe a InfiniteTag.'
       : s.chave ? '<b>Ligado, com a chave da API.</b> O link leva o desconto do Pix e as parcelas sem juros desta página.'
         : '<b>Ligado, sem a chave da API.</b> O desconto do Pix e as parcelas sem juros seguem o que estiver configurado no app da InfinitePay.';
