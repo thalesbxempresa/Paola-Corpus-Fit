@@ -233,19 +233,21 @@ const Nuvem = (() => {
     async salvarAviso(endpoint, aparelho) { checar(await sb.from('push_assinaturas').upsert({ endpoint, aparelho })); },
     async tirarAviso(endpoint) { checar(await sb.from('push_assinaturas').delete().eq('endpoint', endpoint)); },
     async aparelhosComAviso() { return checar(await sb.from('push_assinaturas').select('aparelho').order('criado_em')).map((a) => a.aparelho || 'Aparelho'); },
-    // Pagamento online: a função no servidor fala com a InfinitePay; o painel só pede e mostra
+    // Pagamento online: a função no servidor fala com o Mercado Pago; o painel só pede e mostra
     async situacaoPagamento() {
-      const r = await fetch(`${PCF_SUPABASE.url}/functions/v1/pagamento-infinitepay`).catch(() => null);
+      const r = await fetch(`${PCF_SUPABASE.url}/functions/v1/pagamento-mercadopago`).catch(() => null);
       if (!r || r.status === 404) return { instalada: false };
       // 401: a função existe, mas o Supabase ainda exige login para chamá-la
       if (r.status === 401) return { instalada: false, bloqueada: true };
       return { instalada: r.ok, ...(await r.json().catch(() => ({}))) };
     },
     async criarLinkPagamento(id) {
-      const r = await fetch(`${PCF_SUPABASE.url}/functions/v1/pagamento-infinitepay`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'criar', id }) });
+      // Criar link é coisa da loja: a função confere o login de quem pediu
+      const { data } = await sb.auth.getSession();
+      const r = await fetch(`${PCF_SUPABASE.url}/functions/v1/pagamento-mercadopago`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token ?? ''}` }, body: JSON.stringify({ acao: 'link', id }) });
       const d = await r.json().catch(() => ({}));
       if (d.pago) throw new Error('Este pedido já foi pago.');
-      if (!r.ok || !d.url) throw new Error(d.erro || 'a InfinitePay não respondeu');
+      if (!r.ok || !d.url) throw new Error(d.erro || 'o Mercado Pago não respondeu');
       return d.url;
     },
     async eventos() { return checar(await sb.from('eventos_dia').select('*').limit(4000)); },
@@ -1122,7 +1124,7 @@ function rastreioHTML(p) {
 // Mensagem pronta para a cliente, de acordo com a etapa do pedido
 function avisoCliente(p) {
   const n = p.numero;
-  const linkPagar = p.status === 'novo' && !p.infinitepay?.pago_em ? p.infinitepay?.link : null;
+  const linkPagar = p.status === 'novo' && !p.mercadopago?.pago_em ? p.mercadopago?.link : null;
   const textos = {
     novo: linkPagar
       ? `Recebi seu pedido ${n}. Para pagar no Pix ou no cartão, é só usar este link:\n${linkPagar}`
@@ -1142,20 +1144,25 @@ function zapCliente(p) {
   return `https://wa.me/${d.length <= 11 ? `55${d}` : d}?text=${encodeURIComponent(avisoCliente(p))}`;
 }
 
-// Pagamento pela InfinitePay dentro do cartão do pedido: gerar o link, mandar e ver o que foi pago
-const modoPagamento = () => (Banco.modo === 'supabase' && estado.catalogo.pagamento?.handle ? estado.catalogo.pagamento.modo || 'desligado' : 'desligado');
-const comoPagou = (ip) => (ip.capture_method === 'pix' ? 'Pix' : `cartão${ip.installments > 1 ? ` em ${ip.installments}x` : ''}`);
+// Pagamento pelo Mercado Pago dentro do cartão do pedido: gerar o link, mandar e ver o que foi pago
+const modoPagamento = () => (Banco.modo === 'supabase' ? estado.catalogo.pagamento?.modo || 'desligado' : 'desligado');
+const comoPagou = (m) => (m.metodo === 'pix' ? 'Pix' : m.tipo === 'debit_card' ? 'débito' : `cartão${m.parcelas > 1 ? ` em ${m.parcelas}x` : ''}`);
+const ALERTA_PAGAMENTO = { refunded: 'Pagamento estornado', charged_back: 'A cliente contestou no banco', in_mediation: 'Em disputa no Mercado Pago' };
+const ANDAMENTO_PAGAMENTO = { pending: 'Pagamento em andamento.', in_process: 'Pagamento em análise no Mercado Pago.', rejected: 'O último cartão foi recusado. A cliente pode tentar de novo.' };
 function pagamentoOnlineHTML(p) {
-  const ip = p.infinitepay || {};
-  if (ip.pago_em) {
-    return `<p class="pn-pago-online">${I.ok}<span>Pago pela InfinitePay no ${comoPagou(ip)}, em ${dataHora(ip.pago_em)}.${ip.receipt_url ? ` <a href="${esc(ip.receipt_url)}" target="_blank" rel="noopener">Ver comprovante</a>` : ''}</span></p>`;
+  const m = p.mercadopago || {};
+  if (m.pago_em) {
+    const alerta = ALERTA_PAGAMENTO[m.status];
+    return `<p class="pn-pago-online">${I.ok}<span>Pago pelo Mercado Pago no ${comoPagou(m)}, em ${dataHora(m.pago_em)}.${alerta ? ` <b>${alerta}: confira no Mercado Pago antes de enviar.</b>` : ''}</span></p>`;
   }
   if (modoPagamento() === 'desligado' || p.status !== 'novo') return '';
-  if (ip.link) {
-    return `<div class="pn-link-pagamento"><small>Link de pagamento</small><span>${esc(ip.link)}</span>
+  const andamento = m.status === 'pending' && m.metodo === 'pix' ? 'Pix gerado, esperando a cliente pagar.' : ANDAMENTO_PAGAMENTO[m.status];
+  const situacao = andamento ? `<p class="pn-nota">${andamento}</p>` : '';
+  if (m.link) {
+    return `${situacao}<div class="pn-link-pagamento"><small>Link de pagamento</small><span>${esc(m.link)}</span>
       <div class="pn-acoes-linha"><button class="pn-link" type="button" data-copiar-pagamento>Copiar link</button><button class="pn-link" type="button" data-gerar-pagamento>Atualizar com o valor a cobrar</button></div></div>`;
   }
-  return '<button class="btn btn-claro pn-btn-p" type="button" data-gerar-pagamento>Gerar link de pagamento</button>';
+  return `${situacao}<button class="btn btn-claro pn-btn-p" type="button" data-gerar-pagamento>Gerar link de pagamento</button>`;
 }
 
 // Quanto tempo o pedido está parado na etapa atual, para o que está atrasado aparecer
@@ -1359,7 +1366,7 @@ async function abaPedidos(alvo) {
         e.target.value = precoTxt(valorDe(p));
         return;
       }
-      const temLink = p.infinitepay?.link && !p.infinitepay?.pago_em;
+      const temLink = p.mercadopago?.link && !p.mercadopago?.pago_em;
       await atualizar(p, e.target, { valor }, temLink ? 'Valor salvo. Atualize o link de pagamento antes de mandar.' : 'Valor salvo');
     } else if (e.target.matches('[data-nota]')) {
       try {
@@ -1388,7 +1395,7 @@ async function abaPedidos(alvo) {
       botao.disabled = true;
       try {
         const url = await Banco.criarLinkPagamento(p.id);
-        p.infinitepay = { ...(p.infinitepay || {}), link: url };
+        p.mercadopago = { ...(p.mercadopago || {}), link: url };
         redesenharCartao(p, botao);
         await copiar(url, 'Link criado e copiado. Mande para a cliente.');
       } catch (ex) {
@@ -1398,7 +1405,7 @@ async function abaPedidos(alvo) {
       return;
     }
     if (botao.matches('[data-copiar-pagamento]')) {
-      await copiar(pedidoDe(botao).infinitepay.link, 'Link de pagamento copiado');
+      await copiar(pedidoDe(botao).mercadopago.link, 'Link de pagamento copiado');
       return;
     }
     if (botao.matches('[data-editar-rastreio]')) {
@@ -2312,14 +2319,13 @@ function abaLoja(alvo) {
         </div>
         ${campo('Lançamento da moda praia', 'lancamentoPraia', (l.lancamentoPraia || '').slice(0, 16), { tipo: 'datetime-local', ajuda: 'Vazio: a contagem regressiva não aparece. Só use data real.' })}
       </section>
-      ${local ? '' : `<section class="pn-card"><h2>Pagamento online (InfinitePay)</h2>
-        <p class="pn-texto" id="situacao-pagamento">Conferindo a ligação com a InfinitePay…</p>
-        ${seletor('Como a cliente paga', 'ipModo', pg.modo || 'desligado', [
+      ${local ? '' : `<section class="pn-card"><h2>Pagamento online (Mercado Pago)</h2>
+        <p class="pn-texto" id="situacao-pagamento">Conferindo a ligação com o Mercado Pago…</p>
+        ${seletor('Como a cliente paga', 'pgModo', pg.modo || 'desligado', [
           ['desligado', 'Combinando com você no WhatsApp, como hoje'],
           ['link', 'Pelo link que você gera no pedido e manda no WhatsApp'],
           ['site', 'Aqui no site, logo depois de fazer o pedido'],
         ])}
-        ${campo('InfiniteTag da sua conta', 'ipHandle', pg.handle, { attrs: 'autocomplete="off" autocapitalize="none" placeholder="Ex.: paolacorpusfit"', ajuda: 'Está no app da InfinitePay. Pode escrever com ou sem o $.' })}
         <h3 class="pn-sub">Dados da loja no rodapé do site</h3>
         <p class="pn-nota">Para vender pela internet, a lei pede nome, CPF ou CNPJ e endereço à vista no site (Decreto 7.962/2013). Obrigatório para cobrar no site.</p>
         ${campo('Nome ou razão social', 'empresa', l.empresa)}
@@ -2392,15 +2398,18 @@ function abaLoja(alvo) {
     if (frete === null || Number.isNaN(frete)) return falhar('O frete grátis precisa ser um valor. Ex.: 299.');
     if (pixPct === null || Number.isNaN(pixPct) || pixPct > 50) return falhar('O desconto no Pix precisa ficar entre 0 e 50%.');
     if (!Number.isInteger(parcelas) || parcelas < 1 || parcelas > 24) return falhar('As parcelas precisam ficar entre 1 e 24.');
-    const ipModo = el.ipModo?.value || 'desligado';
-    const ipHandle = (el.ipHandle?.value || '').trim().replace(/^\$/, '');
-    if (ipModo !== 'desligado' && !/^[a-z0-9._-]{2,40}$/i.test(ipHandle)) return falhar('Para cobrar pela InfinitePay, escreva a InfiniteTag da conta (sem espaços).');
-    if (ipModo !== 'desligado' && parcelas > 12) return falhar('A InfinitePay parcela em até 12x. Ajuste as parcelas sem juros.');
-    if (ipModo === 'site' && (!el.empresa.value.trim() || soNumeros(el.documento.value).length < 11 || !el.enderecoLoja.value.trim())) {
+    const pgModo = el.pgModo?.value || 'desligado';
+    if (pgModo !== 'desligado' && parcelas > 12) return falhar('O Mercado Pago parcela em até 12x. Ajuste as parcelas sem juros.');
+    if (pgModo === 'site' && (!el.empresa.value.trim() || soNumeros(el.documento.value).length < 11 || !el.enderecoLoja.value.trim())) {
       return falhar('Para cobrar no site, preencha nome, CPF ou CNPJ e endereço da loja.');
     }
-    if (ipModo === 'site' && estado.catalogo.pagamento?.modo !== 'site'
-      && !confirm('A loja vai passar a cobrar no site, logo depois do pedido. Já fez o teste de R$ 1,00 com a InfinitePay?')) return;
+    // Ligar sem as chaves deixaria a cliente numa tela quebrada: só liga com tudo pronto
+    if (pgModo !== 'desligado' && pgModo !== estado.catalogo.pagamento?.modo) {
+      const s = await Banco.situacaoPagamento().catch(() => ({}));
+      if (!s.instalada || !s.credenciais || !s.webhook) return falhar('Ainda não dá para ligar: falta terminar a ligação com o Mercado Pago. Veja o aviso no alto desta seção.');
+    }
+    if (pgModo === 'site' && estado.catalogo.pagamento?.modo !== 'site'
+      && !confirm('A loja vai passar a cobrar no site, logo depois do pedido. Já fez o teste com o cartão de teste do Mercado Pago?')) return;
     const linhas = $$('.pn-tam', form).map((d) => ({
       t: $('[data-t]', d).value.trim().toUpperCase(),
       calca: $('[data-c]', d).value.split(/[^\d]+/).filter(Boolean).map(Number),
@@ -2422,15 +2431,15 @@ function abaLoja(alvo) {
       pix: pixPct / 100,
       parcelas,
       lancamentoPraia: dataPraia ? `${dataPraia}:00-03:00` : '',
-      ...(el.ipModo ? {
-        pagarNoSite: ipModo === 'site',
+      ...(el.pgModo ? {
+        pagarNoSite: pgModo === 'site',
         empresa: el.empresa.value.trim(),
         documento: el.documento.value.trim(),
         email: el.email.value.trim(),
         enderecoLoja: el.enderecoLoja.value.trim(),
       } : {}),
     };
-    if (el.ipModo) estado.catalogo.pagamento = { modo: ipModo, handle: ipHandle };
+    if (el.pgModo) estado.catalogo.pagamento = { modo: pgModo };
     estado.catalogo.tabela = linhas;
     estado.catalogo.remetente = {
       nome: el.remNome.value.trim(),
@@ -2466,7 +2475,7 @@ function abaLoja(alvo) {
   });
   ligarExemplos(alvo);
 }
-// O que falta para a InfinitePay funcionar, dito em uma frase
+// O que falta para o Mercado Pago funcionar, dito em uma frase
 async function mostrarSituacaoPagamento(caixa) {
   if (!caixa) return;
   const s = await Banco.situacaoPagamento().catch(() => ({ instalada: false }));
@@ -2476,9 +2485,11 @@ async function mostrarSituacaoPagamento(caixa) {
     ? '<b>Ainda não está ligado.</b> A função de pagamento já está no Supabase, mas falta desligar "Verify JWT" nos ajustes dela.'
     : !s.instalada
       ? '<b>Ainda não está ligado.</b> Falta instalar a função de pagamento no Supabase (veja supabase/LEIA-ME.md).'
-    : !pg.handle || pg.modo === 'desligado' ? '<b>Desligado.</b> Escolha como a cliente paga e informe a InfiniteTag.'
-      : s.chave ? '<b>Ligado, com a chave da API.</b> O link leva o desconto do Pix e as parcelas sem juros desta página.'
-        : '<b>Ligado, sem a chave da API.</b> O desconto do Pix e as parcelas sem juros seguem o que estiver configurado no app da InfinitePay.';
+    : !s.credenciais ? '<b>Falta conectar a conta.</b> Coloque a Public Key e o Access Token do Mercado Pago nos segredos do Supabase (veja supabase/LEIA-ME.md).'
+      : !s.webhook ? '<b>Falta o aviso de pagamento.</b> Configure o webhook no Mercado Pago e coloque a assinatura secreta nos segredos do Supabase.'
+        : !pg.modo || pg.modo === 'desligado' ? '<b>Tudo pronto, mas desligado.</b> Escolha como a cliente paga para ligar.'
+          : s.teste ? '<b>Ligado em modo de teste.</b> Nenhuma cobrança é de verdade.'
+            : '<b>Ligado.</b> As cobranças são de verdade e caem na conta do Mercado Pago.';
 }
 
 const linhaTamanho = (x) => `<div class="pn-tam"><input data-t value="${esc(x.t)}" placeholder="P" aria-label="Tamanho"><input data-c value="${esc(x.calca.join(', '))}" inputmode="numeric" placeholder="36, 38" aria-label="Números de calça"><button class="pn-link pn-perigo" type="button" data-tirar-tam>Tirar</button></div>`;
@@ -2490,6 +2501,7 @@ const linhaTamanho = (x) => `<div class="pn-tam"><input data-t value="${esc(x.t)
     await Banco.iniciar();
     await abrirPainel();
   } catch (e) {
-    $('#painel').innerHTML = `<main class="pn-acesso"><div class="pn-acesso-caixa"><span class="logo"><b>Paola</b><small>Corpus Fit</small></span><h1>Não deu para abrir o painel</h1><p>${esc(e.message)}</p><button class="btn btn-preto btn-bloco" type="button" onclick="location.reload()">Tentar de novo</button></div></main>`;
+    $('#painel').innerHTML = `<main class="pn-acesso"><div class="pn-acesso-caixa"><span class="logo"><b>Paola</b><small>Corpus Fit</small></span><h1>Não deu para abrir o painel</h1><p>${esc(e.message)}</p><button class="btn btn-preto btn-bloco" type="button" data-recarregar>Tentar de novo</button></div></main>`;
+    $('[data-recarregar]').addEventListener('click', () => location.reload());
   }
 })();

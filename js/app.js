@@ -27,7 +27,7 @@ const tamanhoEsgotado = (it, t) => pecasComTamanho(it).some((x) => x.esgotados?.
 const calcaEsgotada = (it, n) => !!(it && n) && tamanhoEsgotado(it, tamanhoPorCalca(n)?.t);
 const tudoEsgotado = (it) => pecasComTamanho(it).length > 0 && TABELA.every((x) => tamanhoEsgotado(it, x.t));
 const TAMANHO_ACABOU = 'Esse tamanho acabou nesta opção. Marque outro número ou fale com a Paola.';
-// Pagamento no site pela InfinitePay. Desligado (padrão): a cliente fecha com a Paola no WhatsApp, como sempre
+// Pagamento no site pelo Mercado Pago. Desligado (padrão): a cliente fecha com a Paola no WhatsApp, como sempre
 const pagaNoSite = () => Catalogo.ligado && LOJA.pagarNoSite === true;
 
 // O número da calça é perguntado uma vez só e vale para o site todo
@@ -167,8 +167,8 @@ function montarRodape() {
           <div class="pagamentos"><span>Pix</span><span>Crédito ${LOJA.parcelas}x</span>${pagaNoSite() ? '' : '<span>Boleto</span>'}</div>
         </div>
       </div>
-      <div class="rodape-base">${pagaNoSite()
-        ? `© 2026 ${esc(LOJA.empresa)} · ${esc(LOJA.documento)} · ${esc(LOJA.enderecoLoja)}${LOJA.email ? ` · ${esc(LOJA.email)}` : ''} · Pagamentos pela InfinitePay`
+      <div class="rodape-base">${LOJA.empresa && LOJA.documento && LOJA.enderecoLoja
+        ? `© 2026 ${esc(LOJA.empresa)} · ${esc(LOJA.documento)} · ${esc(LOJA.enderecoLoja)}${LOJA.email ? ` · ${esc(LOJA.email)}` : ''}${pagaNoSite() ? ' · Pagamentos pelo Mercado Pago' : ''}`
         : '© 2026 Paola Corpus Fit · Protótipo visual de demonstração: nenhum pedido é cobrado.'}</div>
     </div>
   </footer>`;
@@ -279,8 +279,8 @@ function desenharSacola() {
   pe.innerHTML = `
     <div class="total-linha"><span>Total</span><span>${brl(sub)}</span></div>
     <div class="total-pix">ou ${brl(pix(sub))} no Pix · ${LOJA.parcelas}x de ${brl(parcela(sub))}</div>
-    <button class="btn btn-preto btn-bloco" type="button" data-finalizar ${algumaEsgotada ? 'disabled' : ''}>${I.whats}Enviar pedido pelo WhatsApp</button>
-    <p class="pe-nota">${algumaEsgotada ? 'Remova o tamanho que acabou para enviar o pedido.' : 'A Paola confirma seu tamanho e o pagamento com você na conversa.'}</p>`;
+    <button class="btn btn-preto btn-bloco" type="button" data-finalizar ${algumaEsgotada ? 'disabled' : ''}>${pagaNoSite() ? 'Finalizar o pedido' : `${I.whats}Enviar pedido pelo WhatsApp`}</button>
+    <p class="pe-nota">${algumaEsgotada ? 'Remova o tamanho que acabou para enviar o pedido.' : pagaNoSite() ? 'Pague no Pix ou no cartão aqui no site. A Paola confere seu tamanho antes de enviar.' : 'A Paola confirma seu tamanho e o pagamento com você na conversa.'}</p>`;
 
   $$('.item-sacola', corpo).forEach((linha) => {
     const chave = linha.dataset.chave;
@@ -338,7 +338,7 @@ function finalizar() {
     <div class="modal-topo"><h2>Falta só o pagamento</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
     <div class="aviso-real">
       <span class="aviso-ico">${I.chat}</span>
-      <p><b>Você paga aqui mesmo, no Pix ou no cartão.</b> O pagamento é feito na página da InfinitePay e a Paola recebe seu pedido na hora.</p>
+      <p><b>Você paga aqui mesmo, no Pix ou no cartão.</b> O pagamento é protegido pelo Mercado Pago e a Paola recebe seu pedido na hora.</p>
     </div>
     <ul class="espera-lista aviso-lista">
       <li>Pix com ${pctPix()} de desconto ou cartão em até ${LOJA.parcelas}x sem juros</li>
@@ -988,7 +988,9 @@ const zapDoPedido = (numero) => (LOJA.whatsappNumero ? `https://wa.me/${LOJA.wha
 
 function pedidoAcompanhadoHTML(p, volta = null) {
   const atual = ETAPAS.findIndex(([id]) => id === p.status);
-  const pagar = p.status === 'novo' && /^https:\/\/[^/]*infinitepay/.test(p.link_pagamento || '') ? p.link_pagamento : null;
+  // Só aceita link do próprio Mercado Pago. Com o pagamento no site, o botão abre a página de pagamento da loja
+  const linkMP = /^https:\/\/([a-z0-9-]+\.)*mercadopago\.com(\.br)?\//.test(p.link_pagamento || '') ? p.link_pagamento : null;
+  const pagar = p.status !== 'novo' ? null : pagaNoSite() ? `pagamento.html?p=${encodeURIComponent(p.id)}` : linkMP;
   const textoNovo = pagar || pagaNoSite() ? 'Recebemos seu pedido. Assim que o pagamento for aprovado, esta etapa muda sozinha.' : null;
   const cancelado = p.status === 'cancelado';
   const ehCorreios = /^[A-Z]{2}\d{9}[A-Z]{2}$/.test(p.rastreio_codigo || '');
@@ -1007,9 +1009,9 @@ function pedidoAcompanhadoHTML(p, volta = null) {
       ${linkEntrega ? `<a class="btn btn-preto btn-bloco" href="${esc(linkEntrega)}" target="_blank" rel="noopener">${ehCorreios && !p.rastreio_link ? 'Abrir o site dos Correios' : 'Ver onde está a entrega'}</a>` : ''}
       ${ehCorreios && !p.rastreio_link ? '<p class="dica-tam">Copie o código e cole no site dos Correios.</p>' : ''}
     </section>` : '';
-  // Volta da InfinitePay: diz na hora se deu certo, sem a cliente precisar entender as etapas
+  // Volta do Mercado Pago: diz na hora se deu certo, sem a cliente precisar entender as etapas
   const aviso = volta === 'pago' ? `<p class="acomp-pago">${I.ok}<span><b>Pagamento aprovado!</b> A Paola já recebeu seu pedido e confere seu tamanho antes de enviar.</span></p>`
-    : volta === 'esperando' ? '<p class="acomp-esperando">Recebemos sua volta do pagamento. Assim que a InfinitePay confirmar, esta página mostra o pedido como pago.</p>' : '';
+    : volta === 'esperando' ? '<p class="acomp-esperando">Recebemos sua volta do pagamento. Assim que o Mercado Pago confirmar, esta página mostra o pedido como pago.</p>' : '';
   return `<span class="sobre">Pedido ${esc(p.numero)}</span>
     <h1 class="titulo">Oi, ${esc(p.primeiro_nome)}!</h1>
     ${aviso}
@@ -1085,15 +1087,14 @@ function telaAcompanhar() {
     return;
   }
   const busca = new URLSearchParams(location.search);
-  const id = busca.get('p') || busca.get('order_nsu');
+  const id = busca.get('p');
   if (!id) return mostrarBusca();
-  // A InfinitePay devolve a cliente com os dados do pagamento na URL: confirma com ela e mostra o resultado
-  const slug = busca.get('slug');
-  const transacao = busca.get('transaction_nsu');
-  if (slug && transacao) {
+  // O Mercado Pago devolve a cliente com o número do pagamento na URL. Quem diz se foi pago é o servidor, nunca a URL
+  const pagamentoId = busca.get('payment_id') || busca.get('collection_id') || '';
+  if (/^\d+$/.test(pagamentoId) && busca.get('status') !== 'rejected') {
     caixa.innerHTML = '<p class="acomp-carregando">Confirmando seu pagamento…</p>';
     const tentar = async (vez) => {
-      const r = await Catalogo.confirmarPagamento({ id, slug, transaction_nsu: transacao, receipt_url: busca.get('receipt_url') || '' }).catch(() => ({}));
+      const r = await Catalogo.confirmarPagamento({ id, pagamento_id: pagamentoId }).catch(() => ({}));
       const p = await Catalogo.acompanhar({ p_id: id }).catch(() => null);
       if (!p) return mostrarBusca('Não encontramos esse pedido. Digite o número e o CEP.');
       if (r.pago || p.status !== 'novo') return mostrarPedido(p, 'pago');
@@ -1214,7 +1215,7 @@ function preencherValores() {
   if (pagaNoSite()) {
     const textos = {
       hero: 'Pague no Pix ou no cartão aqui no site. A Paola confere seu tamanho antes de enviar.',
-      faq: `<summary>Como é o pagamento?</summary><p>Você paga aqui no site, na página da InfinitePay: no Pix (com ${pctPix()} de desconto) ou no cartão em até ${LOJA.parcelas}x sem juros. Depois, a Paola confere seu tamanho e envia do ${esc(LOJA.cidade.split(',')[0])} para todo o Brasil.</p>`,
+      faq: `<summary>Como é o pagamento?</summary><p>Você paga aqui no site, com a proteção do Mercado Pago: no Pix (com ${pctPix()} de desconto) ou no cartão em até ${LOJA.parcelas}x sem juros. Depois, a Paola confere seu tamanho e envia do ${esc(LOJA.cidade.split(',')[0])} para todo o Brasil.</p>`,
     };
     $$('[data-texto-site]').forEach((el) => { el.innerHTML = textos[el.dataset.textoSite]; });
   }
@@ -1225,10 +1226,10 @@ Catalogo.pronto.then(() => {
   montarTopo();
   montarRodape();
   preencherValores();
-  ({ inicio: telaInicio, loja: telaLoja, produto: telaProduto, praia: telaPraia, acompanhar: telaAcompanhar })[document.body.dataset.pagina]?.();
+  ({ inicio: telaInicio, loja: telaLoja, produto: telaProduto, praia: telaPraia, acompanhar: telaAcompanhar, pagamento: window.telaPagamento })[document.body.dataset.pagina]?.();
   ligarMovimento();
-  // Quem veio acompanhar um pedido já comprou: não conta como visita no funil de vendas
-  if (document.body.dataset.pagina !== 'acompanhar') Catalogo.evento('visita');
+  // Quem veio acompanhar ou pagar um pedido já comprou: não conta como visita no funil de vendas
+  if (!['acompanhar', 'pagamento'].includes(document.body.dataset.pagina)) Catalogo.evento('visita');
 });
 
 document.addEventListener('click', (e) => {

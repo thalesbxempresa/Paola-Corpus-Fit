@@ -123,10 +123,46 @@ exception when others then
 end;
 $$;
 
--- ---------- Pagamento online (InfinitePay) ----------
--- Link de pagamento do pedido e, depois de pago, o que a InfinitePay confirmou (método, parcelas, comprovante).
--- Quem grava é a função pagamento-infinitepay. A InfiniteTag e o modo ficam em loja_config.dados.pagamento.
-alter table public.pedidos add column if not exists infinitepay jsonb;
+-- ---------- Pagamento online (Mercado Pago) ----------
+-- O que o Mercado Pago informou sobre o pagamento do pedido. Quem grava é a função pagamento-mercadopago.
+-- Nunca guarda número de cartão, CPF nem e-mail de quem pagou. O modo fica em loja_config.dados.pagamento.
+alter table public.pedidos add column if not exists mercadopago jsonb;
+-- Trava de alguns segundos enquanto uma cobrança está em andamento, para nunca cobrar duas vezes
+alter table public.pedidos add column if not exists cobrando_em timestamptz;
+
+-- Contagem de tentativas, para ninguém usar o site para testar cartão roubado.
+-- ip_hash é só uma impressão digital: o endereço de internet da pessoa não é guardado.
+create table if not exists public.pagamento_tentativas (
+  id bigint generated always as identity primary key,
+  pedido uuid not null,
+  ip_hash text not null,
+  criado_em timestamptz not null default now()
+);
+create index if not exists pagamento_tentativas_criado_em on public.pagamento_tentativas (criado_em desc);
+
+-- Tudo numa transação só, com o pedido travado: dois cliques nunca passam juntos
+create or replace function public.reservar_cobranca(p_id uuid, p_ip text) returns text
+language plpgsql security definer set search_path = '' as $$
+declare
+  v public.pedidos%rowtype;
+begin
+  select * into v from public.pedidos where id = p_id for update;
+  if not found then return 'nao_encontrado'; end if;
+  if v.mercadopago ->> 'pago_em' is not null then return 'pago'; end if;
+  if v.status <> 'novo' then return 'fechado'; end if;
+  -- Pedido com valor que não bateu com o banco nunca é cobrado online: a Paola confere antes
+  if v.conferir then return 'conferir'; end if;
+  if v.cobrando_em is not null and v.cobrando_em > now() - interval '90 seconds' then return 'em_andamento'; end if;
+  if (select count(*) from public.pagamento_tentativas t where t.pedido = p_id and t.criado_em > now() - interval '1 hour') >= 6 then return 'limite'; end if;
+  if (select count(*) from public.pagamento_tentativas t where t.ip_hash = p_ip and t.criado_em > now() - interval '10 minutes') >= 10 then return 'limite'; end if;
+  if (select count(*) from public.pagamento_tentativas t where t.criado_em > now() - interval '10 minutes') >= 60 then return 'limite'; end if;
+  insert into public.pagamento_tentativas (pedido, ip_hash) values (p_id, p_ip);
+  update public.pedidos set cobrando_em = now() where id = p_id;
+  delete from public.pagamento_tentativas t where t.criado_em < now() - interval '7 days';
+  return 'ok';
+end;
+$$;
+revoke all on function public.reservar_cobranca(uuid, text) from public, anon, authenticated;
 
 -- Só pedido do site avisa: venda registrada à mão foi a própria loja que fez.
 -- Em projeto novo, troque o endereço pelo do novo projeto (veja LEIA-ME.md).
@@ -262,7 +298,7 @@ language sql stable security definer set search_path = '' as $$
     'rastreio_codigo', p.rastreio_codigo,
     'rastreio_link', p.rastreio_link,
     -- Quem ainda não pagou pode voltar a pagar pela página do pedido
-    'link_pagamento', case when p.status = 'novo' then p.infinitepay ->> 'link' end
+    'link_pagamento', case when p.status = 'novo' then p.mercadopago ->> 'link' end
   )
   from public.pedidos p
   where p.id = p_id
@@ -293,6 +329,10 @@ grant select, insert, update, delete on public.push_assinaturas to authenticated
 grant select, insert, delete on public.push_assinaturas, public.push_chaves to service_role;
 grant select, update on public.pedidos to service_role;
 grant select on public.loja_config to service_role;
+grant select on public.admins to service_role;
+grant execute on function public.reservar_cobranca(uuid, text) to service_role;
+alter table public.pagamento_tentativas enable row level security;
+revoke all on public.pagamento_tentativas from anon, authenticated;
 
 drop policy if exists admin_push on public.push_assinaturas;
 create policy admin_push on public.push_assinaturas for all to authenticated using (public.eh_admin()) with check (public.eh_admin());

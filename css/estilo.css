@@ -907,3 +907,15 @@ section[id] { scroll-margin-top: 84px; }
 .acomp-meus svg { flex: none; width: 18px; height: 18px; }
 .acomp .envio-copiar { margin: 0 auto; }
 .ultimo-pedido .link-tam + .link-tam { margin-top: 6px; }
+
+/* Pagamento dentro do site */
+.pag-itens { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; font-weight: 700; }
+.pag-itens small { display: block; font-size: 13px; font-weight: 500; color: var(--tinta-2); }
+.pag-valores { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pag-valores div { padding: 12px 14px; border-radius: 14px; background: var(--branco); }
+.pag-valores small { display: block; font-size: 12.5px; line-height: 1.3; color: var(--tinta-2); }
+.pag-valores b { display: block; margin-top: 4px; font-size: 20px; font-weight: 900; }
+.pag-seguro { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 1.4; color: var(--tinta-2); }
+.pag-seguro svg { flex: none; width: 20px; height: 20px; color: var(--ok); }
+.pag .dica-tam { margin: 0; }
+.pag > div:empty { display: none; }

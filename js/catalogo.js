@@ -117,8 +117,8 @@ const Catalogo = (() => {
     return r.json();
   }
 
-  // Pagamento no site. O pedido precisa estar no banco antes de pedir o link: a função monta a cobrança com o que está lá
-  const funcaoPagamento = (corpo) => fetch(`${url}/functions/v1/pagamento-infinitepay`, {
+  // Pagamento no site. O pedido precisa estar no banco antes de abrir o pagamento: o servidor cobra com o que está lá
+  const funcaoPagamento = (corpo) => fetch(`${url}/functions/v1/pagamento-mercadopago`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(corpo),
@@ -127,11 +127,9 @@ const Catalogo = (() => {
     const r = await rpc('registrar_pedido', { p });
     if (!r.ok) throw new Error('Pedido não registrado');
     gravar(FILA, JSON.stringify((parse(ler(FILA)) || []).filter((x) => x.id !== p.id)));
-    const d = await funcaoPagamento({ acao: 'criar', id: p.id });
-    if (!d.ok || !d.url) throw new Error('Link de pagamento indisponível');
-    return d.url;
+    return `pagamento.html?p=${encodeURIComponent(p.id)}`;
   }
-  // Na volta da InfinitePay, a página do pedido pede a confirmação (caso o aviso dela ainda não tenha chegado)
+  // Na volta do link do Mercado Pago, a página do pedido pede a confirmação (caso o aviso dele ainda não tenha chegado)
   const confirmarPagamento = (dados) => funcaoPagamento({ acao: 'confirmar', ...dados });
 
   // Versão crua para o painel (sem o tratamento de HTML da loja)
@@ -149,5 +147,5 @@ const Catalogo = (() => {
     aplicar(padrao);
   };
 
-  return { ligado, FIXOS, pronto, doc, valido, salvarLocal, restaurar, evento, enviarPedido, acompanhar, pagar, confirmarPagamento };
+  return { ligado, FIXOS, pronto, doc, valido, salvarLocal, restaurar, evento, enviarPedido, acompanhar, pagar, confirmarPagamento, pagamento: funcaoPagamento };
 })();

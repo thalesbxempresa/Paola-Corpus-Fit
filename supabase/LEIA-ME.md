@@ -57,19 +57,37 @@ Para instalar em um projeto novo:
 
 No iPhone (iOS 16.4 ou mais novo), o aviso só funciona com o painel adicionado à tela de início: Compartilhar > Adicionar à Tela de Início, e abrir pelo ícone. Cada aparelho precisa ligar o aviso uma vez.
 
-## Pagamento online (InfinitePay)
+## Pagamento online (Mercado Pago)
 
-Vem desligado. A Paola escolhe no painel (aba Loja) como a cliente paga: combinando no WhatsApp (como hoje), por um link gerado no pedido, ou no próprio site logo depois de pedir. Quem fala com a InfinitePay é a função `pagamento-infinitepay`, que monta a cobrança com o valor do banco e só marca o pedido como pago depois de confirmar com a InfinitePay (o aviso dela não tem assinatura).
+Vem desligado. A Paola escolhe no painel (aba Loja) como a cliente paga: combinando no WhatsApp (como hoje), por um link gerado no pedido, ou no próprio site, sem sair dele. Quem fala com o Mercado Pago é a função `pagamento-mercadopago`.
 
-Para ligar:
+Como fica seguro:
 
-1. Rode o `schema.sql` de novo (coluna `infinitepay` em pedidos e permissão de leitura da configuração para a função).
-2. Em *Edge Functions*, crie a função `pagamento-infinitepay` com o conteúdo de `supabase/functions/pagamento-infinitepay/index.ts` e desligue *Verify JWT* nela: quem chama é a loja e a InfinitePay, sem login.
-3. Opcional, mas recomendado: no app da InfinitePay, crie a chave do Checkout Integrado e cadastre em *Edge Functions > Secrets* com o nome `INFINITEPAY_API_KEY`. Com ela, cada link leva o desconto do Pix, as parcelas sem juros do painel e vale para um pagamento só. Sem ela, valem as configurações do app.
-4. No painel, aba Loja: InfiniteTag, como a cliente paga e, para cobrar no site, nome, CPF ou CNPJ e endereço da loja.
-5. Teste com um pedido de R$ 1,00 (valor a cobrar mudado à mão no painel) e estorne no app. A InfinitePay não tem ambiente de teste.
+- O número do cartão é digitado nos campos do próprio Mercado Pago (Payment Brick). Ele não passa pelo site nem pelo banco.
+- O valor cobrado sai sempre do pedido no banco. Pedido com valor que não bateu com a tabela (marcado para conferir) nunca é cobrado online.
+- Pedido só vira pago depois de consultar o Mercado Pago. Aviso (webhook) sem assinatura válida é recusado.
+- Cada pedido, cada aparelho e a loja têm limite de tentativas, contra teste de cartão roubado.
+- CPF e e-mail de quem paga vão direto para o Mercado Pago. Não são gravados no banco nem nos registros.
+- Só a página `pagamento.html` carrega o código do Mercado Pago. As regras de segurança do site estão em `vercel.json`.
 
-A chave da API nunca entra no site nem no GitHub.
+Para ligar, nesta ordem:
+
+1. Rode o `schema.sql` de novo.
+2. Em *Edge Functions*, crie a função `pagamento-mercadopago` com o conteúdo de `supabase/functions/pagamento-mercadopago/index.ts` e desligue *Verify JWT* nela: quem chama é a loja e o Mercado Pago, sem login. A função confere por conta própria quem pode o quê.
+3. Na conta do Mercado Pago da Paola, confira se existe uma **chave Pix cadastrada** (sem ela, o Pix não aparece) e, em *Suas integrações*, crie uma aplicação.
+4. Na aplicação, em *Webhooks > Configurar notificações*, coloque esta URL nos dois ambientes (teste e produção), marque o evento *Pagamentos* e salve. Isso gera a assinatura secreta.
+
+   `https://jtqxvxghgncqiyougsgs.supabase.co/functions/v1/pagamento-mercadopago/webhook`
+
+5. Em *Edge Functions > Secrets* do Supabase, cadastre com as credenciais **de teste**: `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_PUBLIC_KEY`, `MERCADOPAGO_WEBHOOK_SECRET` e `MERCADOPAGO_AMBIENTE` com o valor `teste`.
+6. No painel, aba Loja: nome, CPF ou CNPJ e endereço da loja, e escolha "Aqui no site".
+7. Faça uma compra de teste: Mastercard 5480 8328 0103 3311, código 123, validade 11/30, nome no cartão APRO, CPF 12345678909, com um e-mail diferente do da conta. Teste também um Pix e o nome OTHE (cartão recusado). Olhe o console do navegador: se algum endereço do Mercado Pago aparecer bloqueado, ele precisa entrar em `vercel.json`.
+8. Para vender de verdade: em *Credenciais de produção*, ative a conta, troque os três segredos pelos de produção (a assinatura do webhook de produção é outra) e **apague** `MERCADOPAGO_AMBIENTE`.
+9. Confira as **parcelas sem juros**. O site promete o número de parcelas sem juros definido no painel, mas quem decide quem paga os juros é a configuração da conta do Mercado Pago. Se a conta não assumir os juros, a cliente pagaria juros e o site estaria errado: ajuste a conta ou o texto antes de ligar.
+
+Se o site ganhar domínio próprio, atualize `SITE` e `ORIGENS` no começo da função e publique a função de novo. Sem isso, o navegador recusa o pagamento vindo do domínio novo.
+
+Access Token e assinatura do webhook nunca entram no site nem no GitHub. A Public Key também fica no Supabase, para trocar de teste para produção sem publicar o site.
 
 ## O que cada um pode fazer
 

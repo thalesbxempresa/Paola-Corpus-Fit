@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Pagamento | Paola Corpus Fit</title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta name="theme-color" content="#F6F0EA">
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="fonts/figtree.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/estilo.css?v=6">
+</head>
+<body data-pagina="pagamento">
+  <div id="topo"></div>
+
+  <main class="wrap">
+    <div class="acomp pag" id="pagamento"><p class="acomp-carregando">Preparando seu pagamento…</p></div>
+  </main>
+
+  <div id="rodape"></div>
+  <!-- O código do Mercado Pago só é carregado nesta página, e sempre direto do site dele -->
+  <script src="https://sdk.mercadopago.com/js/v2"></script>
+  <script src="js/dados.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/catalogo.js?v=4"></script>
+  <script src="js/pagamento.js?v=1"></script>
+  <script src="js/app.js?v=7"></script>
+</body>
+</html>
