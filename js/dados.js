@@ -121,7 +121,7 @@ const KITS = [
     img: 'img/real-combo-5.webp',
     itens: ['cinta-ziper-30', 'sutia-reforcado', 'sutia-reforcado', 'gel-pimenta', 'creme-pimenta'],
     de: 1089,
-    preco: 479,
+    preco: 479.99,
     frase: 'O combo mais completo da Paola.',
     desc: 'O combo que mais sai: a cinta de 30 barbatanas, 2 sutiãs reforçados, o gel termoativo e o creme para massagem.',
   },
