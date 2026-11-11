@@ -43,6 +43,9 @@ const Catalogo = (() => {
     trocar(PRAIA, d.praia);
     trocar(NUMEROS, TABELA.flatMap((x) => x.calca));
     trocar(TAMANHOS_PRAIA, TABELA.map((x) => x.t));
+    // Do estoque, a loja só recebe o que o banco libera: o que acabou ou, com a chave ligada, as quantidades
+    ESTOQUE.itens = d.estoque?.itens && typeof d.estoque.itens === 'object' ? d.estoque.itens : {};
+    ESTOQUE.mostrar = LOJA.mostrarEstoque === true;
   };
 
   // Chave pública só no cabeçalho apikey: é o que o Supabase pede para as chaves sb_publishable

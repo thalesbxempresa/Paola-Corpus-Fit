@@ -164,6 +164,57 @@ end;
 $$;
 revoke all on function public.reservar_cobranca(uuid, text) from public, anon, authenticated;
 
+-- ---------- Estoque ----------
+-- Quantas peças a loja tem de cada item e tamanho (tam '' = item sem tamanho, como gel e creme).
+-- Sem linha, a loja não conta aquele item e ele fica sempre à venda.
+-- Fica fora do catálogo de propósito: salvar um produto no painel nunca desfaz a baixa de uma venda.
+create table if not exists public.estoque (
+  item text not null,
+  tam text not null default '',
+  -- Pode ficar negativo quando se vende mais do que tinha: o painel mostra a diferença e o cancelamento devolve certo
+  qtd int not null check (qtd between -9999 and 9999),
+  primary key (item, tam)
+);
+alter table public.pedidos add column if not exists estoque_baixado boolean not null default false;
+-- Pedido que já estava pago antes de existir a contagem não mexe no estoque
+update public.pedidos set estoque_baixado = true where status in ('pago', 'preparando', 'enviado', 'entregue') and not estoque_baixado;
+
+-- Pedido pago dá baixa; cancelado (ou de volta para "novo") devolve. Uma vez só, mesmo mudando de etapa várias vezes.
+-- O combo baixa cada peça que vai nele (2 sutiãs = 2 peças) e a escolha da cliente (gel ou sutiã).
+create or replace function public.pedido_estoque() returns trigger
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_baixa boolean := new.status in ('pago', 'preparando', 'enviado', 'entregue');
+  v_sinal int;
+  v_linha jsonb;
+  v_dados jsonb;
+  v_peca text;
+  v_tam text;
+  v_qtd int;
+begin
+  if v_baixa = coalesce(new.estoque_baixado, false) then return new; end if;
+  v_sinal := case when v_baixa then -1 else 1 end;
+  for v_linha in select * from jsonb_array_elements(coalesce(new.itens, '[]'::jsonb)) loop
+    v_qtd := least(greatest(coalesce((v_linha ->> 'qtd')::int, 1), 1), 99);
+    select i.dados into v_dados from public.itens i where i.id = v_linha ->> 'id';
+    for v_peca in
+      select x from jsonb_array_elements_text(case when jsonb_typeof(v_dados -> 'itens') = 'array' then v_dados -> 'itens' else jsonb_build_array(v_linha ->> 'id') end) x
+      union all
+      select v_linha ->> 'extra' where coalesce(v_linha ->> 'extra', '') <> ''
+    loop
+      v_tam := case when coalesce((select (p.dados ->> 'tamanhos')::boolean from public.itens p where p.id = v_peca), false)
+        then coalesce(v_linha ->> 'tam', '') else '' end;
+      update public.estoque e set qtd = least(greatest(e.qtd + v_sinal * v_qtd, -9999), 9999) where e.item = v_peca and e.tam = v_tam;
+    end loop;
+  end loop;
+  new.estoque_baixado := v_baixa;
+  return new;
+end;
+$$;
+drop trigger if exists pedido_estoque on public.pedidos;
+create trigger pedido_estoque before insert or update of status on public.pedidos
+  for each row execute function public.pedido_estoque();
+
 -- Só pedido do site avisa: venda registrada à mão foi a própria loja que fez.
 -- Em projeto novo, troque o endereço pelo do novo projeto (veja LEIA-ME.md).
 create or replace function public.pedido_avisar() returns trigger
@@ -196,12 +247,24 @@ create table if not exists public.eventos_dia (
 -- ---------- O que a loja pode chamar sem login ----------
 create or replace function public.catalogo_publico() returns jsonb
 language sql stable security definer set search_path = '' as $$
+  with mostra as (
+    select coalesce((select (dados -> 'loja' ->> 'mostrarEstoque')::boolean from public.loja_config where id = 1), false) as sim
+  )
   select jsonb_build_object(
     'loja', coalesce((select dados -> 'loja' from public.loja_config where id = 1), '{}'::jsonb),
     'tabela', coalesce((select dados -> 'tabela' from public.loja_config where id = 1), '[]'::jsonb),
     'produtos', coalesce((select jsonb_agg(dados order by ordem) from public.itens where tipo = 'produto'), '[]'::jsonb),
     'kits', coalesce((select jsonb_agg(dados order by ordem) from public.itens where tipo = 'kit'), '[]'::jsonb),
-    'praia', coalesce((select jsonb_agg(dados order by ordem) from public.itens where tipo = 'praia'), '[]'::jsonb)
+    'praia', coalesce((select jsonb_agg(dados order by ordem) from public.itens where tipo = 'praia'), '[]'::jsonb),
+    -- Com a chave desligada no painel, a loja só fica sabendo o que acabou, nunca quantas peças há
+    'estoque', jsonb_build_object('itens', coalesce((
+      select jsonb_object_agg(x.item, x.tams) from (
+        select e.item, jsonb_object_agg(e.tam, greatest(e.qtd, 0)) as tams
+        from public.estoque e
+        where e.qtd <= 0 or (select sim from mostra)
+        group by e.item
+      ) x
+    ), '{}'::jsonb))
   );
 $$;
 
@@ -333,6 +396,13 @@ grant select on public.admins to service_role;
 grant execute on function public.reservar_cobranca(uuid, text) to service_role;
 alter table public.pagamento_tentativas enable row level security;
 revoke all on public.pagamento_tentativas from anon, authenticated;
+
+-- Estoque: só o administrador lê e muda. A loja recebe pelo catálogo público só o que pode mostrar
+alter table public.estoque enable row level security;
+revoke all on public.estoque from anon, authenticated;
+grant select, insert, update, delete on public.estoque to authenticated;
+drop policy if exists admin_estoque on public.estoque;
+create policy admin_estoque on public.estoque for all to authenticated using (public.eh_admin()) with check (public.eh_admin());
 
 drop policy if exists admin_push on public.push_assinaturas;
 create policy admin_push on public.push_assinaturas for all to authenticated using (public.eh_admin()) with check (public.eh_admin());

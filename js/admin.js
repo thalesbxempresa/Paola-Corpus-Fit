@@ -139,6 +139,16 @@ const Local = {
   async pedidosRecentes() { return (await this.pedidos()).slice(0, 5); },
   async situacaoPagamento() { return { instalada: false }; },
   async criarLinkPagamento() { throw new Error('conecte o Supabase primeiro'); },
+  // Sem banco, o estoque fica no catálogo salvo neste navegador
+  async lerEstoque() { return JSON.parse(JSON.stringify(estado.catalogo?.estoque?.itens || {})); },
+  async salvarEstoque(id, tam, qtd) {
+    const itens = { ...(estado.catalogo.estoque?.itens || {}) };
+    const linha = { ...(itens[id] || {}) };
+    if (qtd === null) delete linha[tam]; else linha[tam] = qtd;
+    if (Object.keys(linha).length) itens[id] = linha; else delete itens[id];
+    estado.catalogo.estoque = { itens };
+    await this.salvarCatalogo(estado.catalogo);
+  },
   async eventos() {
     const proprios = Object.entries(lerJSON('pcf-eventos', {})).flatMap(([dia, t]) => Object.entries(t).map(([tipo, total]) => ({ dia, tipo, total })));
     const ex = lerJSON(EXEMPLOS, null);
@@ -233,6 +243,14 @@ const Nuvem = (() => {
     async salvarAviso(endpoint, aparelho) { checar(await sb.from('push_assinaturas').upsert({ endpoint, aparelho })); },
     async tirarAviso(endpoint) { checar(await sb.from('push_assinaturas').delete().eq('endpoint', endpoint)); },
     async aparelhosComAviso() { return checar(await sb.from('push_assinaturas').select('aparelho').order('criado_em')).map((a) => a.aparelho || 'Aparelho'); },
+    // Estoque fica numa tabela só dele: a baixa do pedido pago acontece no banco, e salvar produto não a desfaz
+    async lerEstoque() {
+      return checar(await sb.from('estoque').select('item,tam,qtd')).reduce((m, l) => { (m[l.item] ||= {})[l.tam] = l.qtd; return m; }, {});
+    },
+    async salvarEstoque(id, tam, qtd) {
+      if (qtd === null) checar(await sb.from('estoque').delete().eq('item', id).eq('tam', tam));
+      else checar(await sb.from('estoque').upsert({ item: id, tam, qtd }));
+    },
     // Pagamento online: a função no servidor fala com o Mercado Pago; o painel só pede e mostra
     async situacaoPagamento() {
       const r = await fetch(`${PCF_SUPABASE.url}/functions/v1/pagamento-mercadopago`).catch(() => null);
@@ -488,6 +506,7 @@ async function abrirPainel() {
     return telaAcesso('entrar', 'Esta conta não é de administrador da loja.');
   }
   estado.catalogo = await Banco.catalogo();
+  estado.estoque = await Banco.lerEstoque().catch(() => ({}));
   montarPainel();
   // Quem abre direto em Produtos ou Loja também vê quantos pedidos estão esperando
   if (['produtos', 'loja'].includes(location.hash.slice(1))) carregarDados().catch(() => {});
@@ -1659,12 +1678,13 @@ const usadoEmKits = (id) => estado.catalogo.kits.filter((k) => k.itens?.includes
 const eFixo = (id) => Catalogo.FIXOS.includes(id);
 const salvoNaLoja = () => (Banco.modo === 'local' ? 'Salvo neste navegador' : 'Salvo. Já está na loja.');
 
-// Tamanhos que acabaram, na ordem da tabela; o combo herda os da cinta que vem nele
+// Tamanhos que acabaram, na ordem da tabela. O combo acaba quando acaba qualquer peça que vai nele
 function tamanhosEsgotados(x) {
-  if (!x) return [];
-  const pecas = x.itens ? x.itens.map((i) => estado.catalogo.produtos.find((p) => p.id === i)) : [x];
-  const fora = pecas.flatMap((p) => (p?.tamanhos && p.esgotados) || []);
-  return estado.catalogo.tabela.map((t) => t.t).filter((t) => fora.includes(t));
+  if (!x || (!x.itens && !x.tamanhos)) return [];
+  const est = estado.estoque || {};
+  const pecas = (x.itens || [x.id]).map((i) => estado.catalogo.produtos.find((p) => p.id === i)).filter(Boolean);
+  const acabou = (p, t) => (p.tamanhos ? p.esgotados?.includes(t) || est[p.id]?.[t] <= 0 : est[p.id]?.[''] <= 0);
+  return estado.catalogo.tabela.map((t) => t.t).filter((t) => pecas.some((p) => acabou(p, t)));
 }
 const textoDaLinha = (x, seg) => {
   if (seg === 'praia') return 'Em breve';
@@ -1763,43 +1783,93 @@ const filtrosProdutos = (seg) => `<div class="pn-filtros pn-filtros-justo" role=
   </div>`;
 const ligarFiltrosProdutos = (alvo) => $$('[data-seg]', alvo).forEach((b) => b.addEventListener('click', () => { estado.segmento = b.dataset.seg; estado.ordenando = false; abaProdutos(alvo); }));
 
-// Estoque: marca só se tem ou se acabou, sem contar peça. Salva no toque, como o preço na lista
+// Estoque: quantas peças a Paola tem de cada tamanho. Em branco, a loja não conta e o item fica sempre à venda.
+// Salva ao sair do campo, como o preço na lista. A baixa do pedido pago acontece sozinha, no banco
+const tamsEstoque = (x) => (x.tamanhos ? estado.catalogo.tabela.map((l) => l.t) : ['']);
+function valorEstoque(x, t) {
+  const q = estado.estoque?.[x.id]?.[t];
+  if (Number.isInteger(q)) return String(q);
+  // Marcação antiga de "acabou" aparece como zero
+  return x.tamanhos && x.esgotados?.includes(t) ? '0' : '';
+}
 function resumoEstoque(x) {
-  const fora = tamanhosEsgotados(x);
-  if (!fora.length) return 'Todos os tamanhos na loja';
-  return fora.length === estado.catalogo.tabela.length ? 'Acabou em todos os tamanhos' : `Acabou: ${fora.join(', ')}`;
+  const vals = tamsEstoque(x).map((t) => valorEstoque(x, t));
+  if (vals.every((v) => v === '')) return 'Sem contagem: fica sempre à venda';
+  const total = vals.reduce((s, v) => s + Math.max(0, Number(v) || 0), 0);
+  const fora = tamsEstoque(x).filter((t, i) => vals[i] !== '' && Number(vals[i]) <= 0);
+  const amais = vals.reduce((s, v) => s + Math.max(0, -(Number(v) || 0)), 0);
+  const acabou = !fora.length ? '' : x.tamanhos ? ` · Acabou: ${fora.join(', ')}` : ' · Acabou';
+  return `${total} ${total === 1 ? 'peça' : 'peças'}${acabou}${amais ? ` · Vendeu ${amais} a mais do que tinha` : ''}`;
 }
-function chipEstoque(x, { t, calca }) {
-  const fora = !!x.esgotados?.includes(t);
-  return `<button class="pn-est-chip ${fora ? 'fora' : ''}" type="button" data-est-tam="${esc(t)}" aria-pressed="${fora}" aria-label="Tamanho ${esc(t)}, calça ${esc(calca.join(' e '))}: ${fora ? 'acabou' : 'tem'}"><b>${esc(t)}</b><small>${fora ? 'Acabou' : 'Tem'}</small></button>`;
+function campoEstoque(x, t, calca) {
+  const v = valorEstoque(x, t);
+  const rotulo = t ? `Tamanho ${t}, calça ${calca.join(' e ')}` : `Quantidade de ${x.nome}`;
+  return `<label class="pn-est-campo${t ? '' : ' unico'}${v !== '' && Number(v) <= 0 ? ' fora' : ''}"><b>${t ? esc(t) : 'Peças'}</b>
+    <input type="text" inputmode="numeric" maxlength="5" autocomplete="off" value="${esc(v)}" placeholder="—" data-est-tam="${esc(t)}" aria-label="${esc(rotulo)}"></label>`;
 }
-function telaEstoque(alvo) {
-  const { produtos, tabela } = estado.catalogo;
-  const lista = produtos.filter((x) => x.tamanhos);
-  alvo.innerHTML = `
-    <div class="pn-cab"><h1 class="pn-h1">Produtos</h1></div>
-    ${filtrosProdutos('estoque')}
-    <p class="pn-nota pn-dica-lista"><b>Toque no tamanho que acabou:</b> ele sai da loja na hora, inclusive dos combos que levam essa cinta. Toque de novo quando chegar.</p>
-    <section class="pn-itens" id="estoque">${lista.map((x) => `<article class="pn-est" data-id="${esc(x.id)}">
-      <div class="pn-est-nome"><img src="${esc(x.img)}" alt="" loading="lazy"><div><b>${esc(x.nome)}</b><small data-est-resumo role="status">${esc(resumoEstoque(x))}</small></div></div>
-      <div class="pn-est-tam" role="group" aria-label="Tamanhos de ${esc(x.nome)}">${tabela.map((t) => chipEstoque(x, t)).join('')}</div>
-    </article>`).join('')}</section>
-    <p class="pn-nota pn-est-nota">Sutiã, gel e creme não têm tamanho no site. Para tirar um deles da vitrine, use a chave "Na loja" em Produtos; os combos que levam esse item continuam à venda.</p>`;
+async function telaEstoque(alvo) {
+  const { produtos, tabela, loja } = estado.catalogo;
+  const topo = `<div class="pn-cab"><h1 class="pn-h1">Produtos</h1></div>${filtrosProdutos('estoque')}`;
+  alvo.innerHTML = `${topo}<p class="pn-texto">Conferindo o estoque…</p>`;
   ligarFiltrosProdutos(alvo);
-  $('#estoque', alvo).addEventListener('click', async (e) => {
-    const b = e.target.closest('[data-est-tam]');
-    if (!b) return;
-    const linha = b.closest('.pn-est');
+  // Sempre do banco na hora: pode ter tido venda paga desde a última vez
+  try {
+    estado.estoque = await Banco.lerEstoque();
+  } catch (ex) {
+    $('.pn-texto', alvo).textContent = `Não deu para abrir o estoque: ${ex.message}`;
+    return;
+  }
+  if (estado.segmento !== 'estoque' || !alvo.isConnected) return;
+  alvo.innerHTML = `${topo}
+    <section class="pn-card pn-est-mostrar">${chave('Mostrar a quantidade no site', 'mostrarEstoque', loja.mostrarEstoque === true, { ajuda: 'Ligado, a cliente vê quantas peças tem no tamanho que escolheu. Desligado, ela só vê o que acabou.' })}</section>
+    <p class="pn-nota pn-dica-lista"><b>Escreva quantas peças você tem</b> e saia do campo, que já salva. Quando um pedido vira <b>Pago</b>, o estoque baixa sozinho; se for cancelado, as peças voltam. Deixe em branco o que você não quer contar.</p>
+    <section class="pn-itens" id="estoque">${produtos.map((x) => `<article class="pn-est" data-id="${esc(x.id)}">
+      <div class="pn-est-nome"><img src="${esc(x.img)}" alt="" loading="lazy"><div><b>${esc(x.nome)}</b><small data-est-resumo role="status">${esc(resumoEstoque(x))}</small></div></div>
+      <div class="pn-est-tam" role="group" aria-label="Estoque de ${esc(x.nome)}">${x.tamanhos ? tabela.map((l) => campoEstoque(x, l.t, l.calca)).join('') : campoEstoque(x, '', [])}</div>
+    </article>`).join('')}</section>
+    <p class="pn-nota pn-est-nota">Os combos seguem as peças que vão neles: se acabar o gel, o combo que leva gel sai da loja até você colocar mais.</p>`;
+  ligarFiltrosProdutos(alvo);
+
+  $('[name=mostrarEstoque]', alvo).addEventListener('change', async (e) => {
+    loja.mostrarEstoque = e.target.checked;
+    await salvarCatalogo(e.target.checked ? 'A quantidade aparece no site' : 'A quantidade não aparece mais no site');
+  });
+  $('#estoque', alvo).addEventListener('focusin', (e) => { if (e.target.matches('[data-est-tam]')) e.target.select(); });
+  $('#estoque', alvo).addEventListener('change', async (e) => {
+    const inp = e.target.closest('[data-est-tam]');
+    if (!inp) return;
+    const linha = inp.closest('.pn-est');
     const x = produtos.find((p) => p.id === linha.dataset.id);
-    const t = b.dataset.estTam;
-    const acabou = !x.esgotados?.includes(t);
-    const fora = tabela.map((l) => l.t).filter((n) => (n === t ? acabou : x.esgotados?.includes(n)));
-    if (fora.length) x.esgotados = fora; else delete x.esgotados;
-    b.outerHTML = chipEstoque(x, tabela.find((l) => l.t === t));
-    $$('[data-est-tam]', linha).find((c) => c.dataset.estTam === t)?.focus();
+    const t = inp.dataset.estTam;
+    const txt = inp.value.trim();
+    if (txt !== '' && !/^\d{1,4}$/.test(txt)) {
+      toast('Escreva só o número de peças, de 0 a 9999. Ex.: 5');
+      inp.value = valorEstoque(x, t);
+      return;
+    }
+    const qtd = txt === '' ? null : Number(txt);
+    if (txt === valorEstoque(x, t)) return;
+    inp.disabled = true;
+    try {
+      await Banco.salvarEstoque(x.id, t, qtd);
+      const doItem = { ...(estado.estoque[x.id] || {}) };
+      if (qtd === null) delete doItem[t]; else doItem[t] = qtd;
+      if (Object.keys(doItem).length) estado.estoque[x.id] = doItem; else delete estado.estoque[x.id];
+      // A contagem nova substitui a marcação antiga de "acabou"
+      if (x.esgotados?.includes(t)) {
+        x.esgotados = x.esgotados.filter((n) => n !== t);
+        if (!x.esgotados.length) delete x.esgotados;
+        await salvarCatalogo('Estoque salvo');
+      } else {
+        toast(qtd === null ? 'Esse tamanho não é mais contado' : 'Estoque salvo');
+      }
+    } catch (ex) {
+      toast(`Não salvou: ${ex.message}`);
+    }
+    inp.disabled = false;
+    inp.value = valorEstoque(x, t);
+    inp.closest('.pn-est-campo').classList.toggle('fora', inp.value !== '' && Number(inp.value) <= 0);
     $('[data-est-resumo]', linha).textContent = resumoEstoque(x);
-    const salvou = await salvarCatalogo(acabou ? `Tamanho ${t} saiu da loja` : `Tamanho ${t} voltou para a loja`);
-    if (!salvou && !estado.editor && estado.segmento === 'estoque' && location.hash.slice(1) === 'produtos') telaEstoque(alvo);
   });
 }
 

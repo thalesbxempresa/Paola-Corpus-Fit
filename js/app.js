@@ -21,11 +21,33 @@ const tamanhoPorCalca = (n) => TABELA.find((x) => x.calca.includes(Number(n)));
 const faixaCalca = (x) => x.calca.join(' e ');
 const kitsCom = (id) => KITS.filter((k) => visivel(k) && (k.itens.includes(id) || k.escolha?.includes(id)));
 const cintasAVenda = () => PRODUTOS.filter((x) => x.cat === 'cintas' && x.barbatanas && temPreco(x) && visivel(x));
-// Estoque: cada produto guarda os tamanhos que acabaram; o combo herda da cinta que vem nele
+// Estoque: a Paola conta as peças de cada tamanho no painel (sem contagem = sempre à venda).
+// O combo depende de todas as peças que vão nele: se o gel acabou, o kit que leva gel também acabou
+const qtdEstoque = (id, t) => {
+  const v = ESTOQUE.itens[id]?.[item(id)?.tamanhos ? t : ''];
+  return Number.isFinite(v) ? v : Infinity;
+};
+// Quantos dá para vender num tamanho. Infinity = a loja não conta essas peças
+function disponivel(it, t, extra = null) {
+  if (!it) return Infinity;
+  const conta = {};
+  [...(it.itens || [it.id]), ...(extra ? [extra] : [])].forEach((id) => { conta[id] = (conta[id] || 0) + 1; });
+  return Math.min(...Object.entries(conta).map(([id, n]) => {
+    const x = item(id);
+    // Marcação antiga do painel ("acabou" no tamanho) continua valendo
+    if (x?.tamanhos && x.esgotados?.includes(t)) return 0;
+    return Math.floor(qtdEstoque(id, t) / n);
+  }));
+}
 const pecasComTamanho = (it) => (it.itens ? [...new Set(it.itens)].map(item).filter((x) => x?.tamanhos) : (it.tamanhos ? [it] : []));
-const tamanhoEsgotado = (it, t) => pecasComTamanho(it).some((x) => x.esgotados?.includes(t));
+const tamanhoEsgotado = (it, t) => disponivel(it, t) <= 0;
 const calcaEsgotada = (it, n) => !!(it && n) && tamanhoEsgotado(it, tamanhoPorCalca(n)?.t);
-const tudoEsgotado = (it) => pecasComTamanho(it).length > 0 && TABELA.every((x) => tamanhoEsgotado(it, x.t));
+const tudoEsgotado = (it) => (pecasComTamanho(it).length ? TABELA.every((x) => tamanhoEsgotado(it, x.t)) : disponivel(it, '') <= 0);
+// Só com a chave ligada no painel e quando a Paola conta essas peças. Número real, nunca inventado
+const textoEstoque = (it, t, extra = null) => {
+  const q = ESTOQUE.mostrar && it && t ? disponivel(it, t, extra) : Infinity;
+  return Number.isFinite(q) && q > 0 ? `${q} em estoque no tamanho ${t}` : '';
+};
 const TAMANHO_ACABOU = 'Esse tamanho acabou nesta opção. Marque outro número ou fale com a Paola.';
 // Pagamento no site pelo Mercado Pago. Desligado (padrão): a cliente fecha com a Paola no WhatsApp, como sempre
 const pagaNoSite = () => Catalogo.ligado && LOJA.pagarNoSite === true;
@@ -230,8 +252,14 @@ function adicionar(id, op = {}, qtd = 1, s = lerSacola()) {
 const subtotal = (s = lerSacola()) => s.reduce((t, x) => t + item(x.id).preco * x.qtd, 0);
 const nomeLinha = (x) => `${item(x.id).nome}${x.extra ? ` + ${nomeCurto(item(x.extra))}` : ''}`;
 const tamLinha = (x) => (x.calca ? `Tamanho ${tamanhoPorCalca(x.calca)?.t || ''} · calça ${x.calca}` : 'Tamanho único');
-// O tamanho pode acabar depois de a cliente colocar no pedido
-const linhaEsgotada = (x) => calcaEsgotada(item(x.id), x.calca);
+// O estoque pode acabar depois de a cliente colocar no pedido
+const qtdLinha = (x) => disponivel(item(x.id), tamanhoPorCalca(x.calca)?.t, x.extra);
+const linhaEsgotada = (x) => x.qtd > qtdLinha(x);
+const avisoLinha = (x) => {
+  const q = qtdLinha(x);
+  if (q <= 0) return 'Acabou no estoque. Remova para continuar.';
+  return x.qtd > q ? `Só tem ${q} em estoque. Diminua a quantidade.` : '';
+};
 
 function desenharSacola() {
   const s = lerSacola();
@@ -267,7 +295,7 @@ function desenharSacola() {
       return `<div class="item-sacola" data-chave="${x.chave}">
         <span class="mini">${midia(it)}</span>
         <div><h3>${nomeLinha(x)}</h3><div class="det">${tamLinha(x)}</div>
-          ${linhaEsgotada(x) ? '<div class="det det-fora">Este tamanho acabou. Remova para continuar.</div>' : ''}
+          ${linhaEsgotada(x) ? `<div class="det det-fora">${avisoLinha(x)}</div>` : ''}
           <div class="qtd"><button type="button" data-q="-1" aria-label="Diminuir">−</button><span>${x.qtd}</span><button type="button" data-q="1" aria-label="Aumentar">+</button></div>
           <button class="remover" type="button">Remover</button></div>
         <span class="valor">${brl(it.preco * x.qtd)}</span>
@@ -280,14 +308,17 @@ function desenharSacola() {
     <div class="total-linha"><span>Total</span><span>${brl(sub)}</span></div>
     <div class="total-pix">ou ${brl(pix(sub))} no Pix · ${LOJA.parcelas}x de ${brl(parcela(sub))}</div>
     <button class="btn btn-preto btn-bloco" type="button" data-finalizar ${algumaEsgotada ? 'disabled' : ''}>${pagaNoSite() ? 'Finalizar o pedido' : `${I.whats}Enviar pedido pelo WhatsApp`}</button>
-    <p class="pe-nota">${algumaEsgotada ? 'Remova o tamanho que acabou para enviar o pedido.' : pagaNoSite() ? 'Pague no Pix ou no cartão aqui no site. A Paola confere seu tamanho antes de enviar.' : 'A Paola confirma seu tamanho e o pagamento com você na conversa.'}</p>`;
+    <p class="pe-nota">${algumaEsgotada ? 'Ajuste o item marcado para enviar o pedido.' : pagaNoSite() ? 'Pague no Pix ou no cartão aqui no site. A Paola confere seu tamanho antes de enviar.' : 'A Paola confirma seu tamanho e o pagamento com você na conversa.'}</p>`;
 
   $$('.item-sacola', corpo).forEach((linha) => {
     const chave = linha.dataset.chave;
     $$('.qtd button', linha).forEach((b) => b.addEventListener('click', () => {
       const s2 = lerSacola();
       const x = s2.find((y) => y.chave === chave);
-      x.qtd = Math.max(1, Math.min(9, x.qtd + Number(b.dataset.q)));
+      const limite = Math.min(9, Math.max(1, qtdLinha(x)));
+      const quer = x.qtd + Number(b.dataset.q);
+      if (quer > limite && limite < 9) toast(`Só tem ${limite} em estoque`);
+      x.qtd = Math.max(1, Math.min(limite, quer));
       gravarSacola(s2);
     }));
     $('.remover', linha).addEventListener('click', () => gravarSacola(lerSacola().filter((y) => y.chave !== chave)));
@@ -487,7 +518,7 @@ function calcaHTML(sel = lerCalca(), it = null) {
       const sem = calcaEsgotada(it, n);
       return `<button class="chip${sem ? ' esgotado' : ''}" type="button" role="radio" data-calca="${n}" aria-checked="${!sem && n === Number(sel)}"${sem ? ` aria-disabled="true" aria-label="${n}, esgotado"` : ''}>${n}</button>`;
     }).join('')}</div>
-    <div class="tam-res"${linha ? '' : ' hidden'}><span class="letra">${linha ? linha.t : ''}</span><div><b>Seu tamanho é <span data-letra>${linha ? linha.t : ''}</span></b><small>Para quem veste calça <span data-faixa>${linha ? faixaCalca(linha) : ''}</span></small></div></div>
+    <div class="tam-res"${linha ? '' : ' hidden'}><span class="letra">${linha ? linha.t : ''}</span><div><b>Seu tamanho é <span data-letra>${linha ? linha.t : ''}</span></b><small>Para quem veste calça <span data-faixa>${linha ? faixaCalca(linha) : ''}</span></small><small class="tam-estoque" data-estoque>${linha ? textoEstoque(it, linha.t) : ''}</small></div></div>
     <p class="tam-fora" role="status"${fora ? '' : ' hidden'}>${fora ? avisoEsgotado(it, sel) : ''}</p>
     <p class="dica-tam">Veste menos de 36 ou mais de 52? <a href="${LOJA.whatsapp}" target="_blank" rel="noopener">Fale com a Paola</a></p>
   </div>`;
@@ -508,6 +539,8 @@ function ligarCalca(raiz, aoMudar, it = null) {
       $('.letra', res).textContent = linha.t;
       $('[data-letra]', res).textContent = linha.t;
       $('[data-faixa]', res).textContent = faixaCalca(linha);
+      const est = $('[data-estoque]', res);
+      if (est) est.textContent = textoEstoque(it, linha.t);
     }
     // Número que acabou não vale para a compra, mas fica guardado: ela pode tentar em outro produto
     if (aoMudar) aoMudar(sem ? null : n, linha);
@@ -541,10 +574,14 @@ function abrirTabela(aoEscolher) {
 
 // Escolha do 2º produto (Combo Duplo: gel ou sutiã)
 function escolhaHTML(it, sel) {
-  return `<div class="escolha">${it.escolha.map((id) => `<button class="escolha-op" type="button" data-extra="${id}" aria-pressed="${id === sel}"><span class="mini">${midia(item(id))}</span><b>${nomeCurto(item(id))}</b></button>`).join('')}</div>`;
+  return `<div class="escolha">${it.escolha.map((id) => {
+    const fora = qtdEstoque(id, '') <= 0;
+    return `<button class="escolha-op${fora ? ' esgotado' : ''}" type="button" data-extra="${id}" aria-pressed="${!fora && id === sel}"${fora ? ' aria-disabled="true"' : ''}><span class="mini">${midia(item(id))}</span><b>${nomeCurto(item(id))}</b>${fora ? '<small>Acabou</small>' : ''}</button>`;
+  }).join('')}</div>`;
 }
 function ligarEscolha(raiz, aoMudar) {
   $$('[data-extra]', raiz).forEach((b) => b.addEventListener('click', () => {
+    if (b.getAttribute('aria-disabled') === 'true') return toast('Esse acabou. Escolha o outro ou fale com a Paola.');
     $$('[data-extra]', raiz).forEach((c) => c.setAttribute('aria-pressed', c === b));
     aoMudar(b.dataset.extra);
   }));
@@ -596,7 +633,8 @@ function montarPedido(raiz) {
     const tamanho = !calca ? 'Falta o número da calça'
       : calcaEsgotada(it, calca) ? `Tamanho ${tamanhoPorCalca(calca).t} acabou nesta opção`
         : `Tamanho ${tamanhoPorCalca(calca).t} · calça ${calca}`;
-    return `<div><small>Seu pedido</small><b>${nome}</b><small>${tamanho}</small></div>
+    const est = calca && !calcaEsgotada(it, calca) ? textoEstoque(it, tamanhoPorCalca(calca).t, p.extra) : '';
+    return `<div><small>Seu pedido</small><b>${nome}</b><small>${tamanho}</small>${est ? `<small class="tam-estoque">${est}</small>` : ''}</div>
       <div class="total">${brl(it.preco)}<small>${brl(pix(it.preco))} no Pix</small></div>`;
   };
   const atualizar = () => {

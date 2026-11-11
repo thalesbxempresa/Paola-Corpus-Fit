@@ -20,7 +20,12 @@ const LOJA = {
   parcelas: 6,
   // Pagamento no site pelo Mercado Pago: liga pelo painel (aba Loja). Desligado, a Paola manda o link no WhatsApp
   pagarNoSite: false,
+  // Mostrar para a cliente quantas peças há no tamanho escolhido (liga no painel, em Produtos > Estoque)
+  mostrarEstoque: false,
 };
+
+// Estoque que o banco libera para a loja. Item que não está aqui não é contado e fica sempre à venda
+const ESTOQUE = { mostrar: false, itens: {} };
 
 const PRODUTOS = [
   {

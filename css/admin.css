@@ -261,20 +261,23 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .pn-est-nome > div { display: grid; gap: 2px; min-width: 0; }
 .pn-est-nome b { font-size: 14.5px; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
 .pn-est-nome small { font-size: 12.5px; line-height: 1.3; color: var(--tinta-2); }
-.pn-est-tam { display: grid; grid-template-columns: repeat(auto-fit, minmax(46px, 1fr)); gap: 6px; }
-.pn-est-chip { display: grid; justify-items: center; align-content: center; gap: 1px; min-height: 52px; padding: 6px 2px; border: 0; border-radius: 12px; background: #E3F3E9; color: #1F5C39; cursor: pointer; }
-.pn-est-chip:hover { box-shadow: inset 0 0 0 1.5px currentColor; }
-.pn-est-chip:focus-visible { outline: 2.5px solid var(--vinho); outline-offset: 2px; }
-.pn-est-chip b { font-size: 15px; font-weight: 800; line-height: 1.2; }
-.pn-est-chip small { font-size: 11px; font-weight: 700; }
-.pn-est-chip.fora { background: #FBE4E1; color: #8E2A1E; }
-.pn-est-chip.fora b { text-decoration: line-through; }
+.pn-est-tam { display: grid; grid-template-columns: repeat(auto-fit, minmax(58px, 1fr)); gap: 6px; }
+.pn-est-campo { display: grid; justify-items: center; gap: 4px; padding: 6px 4px 8px; border-radius: 12px; background: var(--areia-2); color: var(--tinta); }
+.pn-est-campo b { font-size: 14px; font-weight: 800; line-height: 1.2; }
+.pn-est-campo input { width: 100%; max-width: 72px; min-height: 42px; padding: 4px; border: 1.5px solid rgba(31, 26, 23, .18); border-radius: 10px; background: var(--branco); color: var(--tinta); font: inherit; font-size: 17px; font-weight: 700; text-align: center; }
+.pn-est-campo input:focus { outline: 2.5px solid var(--vinho); outline-offset: 1px; border-color: transparent; }
+.pn-est-campo input::placeholder { font-weight: 400; color: var(--tinta-2); }
+.pn-est-campo input:disabled { opacity: .6; }
+.pn-est-campo.fora { background: #FBE4E1; color: #8E2A1E; }
+.pn-est-campo.fora input { color: #8E2A1E; }
+.pn-est-campo.unico { justify-self: start; width: 96px; }
+.pn-est-mostrar { margin-bottom: 12px; }
 .pn-est-nota { margin-top: 12px; }
 @media (min-width: 900px) {
   .pn-est { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 8px 12px; }
   .pn-est-nome img { width: 56px; height: 56px; }
   .pn-est-tam { display: flex; gap: 8px; }
-  .pn-est-chip { width: 64px; }
+  .pn-est-campo { width: 76px; }
 }
 
 /* ---------- Editor ---------- */
