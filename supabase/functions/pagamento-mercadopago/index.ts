@@ -1,4 +1,4 @@
-// Pagamento pelo Mercado Pago. Toda a parte que envolve dinheiro acontece aqui, nunca no navegador.
+// Pagamento pelo Mercado Pago (API de Orders). Toda a parte que envolve dinheiro acontece aqui, nunca no navegador.
 //
 // Regras de segurança desta função:
 // - O valor cobrado sai sempre do pedido no banco. O que o navegador manda como valor é ignorado.
@@ -18,6 +18,8 @@ const MP = 'https://api.mercadopago.com';
 const SITE = 'https://paolacorpusfit.vercel.app';
 const ORIGENS = [SITE, 'https://thalesbxempresa.github.io'];
 const NOME_NA_FATURA = 'PAOLACORPUSFIT';
+// Situações em que ainda pode entrar dinheiro: antes de cobrar de novo, a cobrança antiga é cancelada
+const ABERTOS = ['pending', 'in_process'];
 
 type Resposta = [number, Record<string, unknown>];
 type Config = { modo: string; pix: number; parcelas: number };
@@ -25,8 +27,13 @@ type Config = { modo: string; pix: number; parcelas: number };
 const texto = (v: string) => new TextEncoder().encode(v);
 const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
 const ehId = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
-const ehPagamentoId = (v: unknown) => /^\d{1,20}$/.test(String(v ?? ''));
+// No Mercado Pago, cada cobrança é uma "order", com código do tipo ORD01ABC...
+const ehOrdemId = (v: unknown) => /^ORD[0-9A-Z]{8,60}$/i.test(String(v ?? ''));
 const arredondar = (v: number) => Math.round(v * 100) / 100;
+const dinheiro = (v: number) => v.toFixed(2);
+const enderecoSeguro = (v: unknown) => (typeof v === 'string' && /^https:\/\/[^\s"'<>]{1,2000}$/.test(v) ? v : null);
+const semVazios = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null && v !== undefined && v !== ''));
+const agora = () => new Date().toISOString();
 
 // ---------- Banco ----------
 const rest = (caminho: string, init: RequestInit = {}) => fetch(`${BASE}/rest/v1/${caminho}`, {
@@ -73,6 +80,8 @@ function cobranca(p: Record<string, any>, cfg: Config) {
 }
 const resumoItens = (p: Record<string, any>) => (p.itens ?? [])
   .map((x: any) => `${x.qtd || 1}x ${x.nome}${x.tam ? ` (${x.tam})` : ''}`).join(', ');
+// "No site": a cliente paga logo depois de pedir. "Link": só depois que a loja confere e libera o pedido
+const liberado = (cfg: Config, mp: Record<string, any>) => cfg.modo === 'site' || (cfg.modo === 'link' && !!mp.link);
 
 // ---------- Mercado Pago ----------
 const cabecalhosMP = (extra: Record<string, string> = {}) => ({
@@ -80,70 +89,104 @@ const cabecalhosMP = (extra: Record<string, string> = {}) => ({
   'Content-Type': 'application/json',
   ...extra,
 });
-async function lerPagamento(id: string) {
-  const r = await fetch(`${MP}/v1/payments/${id}`, { headers: cabecalhosMP() });
-  if (r.status === 404) return null;
-  if (!r.ok) throw new Error(`Mercado Pago respondeu ${r.status} ao consultar pagamento`);
+const chaveUnica = async (semente: string) => hex(await crypto.subtle.digest('SHA-256', texto(semente))).slice(0, 40);
+async function lerOrdem(id: string) {
+  const r = await fetch(`${MP}/v1/orders/${String(id).toUpperCase()}`, { headers: cabecalhosMP() });
+  if (r.status === 404 || r.status === 400) return null;
+  if (!r.ok) throw new Error(`Mercado Pago respondeu ${r.status} ao consultar a cobrança`);
   return r.json();
 }
+// Traduz a situação da cobrança no Mercado Pago para poucas palavras que o site e o painel entendem.
+// Só "processed" com "accredited" é dinheiro na conta. Qualquer situação desconhecida conta como "em análise", nunca como paga
+function situacaoDaOrdem(o: Record<string, any>) {
+  const s = String(o?.status ?? '');
+  const d = String(o?.status_detail ?? '');
+  if (s === 'processed') return d === 'accredited' ? 'approved' : d === 'partially_refunded' ? 'refunded' : 'in_process';
+  if (s === 'action_required') return 'pending';
+  if (s === 'failed') return 'rejected';
+  if (['canceled', 'cancelled', 'expired'].includes(s)) return 'cancelled';
+  if (s === 'refunded') return 'refunded';
+  if (s === 'charged_back') return 'charged_back';
+  return 'in_process';
+}
+// A mensagem de erro pode repetir dados da cliente: só sai o código, e em teste o texto sem e-mail nem números longos
+function erroParaLog(d: Record<string, any>) {
+  const erros = Array.isArray(d?.errors) ? d.errors : [];
+  const codigos = [...erros.map((e: any) => e?.code), d?.code, d?.error].filter((c) => typeof c === 'string').slice(0, 6);
+  if (!AMBIENTE_TESTE) return JSON.stringify(codigos);
+  const limpar = (t: unknown) => String(t ?? '').replace(/[\w.+-]+@[\w.-]+/g, '(e-mail)').replace(/[A-Za-z0-9_-]{20,}/g, '(código)').replace(/\d{6,}/g, '(número)').slice(0, 160);
+  return JSON.stringify({ codigos, textos: erros.slice(0, 4).map((e: any) => limpar(`${e?.message ?? ''} ${typeof e?.details === 'string' ? e.details : JSON.stringify(e?.details ?? '')}`)) });
+}
 
-// Atualiza o pedido com o que o Mercado Pago informou. Pode ser chamada várias vezes para o mesmo pagamento.
-async function aplicar(m: Record<string, any>): Promise<boolean> {
-  const id = m.external_reference;
-  if (!ehId(id)) return false;
-  // Pagamento de teste nunca confirma pedido quando a loja está em produção
-  if (!AMBIENTE_TESTE && m.live_mode === false) {
-    console.warn('Pagamento de teste ignorado em produção');
+// Atualiza o pedido com o que o Mercado Pago informou. Pode ser chamada várias vezes para a mesma cobrança.
+// adotar: a função acabou de criar esta cobrança, então ela passa a ser a atual do pedido.
+async function aplicar(o: Record<string, any>, adotar = false): Promise<boolean> {
+  const id = o?.external_reference;
+  if (!ehId(id) || !ehOrdemId(o.id)) return false;
+  // Cobrança de teste nunca confirma pedido quando a loja está em produção
+  if (!AMBIENTE_TESTE && o.live_mode === false) {
+    console.warn('Cobrança de teste ignorada em produção');
     return false;
   }
   const p = await lerPedido(id);
   if (!p) return false;
   const mp = p.mercadopago ?? {};
-  const pid = String(m.id);
-  const atual = !mp.pagamento_id || mp.pagamento_id === pid;
+  const oid = String(o.id).toUpperCase();
+  const st = situacaoDaOrdem(o);
+  const atual = adotar || !mp.ordem_id || mp.ordem_id === oid;
 
   // Tentativa antiga (Pix trocado por cartão, cartão recusado): só importa se acabou sendo paga
-  if (!atual && m.status !== 'approved') return false;
+  if (!atual && st !== 'approved') return false;
   // Duas cobranças aprovadas no mesmo pedido: nunca some sem avisar a loja
   if (mp.pago_em && !atual) {
-    await salvarPedido(id, { conferir: true, mercadopago: { ...mp, duplicados: [...new Set([...(mp.duplicados ?? []), pid])] } });
+    await salvarPedido(id, { conferir: true, mercadopago: { ...mp, duplicados: [...new Set([...(mp.duplicados ?? []), oid])] } });
     return true;
   }
 
-  const registro = {
+  const pg = o.transactions?.payments?.[0] ?? {};
+  const metodo = pg.payment_method ?? {};
+  const pixAberto = ABERTOS.includes(st) && metodo.id === 'pix';
+  const registro: Record<string, any> = {
     ...mp,
-    pagamento_id: pid,
-    status: m.status,
-    status_detail: m.status_detail,
-    metodo: m.payment_method_id,
-    tipo: m.payment_type_id,
-    parcelas: m.installments,
-    valor: m.transaction_amount,
-    valor_cliente: m.transaction_details?.total_paid_amount,
-    recebido: m.transaction_details?.net_received_amount,
-    atualizado_em: new Date().toISOString(),
+    ordem_id: oid,
+    pagamento_id: typeof pg.id === 'string' ? pg.id : null,
+    status: st,
+    status_mp: o.status ?? null,
+    status_detail: o.status_detail ?? null,
+    metodo: metodo.id ?? null,
+    tipo: metodo.type ?? null,
+    parcelas: metodo.installments ?? null,
+    valor: Number(o.total_amount),
+    valor_cliente: Number(o.total_paid_amount ?? pg.paid_amount) || null,
+    atualizado_em: agora(),
+    // O código do Pix só fica guardado enquanto ainda dá para pagar
+    pix_codigo: pixAberto ? (typeof metodo.qr_code === 'string' ? metodo.qr_code : mp.pix_codigo ?? null) : null,
+    pix_url: pixAberto ? (enderecoSeguro(metodo.ticket_url) ?? mp.pix_url ?? null) : null,
   };
   const campos: Record<string, unknown> = { mercadopago: registro };
 
-  if (m.status === 'approved') {
+  if (st === 'approved') {
     const esperado = Number(mp.esperado);
-    const confere = m.currency_id === 'BRL' && Number.isFinite(esperado) && esperado > 0 && Number(m.transaction_amount) + 0.01 >= esperado;
+    const cobrado = Number(o.total_amount);
+    const pago = Number(o.total_paid_amount ?? pg.paid_amount);
+    const emReais = (o.currency ?? 'BRL') === 'BRL' && (o.country_code ?? 'BRA') === 'BRA';
+    const confere = emReais && Number.isFinite(esperado) && esperado > 0 && cobrado + 0.01 >= esperado && pago + 0.01 >= esperado;
     if (confere) {
-      registro.pago_em = m.date_approved ?? new Date().toISOString();
-      campos.valor = Number(m.transaction_amount);
+      registro.pago_em = mp.pago_em ?? agora();
+      campos.valor = cobrado;
       if (p.status === 'novo') campos.status = 'pago';
     } else {
       campos.conferir = true;
     }
-  } else if (['refunded', 'charged_back', 'in_mediation'].includes(m.status) && mp.pago_em) {
-    // Estorno, contestação ou disputa depois de pago: a loja precisa olhar antes de enviar
+  } else if (['refunded', 'charged_back'].includes(st) && mp.pago_em) {
+    // Estorno ou contestação depois de pago: a loja precisa olhar antes de enviar
     campos.conferir = true;
   }
   await salvarPedido(id, campos);
-  return m.status === 'approved' && !campos.conferir;
+  return st === 'approved' && !campos.conferir;
 }
 
-// Aviso do Mercado Pago. A assinatura prova que veio dele; o conteúdo do aviso não é usado, só o número do pagamento.
+// Aviso do Mercado Pago. A assinatura prova que veio dele; o conteúdo do aviso não é usado, só o código da cobrança.
 const iguais = (a: string, b: string) => {
   if (a.length !== b.length) return false;
   let dif = 0;
@@ -155,31 +198,41 @@ async function assinaturaValida(req: Request, dataId: string) {
   const partes = Object.fromEntries((req.headers.get('x-signature') ?? '').split(',').map((p) => p.trim().split('=', 2)));
   const pedidoId = req.headers.get('x-request-id');
   if (!partes.ts || !partes.v1 || !pedidoId || !dataId) return false;
-  const idManifesto = /^\d+$/.test(dataId) ? dataId : dataId.toLowerCase();
-  const manifesto = `id:${idManifesto};request-id:${pedidoId};ts:${partes.ts};`;
   const chave = await crypto.subtle.importKey('raw', texto(WEBHOOK_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  return iguais(hex(await crypto.subtle.sign('HMAC', chave, texto(manifesto))), partes.v1.toLowerCase());
+  const recebida = partes.v1.toLowerCase();
+  // A documentação pede o código em minúsculas na conta; o programa oficial usa como veio. As duas formas exigem o segredo
+  let valida = false;
+  for (const idNaConta of new Set([dataId, dataId.toLowerCase()])) {
+    const manifesto = `id:${idNaConta};request-id:${pedidoId};ts:${partes.ts};`;
+    if (iguais(hex(await crypto.subtle.sign('HMAC', chave, texto(manifesto))), recebida)) valida = true;
+  }
+  return valida;
 }
 async function webhook(req: Request, url: URL): Promise<Resposta> {
   const dataId = url.searchParams.get('data.id') ?? '';
   if (!await assinaturaValida(req, dataId)) return [401, { ok: false }];
   const corpo = await req.json().catch(() => ({}));
   const tipo = url.searchParams.get('type') ?? corpo.type;
-  if (tipo !== 'payment' || !ehPagamentoId(dataId)) return [200, { ok: true }];
+  if (tipo !== 'order' || !ehOrdemId(dataId)) return [200, { ok: true }];
+  if (!AMBIENTE_TESTE && corpo.live_mode === false) {
+    console.warn('Aviso de teste ignorado em produção');
+    return [200, { ok: true }];
+  }
   // Repetir o mesmo aviso não muda nada: o estado vem sempre da consulta ao Mercado Pago
-  const m = await lerPagamento(dataId);
-  if (m) await aplicar(m);
+  const o = await lerOrdem(dataId);
+  if (o) await aplicar(o);
   return [200, { ok: true }];
 }
 
 // ---------- Ações do site ----------
 async function dados(id: string): Promise<Resposta> {
   const cfg = await config();
-  if (cfg.modo !== 'site' || !ACCESS_TOKEN || !PUBLIC_KEY) return [409, { ok: false, erro: 'desligado' }];
+  if (cfg.modo === 'desligado' || !ACCESS_TOKEN || !PUBLIC_KEY) return [409, { ok: false, erro: 'desligado' }];
   const p = await lerPedido(id);
   if (!p) return [404, { ok: false }];
   const mp = p.mercadopago ?? {};
   if (mp.pago_em || p.status !== 'novo') return [200, { ok: true, encerrado: true, pago: !!mp.pago_em || p.status !== 'cancelado' }];
+  if (!liberado(cfg, mp)) return [409, { ok: false, erro: 'desligado' }];
   // O banco registra o valor que o site mandou quando ele não bate com a tabela. Esse pedido nunca é cobrado online
   if (p.conferir) return [409, { ok: false, erro: 'conferir' }];
   const v = cobranca(p, cfg);
@@ -191,12 +244,12 @@ async function dados(id: string): Promise<Resposta> {
     cartao: v.cartao,
     pix: v.pix,
     parcelas: cfg.parcelas,
-    aberto: ['pending', 'in_process', 'authorized'].includes(mp.status) ? { pagamento_id: mp.pagamento_id, pix: mp.metodo === 'pix' } : null,
+    aberto: ABERTOS.includes(mp.status) ? { pix: mp.metodo === 'pix', codigo: mp.pix_codigo ?? null, url: mp.pix_url ?? null } : null,
   }];
 }
 
 // Só passa adiante o que o Mercado Pago precisa. Valor, referência e descrição nunca vêm do navegador.
-function validarFormulario(f: Record<string, any>, cfg: Config) {
+function validarFormulario(f: Record<string, any>, cfg: Config, tipoInformado: unknown) {
   const metodo = String(f.payment_method_id ?? '');
   if (!/^[a-z0-9_]{2,30}$/.test(metodo)) return null;
   const email = String(f.payer?.email ?? '').trim();
@@ -204,12 +257,14 @@ function validarFormulario(f: Record<string, any>, cfg: Config) {
   const doc = String(f.payer?.identification?.number ?? '').replace(/\D/g, '');
   const tipoDoc = String(f.payer?.identification?.type ?? '').toUpperCase();
   const identification = (tipoDoc === 'CPF' && doc.length === 11) || (tipoDoc === 'CNPJ' && doc.length === 14) ? { type: tipoDoc, number: doc } : undefined;
-  if (metodo === 'pix') return { pix: true, metodo, payer: { email, ...(identification ? { identification } : {}) } };
+  const payer = { email, ...(identification ? { identification } : {}) };
+  if (metodo === 'pix') return { pix: true, metodo, tipo: 'bank_transfer', payer };
   const token = String(f.token ?? '');
   const parcelas = Number(f.installments);
   if (!/^[\w-]{10,120}$/.test(token) || !Number.isInteger(parcelas) || parcelas < 1 || parcelas > cfg.parcelas) return null;
-  const issuer = /^\d{1,12}$/.test(String(f.issuer_id ?? '')) ? String(f.issuer_id) : undefined;
-  return { pix: false, metodo, token, parcelas, issuer, payer: { email, ...(identification ? { identification } : {}) } };
+  const debito = tipoInformado === 'debit_card' || metodo.startsWith('deb');
+  if (debito && parcelas !== 1) return null;
+  return { pix: false, metodo, tipo: debito ? 'debit_card' : 'credit_card', token, parcelas, payer };
 }
 async function reservar(id: string, req: Request) {
   const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || 'sem-ip';
@@ -219,12 +274,27 @@ async function reservar(id: string, req: Request) {
 }
 const liberar = (id: string) => salvarPedido(id, { cobrando_em: null }).catch(() => {});
 
+// Quem gerou um Pix e resolveu pagar de outro jeito: a cobrança antiga é cancelada antes, para não ser paga duas vezes.
+// Devolve true se o caminho ficou livre, 'pago' se a cobrança antiga já tinha sido paga e false se ainda está em andamento
+async function cancelarOrdem(ordemId: string, pedidoId: string, tentativa: string): Promise<boolean | 'pago'> {
+  const c = await fetch(`${MP}/v1/orders/${ordemId}/cancel`, {
+    method: 'POST',
+    headers: cabecalhosMP({ 'X-Idempotency-Key': await chaveUnica(`cancela:${ordemId}:${tentativa}`) }),
+  });
+  if (c.ok) return true;
+  // Não cancelou: pode já ter sido paga, ter vencido ou estar em análise. Vale o estado real no Mercado Pago
+  const o = await lerOrdem(ordemId).catch(() => null);
+  if (!o || o.external_reference !== pedidoId) return false;
+  if (await aplicar(o)) return 'pago';
+  return ['cancelled', 'rejected'].includes(situacaoDaOrdem(o));
+}
+
 async function pagar(corpo: Record<string, any>, req: Request): Promise<Resposta> {
   const { id, tentativa, dados: formulario, device } = corpo;
   if (!ehId(id) || !ehId(tentativa) || !formulario || typeof formulario !== 'object') return [400, { ok: false, erro: 'dados' }];
   const cfg = await config();
-  if (cfg.modo !== 'site' || !ACCESS_TOKEN) return [409, { ok: false, erro: 'desligado' }];
-  const f = validarFormulario(formulario, cfg);
+  if (cfg.modo === 'desligado' || !ACCESS_TOKEN) return [409, { ok: false, erro: 'desligado' }];
+  const f = validarFormulario(formulario, cfg, corpo.metodo);
   if (!f) return [400, { ok: false, erro: 'dados' }];
 
   // Trava o pedido antes de cobrar: dois cliques ou duas abas nunca geram duas cobranças ao mesmo tempo
@@ -233,94 +303,105 @@ async function pagar(corpo: Record<string, any>, req: Request): Promise<Resposta
   try {
     const p = await lerPedido(id);
     const mp = p.mercadopago ?? {};
-    // Quem gerou um Pix e resolveu pagar de outro jeito: o Pix antigo é cancelado antes, para não ser pago duas vezes
-    if (mp.pagamento_id && ['pending', 'in_process', 'authorized'].includes(mp.status)) {
-      const c = await fetch(`${MP}/v1/payments/${mp.pagamento_id}`, {
-        method: 'PUT',
-        headers: cabecalhosMP({ 'X-Idempotency-Key': `cancela-${mp.pagamento_id}` }),
-        body: JSON.stringify({ status: 'cancelled' }),
-      });
-      if (!c.ok) return [409, { ok: false, erro: 'em_andamento' }];
+    if (!liberado(cfg, mp)) return [409, { ok: false, erro: 'desligado' }];
+    if (mp.ordem_id && ABERTOS.includes(mp.status)) {
+      const livre = await cancelarOrdem(mp.ordem_id, id, tentativa);
+      if (livre === 'pago') return [409, { ok: false, erro: 'pago' }];
+      if (!livre) return [409, { ok: false, erro: 'em_andamento' }];
     }
     const v = cobranca(p, cfg);
     const valor = f.pix ? v.pix : v.cartao;
     if (!(valor >= 1)) return [400, { ok: false, erro: 'valor' }];
     // Anotado antes de cobrar: o aviso do Mercado Pago pode chegar antes da resposta
-    await salvarPedido(id, { mercadopago: { ...mp, esperado: valor, pagamento_id: null, status: null } });
+    const anotado = { ...mp, esperado: valor, ordem_id: null, pagamento_id: null, status: null, status_mp: null, status_detail: null, pix_codigo: null, pix_url: null };
+    await salvarPedido(id, { mercadopago: anotado });
 
     const partesNome = String(p.nome ?? '').trim().split(/\s+/);
     const fone = String(p.telefone ?? '').replace(/\D/g, '').slice(-11);
     const cep = String(p.cep ?? '').replace(/\D/g, '');
-    const envio = { zip_code: cep, street_name: p.rua, street_number: p.num };
-    const pagamento: Record<string, unknown> = {
-      transaction_amount: valor,
-      description: `Pedido ${p.numero}`,
-      payment_method_id: f.metodo,
+    const total = dinheiro(valor);
+    const ordem: Record<string, unknown> = {
+      type: 'online',
+      processing_mode: 'automatic',
+      total_amount: total,
       external_reference: p.id,
-      payer: { ...f.payer, first_name: partesNome[0], last_name: partesNome.slice(1).join(' ') || partesNome[0] },
-      additional_info: {
-        items: [{ id: p.numero, title: `Pedido ${p.numero}`, description: resumoItens(p).slice(0, 200), quantity: 1, unit_price: valor }],
-        payer: {
-          first_name: partesNome[0],
-          last_name: partesNome.slice(1).join(' ') || partesNome[0],
-          ...(fone.length >= 10 ? { phone: { area_code: fone.slice(0, 2), number: fone.slice(2) } } : {}),
-          address: envio,
-        },
-        shipments: { receiver_address: { ...envio, city_name: p.cidade, state_name: p.uf } },
+      description: `Pedido ${p.numero}`,
+      // Os dados de quem compra saem do pedido no banco e ajudam o antifraude do Mercado Pago
+      payer: {
+        ...f.payer,
+        first_name: partesNome[0],
+        last_name: partesNome.slice(1).join(' ') || partesNome[0],
+        ...(fone.length >= 10 ? { phone: { area_code: fone.slice(0, 2), number: fone.slice(2) } } : {}),
+        ...(cep.length === 8 && p.rua ? { address: semVazios({ zip_code: `${cep.slice(0, 5)}-${cep.slice(5)}`, street_name: p.rua, street_number: String(p.num ?? ''), neighborhood: p.bairro, city: p.cidade, state: p.uf }) } : {}),
       },
+      items: [{ title: `Pedido ${p.numero}`, description: resumoItens(p).slice(0, 200) || `Pedido ${p.numero}`, external_code: p.numero, quantity: 1, unit_price: total }],
+      transactions: {
+        payments: [f.pix
+          // Pix vale 1 hora: um código esquecido não fica aberto para ser pago depois de o pedido mudar
+          ? { amount: total, payment_method: { id: 'pix', type: 'bank_transfer' }, expiration_time: 'PT1H' }
+          : { amount: total, payment_method: { id: f.metodo, type: f.tipo, token: f.token, installments: f.parcelas, statement_descriptor: NOME_NA_FATURA } }],
+      },
+      // Cartão: o banco pode pedir uma confirmação extra (3DS) quando o Mercado Pago vê risco
+      ...(f.pix ? {} : { config: { online: { transaction_security: { validation: 'on_fraud_risk', liability_shift: 'required' } } } }),
     };
-    if (f.pix) {
-      // Pix vale 1 hora: um código esquecido não fica aberto para ser pago depois de o pedido mudar
-      pagamento.date_of_expiration = new Date(Date.now() + 3600e3 - 3 * 3600e3).toISOString().replace('Z', '-03:00');
-    } else {
-      pagamento.token = f.token;
-      pagamento.installments = f.parcelas;
-      if (f.issuer) pagamento.issuer_id = f.issuer;
-      pagamento.statement_descriptor = NOME_NA_FATURA;
-      pagamento.three_d_secure_mode = 'optional';
-    }
-    const r = await fetch(`${MP}/v1/payments`, {
+    const r = await fetch(`${MP}/v1/orders`, {
       method: 'POST',
       headers: cabecalhosMP({
         // Presa ao pedido: uma tentativa reaproveitada nunca devolve a cobrança de outro pedido
-        'X-Idempotency-Key': hex(await crypto.subtle.digest('SHA-256', texto(`${id}:${tentativa}`))).slice(0, 40),
+        'X-Idempotency-Key': await chaveUnica(`${id}:${tentativa}`),
         ...(typeof device === 'string' && /^[\w-]{10,200}$/.test(device) ? { 'X-meli-session-id': device } : {}),
       }),
-      body: JSON.stringify(pagamento),
+      body: JSON.stringify(ordem),
     });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      // Só o código do erro: a resposta pode repetir dados da cliente
-      console.error('Mercado Pago recusou a cobrança', r.status, JSON.stringify((d.cause ?? []).map((c: any) => c.code)));
+    const criada = ehOrdemId(d?.id) ? d : ehOrdemId(d?.data?.id) ? d.data : null;
+    const nossa = criada && criada.external_reference === id ? criada : null;
+    // 402: o Mercado Pago criou a cobrança, mas o cartão não passou
+    if (r.status === 402 || (r.ok && nossa && situacaoDaOrdem(nossa) === 'rejected')) {
+      if (nossa) await aplicar(nossa, true);
+      else await salvarPedido(id, { mercadopago: { ...anotado, status: 'rejected', atualizado_em: agora() } });
+      return [200, { ok: true, status: 'rejected' }];
+    }
+    if (!r.ok || !nossa) {
+      console.error('Mercado Pago recusou a cobrança', r.status, erroParaLog(d));
       return [502, { ok: false, erro: 'recusado' }];
     }
-    await aplicar(d);
-    const desafio = d.status_detail === 'pending_challenge' && d.three_ds_info
-      ? { url: d.three_ds_info.external_resource_url, creq: d.three_ds_info.creq }
-      : undefined;
-    return [200, { ok: true, pagamento_id: String(d.id), status: d.status, status_detail: d.status_detail, pix: f.pix, desafio }];
+    await aplicar(nossa, true);
+    const metodo = nossa.transactions?.payments?.[0]?.payment_method ?? {};
+    const desafio = nossa.status_detail === 'pending_challenge' ? enderecoSeguro(metodo.transaction_security?.url) : null;
+    return [200, {
+      ok: true,
+      status: situacaoDaOrdem(nossa),
+      status_detail: nossa.status_detail ?? null,
+      pix: f.pix,
+      ...(f.pix ? { qr: { codigo: typeof metodo.qr_code === 'string' ? metodo.qr_code : null, imagem: typeof metodo.qr_code_base64 === 'string' ? metodo.qr_code_base64 : null, url: enderecoSeguro(metodo.ticket_url) } } : {}),
+      ...(desafio ? { desafio } : {}),
+    }];
   } finally {
     await liberar(id);
   }
 }
 
+// A página de pagamento pergunta de tempos em tempos se já foi pago. Se o aviso do Mercado Pago atrasar,
+// a própria pergunta consulta o Mercado Pago, no máximo uma vez a cada 8 segundos por pedido
 async function situacao(id: string): Promise<Resposta> {
-  const p = await lerPedido(id);
+  let p = await lerPedido(id);
   if (!p) return [404, { ok: false }];
-  const mp = p.mercadopago ?? {};
+  let mp = p.mercadopago ?? {};
+  const parado = Date.now() - (Date.parse(mp.atualizado_em ?? '') || 0) > 8000;
+  if (ACCESS_TOKEN && mp.ordem_id && ABERTOS.includes(mp.status) && parado) {
+    await salvarPedido(id, { mercadopago: { ...mp, atualizado_em: agora() } });
+    const o = await lerOrdem(mp.ordem_id).catch(() => null);
+    if (o && o.external_reference === id) {
+      await aplicar(o);
+      p = await lerPedido(id);
+      mp = p.mercadopago ?? {};
+    }
+  }
   return [200, { ok: true, pago: !!mp.pago_em, status: mp.status ?? null, status_detail: mp.status_detail ?? null }];
 }
 
-// A cliente voltou do link do Mercado Pago: consulta o pagamento, caso o aviso ainda não tenha chegado
-async function confirmar(corpo: Record<string, any>): Promise<Resposta> {
-  const { id, pagamento_id: pid } = corpo;
-  if (!ehId(id) || !ehPagamentoId(pid)) return [400, { ok: false }];
-  const m = await lerPagamento(String(pid));
-  if (!m || m.external_reference !== id) return [200, { ok: true, pago: false }];
-  return [200, { ok: true, pago: await aplicar(m) }];
-}
-
-// Só quem é da loja cria link de pagamento pelo painel
+// Só quem é da loja libera o pagamento de um pedido pelo painel
 async function ehAdmin(req: Request) {
   const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
   if (token.split('.').length !== 3) return false;
@@ -331,47 +412,20 @@ async function ehAdmin(req: Request) {
   const hash = hex(await crypto.subtle.digest('SHA-256', texto(String(u.email).toLowerCase())));
   return (await lerLista(`admins?email_sha256=eq.${hash}&select=email_sha256`)).length > 0;
 }
+// O link de pagamento leva para a página de pagamento da própria loja. O valor é sempre o do pedido na hora de pagar
 async function criarLink(id: string): Promise<Resposta> {
   const cfg = await config();
-  if (cfg.modo === 'desligado' || !ACCESS_TOKEN) return [409, { ok: false, erro: 'pagamento desligado' }];
+  if (cfg.modo === 'desligado' || !ACCESS_TOKEN || !PUBLIC_KEY) return [409, { ok: false, erro: 'pagamento desligado' }];
   const p = await lerPedido(id);
   if (!p) return [404, { ok: false }];
   const mp = p.mercadopago ?? {};
   if (mp.pago_em) return [200, { ok: true, pago: true }];
-  if (p.status === 'cancelado') return [409, { ok: false, erro: 'pedido cancelado' }];
-  const valor = Number(p.valor ?? p.total);
-  if (!(valor >= 1)) return [400, { ok: false, erro: 'valor abaixo de R$ 1,00' }];
-  // Mesmo valor e link ainda válido: devolve o mesmo, para a cliente não receber dois
-  if (mp.link && mp.esperado === valor && Date.parse(mp.link_expira ?? '') > Date.now()) return [200, { ok: true, url: mp.link }];
-
-  const expira = new Date(Date.now() + 7 * 864e5).toISOString();
-  const volta = `${SITE}/acompanhar.html?p=${p.id}`;
-  // O link não sabe como a cliente vai pagar: pedido com preço de Pix só aceita Pix
-  const soPix = p.pagamento === 'Pix' && valor < Number(p.total);
-  const r = await fetch(`${MP}/checkout/preferences`, {
-    method: 'POST',
-    headers: cabecalhosMP(),
-    body: JSON.stringify({
-      items: [{ id: p.numero, title: `Pedido ${p.numero}`, description: resumoItens(p).slice(0, 200), quantity: 1, currency_id: 'BRL', unit_price: valor }],
-      external_reference: p.id,
-      back_urls: { success: volta, pending: volta, failure: volta },
-      auto_return: 'approved',
-      statement_descriptor: NOME_NA_FATURA,
-      expires: true,
-      expiration_date_to: expira,
-      payment_methods: {
-        installments: soPix ? 1 : cfg.parcelas,
-        excluded_payment_types: soPix ? [{ id: 'credit_card' }, { id: 'debit_card' }, { id: 'ticket' }] : [{ id: 'ticket' }],
-      },
-    }),
-  });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok || typeof d.init_point !== 'string') {
-    console.error('Mercado Pago recusou o link', r.status);
-    return [502, { ok: false, erro: 'o Mercado Pago não criou o link' }];
-  }
-  await salvarPedido(p.id, { mercadopago: { ...mp, link: d.init_point, link_expira: expira, preferencia: d.id, esperado: valor } });
-  return [200, { ok: true, url: d.init_point }];
+  if (p.status !== 'novo') return [409, { ok: false, erro: 'este pedido não está mais esperando pagamento' }];
+  if (p.conferir) return [409, { ok: false, erro: 'confira o valor a cobrar e toque em "Já conferi" antes de mandar o link' }];
+  if (!(Number(p.valor ?? p.total) >= 1)) return [400, { ok: false, erro: 'valor abaixo de R$ 1,00' }];
+  const link = `${SITE}/pagamento.html?p=${p.id}`;
+  if (mp.link !== link) await salvarPedido(p.id, { mercadopago: { ...mp, link } });
+  return [200, { ok: true, url: link }];
 }
 
 // ---------- Entrada ----------
@@ -395,7 +449,6 @@ Deno.serve(async (req: Request) => {
     if (req.method !== 'POST') return responder([405, { ok: false }]);
     const corpo = await req.json().catch(() => ({}));
     if (corpo.acao === 'pagar') return responder(await pagar(corpo, req));
-    if (corpo.acao === 'confirmar') return responder(await confirmar(corpo));
     if (corpo.acao === 'dados' && ehId(corpo.id)) return responder(await dados(corpo.id));
     if (corpo.acao === 'situacao' && ehId(corpo.id)) return responder(await situacao(corpo.id));
     if (corpo.acao === 'link' && ehId(corpo.id)) return responder(await ehAdmin(req) ? await criarLink(corpo.id) : [401, { ok: false }]);

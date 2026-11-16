@@ -59,7 +59,7 @@ No iPhone (iOS 16.4 ou mais novo), o aviso só funciona com o painel adicionado 
 
 ## Pagamento online (Mercado Pago)
 
-Vem desligado. A Paola escolhe no painel (aba Loja) como a cliente paga: combinando no WhatsApp (como hoje), por um link gerado no pedido, ou no próprio site, sem sair dele. Quem fala com o Mercado Pago é a função `pagamento-mercadopago`.
+Vem desligado. A Paola escolhe no painel (aba Loja) como a cliente paga: combinando no WhatsApp (como hoje), por um link que ela libera no pedido, ou no próprio site logo depois de pedir. Nos dois casos online, a cliente paga na página `pagamento.html` da loja, sem sair do site. Quem fala com o Mercado Pago é a função `pagamento-mercadopago`, pela **API de Orders** (a API de Payments, mais antiga, está sendo descontinuada).
 
 Como fica seguro:
 
@@ -74,18 +74,22 @@ Para ligar, nesta ordem:
 
 1. Rode o `schema.sql` de novo.
 2. Em *Edge Functions*, crie a função `pagamento-mercadopago` com o conteúdo de `supabase/functions/pagamento-mercadopago/index.ts` e desligue *Verify JWT* nela: quem chama é a loja e o Mercado Pago, sem login. A função confere por conta própria quem pode o quê.
-3. Na conta do Mercado Pago da Paola, confira se existe uma **chave Pix cadastrada** (sem ela, o Pix não aparece) e, em *Suas integrações*, crie uma aplicação.
-4. Na aplicação, em *Webhooks > Configurar notificações*, coloque esta URL nos dois ambientes (teste e produção), marque o evento *Pagamentos* e salve. Isso gera a assinatura secreta.
+3. Na conta do Mercado Pago da Paola, confira se existe uma **chave Pix cadastrada** (sem ela, o Pix não aparece). Em *Suas integrações*, crie uma aplicação do tipo **Checkout Transparente** com **API de Orders**.
+4. Na aplicação, em *Configuração de webhooks*, coloque esta URL nas abas *Teste* e *Produção*, marque só o evento **Order (Mercado Pago)**, em "Outros eventos", e salve. Cada aba mostra a sua assinatura secreta.
 
    `https://jtqxvxghgncqiyougsgs.supabase.co/functions/v1/pagamento-mercadopago/webhook`
 
-5. Em *Edge Functions > Secrets* do Supabase, cadastre com as credenciais **de teste**: `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_PUBLIC_KEY`, `MERCADOPAGO_WEBHOOK_SECRET` e `MERCADOPAGO_AMBIENTE` com o valor `teste`.
+5. Em *Credenciais*, ative as credenciais de teste. Em *Edge Functions > Secrets* do Supabase, cadastre com os valores **de teste**: `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_PUBLIC_KEY`, `MERCADOPAGO_WEBHOOK_SECRET` e `MERCADOPAGO_AMBIENTE` com o valor `teste`.
 6. No painel, aba Loja: nome, CPF ou CNPJ e endereço da loja, e escolha "Aqui no site".
-7. Faça uma compra de teste: Mastercard 5480 8328 0103 3311, código 123, validade 11/30, nome no cartão APRO, CPF 12345678909, com um e-mail diferente do da conta. Teste também um Pix e o nome OTHE (cartão recusado). Olhe o console do navegador: se algum endereço do Mercado Pago aparecer bloqueado, ele precisa entrar em `vercel.json`.
-8. Para vender de verdade: em *Credenciais de produção*, ative a conta, troque os três segredos pelos de produção (a assinatura do webhook de produção é outra) e **apague** `MERCADOPAGO_AMBIENTE`.
+7. Faça compras de teste com o cartão Mastercard 5480 8328 0103 3311, código 123, validade 11/30, CPF 12345678909 e um e-mail diferente do da conta. O nome escrito no cartão decide o resultado: `APRO` aprova, `OTHE` recusa, `APRO-CHOK` pede a confirmação do banco (3DS). Teste também um Pix. Em modo de teste, a função escreve no registro (*Logs*) o motivo quando o Mercado Pago recusa o pedido de cobrança, sem dados da cliente. Olhe também o console do navegador: se algum endereço do Mercado Pago aparecer bloqueado, ele precisa entrar em `vercel.json`.
+8. Para vender de verdade: ative as credenciais de produção, troque os três segredos pelos de produção (a assinatura do webhook de produção é a da aba *Produção*) e **apague** `MERCADOPAGO_AMBIENTE`.
 9. Confira as **parcelas sem juros**. O site promete o número de parcelas sem juros definido no painel, mas quem decide quem paga os juros é a configuração da conta do Mercado Pago. Se a conta não assumir os juros, a cliente pagaria juros e o site estaria errado: ajuste a conta ou o texto antes de ligar.
 
-Se o site ganhar domínio próprio, atualize `SITE` e `ORIGENS` no começo da função e publique a função de novo. Sem isso, o navegador recusa o pagamento vindo do domínio novo.
+Ainda não testado com o Mercado Pago de verdade (depende das credenciais de teste): o formato exato aceito pela API de Orders, o cartão recusado, a confirmação do banco e o aviso de pagamento. Cartão de débito está desligado no formulário até ser testado.
+
+Se o aviso do Mercado Pago atrasar, a página de pagamento e a de acompanhamento pedem para a função conferir a cobrança, então o pedido é confirmado mesmo assim enquanto a cliente estiver com a página aberta.
+
+Se o site ganhar domínio próprio, atualize `SITE` e `ORIGENS` no começo da função e publique a função de novo. Sem isso, o navegador recusa o pagamento vindo do domínio novo, e o link de pagamento aponta para o endereço antigo.
 
 Access Token e assinatura do webhook nunca entram no site nem no GitHub. A Public Key também fica no Supabase, para trocar de teste para produção sem publicar o site.
 

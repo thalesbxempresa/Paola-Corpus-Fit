@@ -1026,9 +1026,9 @@ const zapDoPedido = (numero) => (LOJA.whatsappNumero ? `https://wa.me/${LOJA.wha
 
 function pedidoAcompanhadoHTML(p, volta = null) {
   const atual = ETAPAS.findIndex(([id]) => id === p.status);
-  // Só aceita link do próprio Mercado Pago. Com o pagamento no site, o botão abre a página de pagamento da loja
-  const linkMP = /^https:\/\/([a-z0-9-]+\.)*mercadopago\.com(\.br)?\//.test(p.link_pagamento || '') ? p.link_pagamento : null;
-  const pagar = p.status !== 'novo' ? null : pagaNoSite() ? `pagamento.html?p=${encodeURIComponent(p.id)}` : linkMP;
+  // Com o pagamento no site, ou com o pedido liberado pela loja, o botão abre a página de pagamento da própria loja.
+  // O endereço é montado aqui: o que vem do banco só diz se o pedido foi liberado
+  const pagar = p.status === 'novo' && (pagaNoSite() || p.link_pagamento) ? `pagamento.html?p=${encodeURIComponent(p.id)}` : null;
   const textoNovo = pagar || pagaNoSite() ? 'Recebemos seu pedido. Assim que o pagamento for aprovado, esta etapa muda sozinha.' : null;
   const cancelado = p.status === 'cancelado';
   const ehCorreios = /^[A-Z]{2}\d{9}[A-Z]{2}$/.test(p.rastreio_codigo || '');
@@ -1047,13 +1047,12 @@ function pedidoAcompanhadoHTML(p, volta = null) {
       ${linkEntrega ? `<a class="btn btn-preto btn-bloco" href="${esc(linkEntrega)}" target="_blank" rel="noopener">${ehCorreios && !p.rastreio_link ? 'Abrir o site dos Correios' : 'Ver onde está a entrega'}</a>` : ''}
       ${ehCorreios && !p.rastreio_link ? '<p class="dica-tam">Copie o código e cole no site dos Correios.</p>' : ''}
     </section>` : '';
-  // Volta do Mercado Pago: diz na hora se deu certo, sem a cliente precisar entender as etapas
-  const aviso = volta === 'pago' ? `<p class="acomp-pago">${I.ok}<span><b>Pagamento aprovado!</b> A Paola já recebeu seu pedido e confere seu tamanho antes de enviar.</span></p>`
-    : volta === 'esperando' ? '<p class="acomp-esperando">Recebemos sua volta do pagamento. Assim que o Mercado Pago confirmar, esta página mostra o pedido como pago.</p>' : '';
+  // Pagamento que acabou de ser confirmado: diz na hora, sem a cliente precisar entender as etapas
+  const aviso = volta === 'pago' ? `<p class="acomp-pago">${I.ok}<span><b>Pagamento aprovado!</b> A Paola já recebeu seu pedido e confere seu tamanho antes de enviar.</span></p>` : '';
   return `<span class="sobre">Pedido ${esc(p.numero)}</span>
     <h1 class="titulo">Oi, ${esc(p.primeiro_nome)}!</h1>
     ${aviso}
-    ${pagar && volta !== 'esperando' ? `<a class="btn btn-preto btn-bloco acomp-pagar" href="${esc(pagar)}">Pagar agora no Pix ou no cartão</a>` : ''}
+    ${pagar ? `<a class="btn btn-preto btn-bloco acomp-pagar" href="${esc(pagar)}">Pagar agora no Pix ou no cartão</a>` : ''}
     ${cancelado ? '<p class="acomp-cancelado">Este pedido foi cancelado. Se tiver alguma dúvida, é só falar com a Paola.</p>' : `<ol class="acomp-etapas">${etapas}</ol>`}
     ${rastreio}
     <section class="acomp-resumo">
@@ -1068,10 +1067,19 @@ function pedidoAcompanhadoHTML(p, volta = null) {
 
 function telaAcompanhar() {
   const caixa = $('#acompanhar');
+  // Se o aviso do Mercado Pago atrasou, a própria página pede para o servidor conferir se o pedido já foi pago
+  async function conferirPagamento(p) {
+    if (p.status !== 'novo' || !(pagaNoSite() || p.link_pagamento)) return;
+    const s = await Catalogo.pagamento({ acao: 'situacao', id: p.id }).catch(() => ({}));
+    if (!s.pago) return;
+    const novo = await Catalogo.acompanhar({ p_id: p.id }).catch(() => null);
+    if (novo && novo.status !== 'novo') mostrarPedido(novo, 'pago');
+  }
   const mostrarPedido = (p, volta = null) => {
     history.replaceState(null, '', `acompanhar.html?p=${encodeURIComponent(p.id)}`);
     caixa.innerHTML = pedidoAcompanhadoHTML(p, volta);
     scrollTo(0, 0);
+    if (!volta) conferirPagamento(p);
     $('[data-copiar-rastreio]', caixa)?.addEventListener('click', async () => {
       try { await navigator.clipboard.writeText(p.rastreio_codigo); toast('Código copiado'); } catch (e) { toast('Selecione o código e copie'); }
     });
@@ -1127,21 +1135,6 @@ function telaAcompanhar() {
   const busca = new URLSearchParams(location.search);
   const id = busca.get('p');
   if (!id) return mostrarBusca();
-  // O Mercado Pago devolve a cliente com o número do pagamento na URL. Quem diz se foi pago é o servidor, nunca a URL
-  const pagamentoId = busca.get('payment_id') || busca.get('collection_id') || '';
-  if (/^\d+$/.test(pagamentoId) && busca.get('status') !== 'rejected') {
-    caixa.innerHTML = '<p class="acomp-carregando">Confirmando seu pagamento…</p>';
-    const tentar = async (vez) => {
-      const r = await Catalogo.confirmarPagamento({ id, pagamento_id: pagamentoId }).catch(() => ({}));
-      const p = await Catalogo.acompanhar({ p_id: id }).catch(() => null);
-      if (!p) return mostrarBusca('Não encontramos esse pedido. Digite o número e o CEP.');
-      if (r.pago || p.status !== 'novo') return mostrarPedido(p, 'pago');
-      if (vez < 3) return setTimeout(() => tentar(vez + 1), 4000);
-      return mostrarPedido(p, 'esperando');
-    };
-    tentar(1);
-    return;
-  }
   Catalogo.acompanhar({ p_id: id })
     .then((p) => (p ? mostrarPedido(p) : mostrarBusca('Não encontramos esse pedido. Digite o número e o CEP.')))
     .catch(() => mostrarBusca('Não conseguimos buscar agora. Confira a internet e tente de novo.'));

@@ -1177,9 +1177,10 @@ function pagamentoOnlineHTML(p) {
   if (modoPagamento() === 'desligado' || p.status !== 'novo') return '';
   const andamento = m.status === 'pending' && m.metodo === 'pix' ? 'Pix gerado, esperando a cliente pagar.' : ANDAMENTO_PAGAMENTO[m.status];
   const situacao = andamento ? `<p class="pn-nota">${andamento}</p>` : '';
+  // O link abre a página de pagamento da loja e cobra sempre o valor que estiver no pedido na hora
   if (m.link) {
     return `${situacao}<div class="pn-link-pagamento"><small>Link de pagamento</small><span>${esc(m.link)}</span>
-      <div class="pn-acoes-linha"><button class="pn-link" type="button" data-copiar-pagamento>Copiar link</button><button class="pn-link" type="button" data-gerar-pagamento>Atualizar com o valor a cobrar</button></div></div>`;
+      <div class="pn-acoes-linha"><button class="pn-link" type="button" data-copiar-pagamento>Copiar link</button></div></div>`;
   }
   return `${situacao}<button class="btn btn-claro pn-btn-p" type="button" data-gerar-pagamento>Gerar link de pagamento</button>`;
 }
@@ -1218,7 +1219,10 @@ function cartaoPedido(p, aberto = false) {
         <button class="${zap ? 'pn-link' : 'btn btn-claro pn-btn-p'}" type="button" data-copiar-aviso>Copiar aviso desta etapa</button>
         ${Banco.modo === 'supabase' ? '<button class="pn-link" type="button" data-copiar-link>Copiar só o link de acompanhamento</button>' : ''}
       </div>
-      ${p.conferir ? '<p class="pn-exemplo">O valor enviado pelo site não bateu com o preço do banco. Confira antes de mandar o link de pagamento.</p>' : ''}
+      ${p.conferir ? `<p class="pn-exemplo"><span>${p.mercadopago?.pago_em
+        ? 'O Mercado Pago avisou de algo fora do normal neste pagamento (valor diferente, estorno ou cobrança repetida). Confira na conta do Mercado Pago antes de enviar.'
+        : 'O valor enviado pelo site não bateu com o preço do banco. Enquanto estiver assim, este pedido não pode ser pago pelo site. Acerte o valor a cobrar e avise que conferiu.'}</span>
+        <button class="pn-link" type="button" data-conferido>Já conferi</button></p>` : ''}
       <div class="pn-cobranca"><h3>Pagamento: ${esc(p.pagamento || 'não informado')}</h3>
         <div class="campo"><label for="vl-${esc(p.id)}">Valor a cobrar</label><input id="vl-${esc(p.id)}" data-valor inputmode="decimal" value="${esc(precoTxt(valorDe(p)))}"></div>
         <small class="pn-ajuda">${comDesconto ? `Já com o desconto do Pix (preço cheio: ${brl(p.total)}). ` : ''}Mude se somar frete ou der outro desconto. É este valor que entra no faturamento.</small>
@@ -1385,8 +1389,7 @@ async function abaPedidos(alvo) {
         e.target.value = precoTxt(valorDe(p));
         return;
       }
-      const temLink = p.mercadopago?.link && !p.mercadopago?.pago_em;
-      await atualizar(p, e.target, { valor }, temLink ? 'Valor salvo. Atualize o link de pagamento antes de mandar.' : 'Valor salvo');
+      await atualizar(p, e.target, { valor }, 'Valor salvo');
     } else if (e.target.matches('[data-nota]')) {
       try {
         await Banco.alterarPedido(p.id, { nota: e.target.value.trim() });
@@ -1416,11 +1419,16 @@ async function abaPedidos(alvo) {
         const url = await Banco.criarLinkPagamento(p.id);
         p.mercadopago = { ...(p.mercadopago || {}), link: url };
         redesenharCartao(p, botao);
-        await copiar(url, 'Link criado e copiado. Mande para a cliente.');
+        await copiar(url, 'Link copiado. Mande para a cliente.');
       } catch (ex) {
         botao.disabled = false;
         toast(`Não criou o link: ${ex.message}`);
       }
+      return;
+    }
+    if (botao.matches('[data-conferido]')) {
+      const p = pedidoDe(botao);
+      await atualizar(p, botao, { conferir: false }, 'Conferência anotada');
       return;
     }
     if (botao.matches('[data-copiar-pagamento]')) {

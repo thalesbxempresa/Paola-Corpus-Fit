@@ -132,8 +132,6 @@ const Catalogo = (() => {
     gravar(FILA, JSON.stringify((parse(ler(FILA)) || []).filter((x) => x.id !== p.id)));
     return `pagamento.html?p=${encodeURIComponent(p.id)}`;
   }
-  // Na volta do link do Mercado Pago, a página do pedido pede a confirmação (caso o aviso dele ainda não tenha chegado)
-  const confirmarPagamento = (dados) => funcaoPagamento({ acao: 'confirmar', ...dados });
 
   // Versão crua para o painel (sem o tratamento de HTML da loja)
   const doc = () => {
@@ -150,5 +148,5 @@ const Catalogo = (() => {
     aplicar(padrao);
   };
 
-  return { ligado, FIXOS, pronto, doc, valido, salvarLocal, restaurar, evento, enviarPedido, acompanhar, pagar, confirmarPagamento, pagamento: funcaoPagamento };
+  return { ligado, FIXOS, pronto, doc, valido, salvarLocal, restaurar, evento, enviarPedido, acompanhar, pagar, pagamento: funcaoPagamento };
 })();
