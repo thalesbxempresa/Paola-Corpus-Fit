@@ -9,6 +9,13 @@ window.telaPagamento = function telaPagamento() {
   const caixa = document.querySelector('#pagamento');
   const id = new URLSearchParams(location.search).get('p') || '';
   const linkPedido = `acompanhar.html?p=${encodeURIComponent(id)}`;
+  // Sem juros até d.parcelas; acima disso, até d.parcelasMax, a cliente paga os juros
+  const textoParcelas = (d) => {
+    const sj = Number(d.parcelas) || 1;
+    const max = Math.max(sj, Number(d.parcelasMax) || sj);
+    if (max > sj) return sj > 1 ? `No cartão, ${sj}x sem juros ou até ${max}x` : `No cartão, em até ${max}x`;
+    return sj > 1 ? `No cartão, em até ${sj}x sem juros` : 'No cartão, à vista';
+  };
   const novoId = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/x/g, () => Math.floor(Math.random() * 16).toString(16)));
 
   const falha = (titulo, texto) => {
@@ -51,7 +58,7 @@ window.telaPagamento = function telaPagamento() {
       <ul class="pag-itens">${d.itens.map((x) => `<li>${esc(x.qtd || 1)}x ${esc(x.nome)}${x.tam ? `<small>Tamanho ${esc(x.tam)}</small>` : ''}</li>`).join('')}</ul>
       <div class="pag-valores">
         <div><small>No Pix</small><b>${brl(d.pix)}</b></div>
-        <div><small>No cartão, em até ${esc(d.parcelas)}x</small><b>${brl(d.cartao)}</b></div>
+        <div><small>${textoParcelas(d)}</small><b>${brl(d.cartao)}</b></div>
       </div>
       <p class="dica-tam erro" data-aviso role="alert" hidden></p>
       <div id="paymentBrick_container"></div>
@@ -129,7 +136,7 @@ window.telaPagamento = function telaPagamento() {
         initialization: { amount: d.cartao },
         customization: {
           // Cartão de crédito e Pix. Débito fica de fora até ser testado com a conta da loja
-          paymentMethods: { creditCard: 'all', bankTransfer: ['pix'], maxInstallments: d.parcelas },
+          paymentMethods: { creditCard: 'all', bankTransfer: ['pix'], maxInstallments: d.parcelasMax || d.parcelas },
           visual: { style: { customVariables: { baseColor: '#B03A5B' } } },
         },
         callbacks: {

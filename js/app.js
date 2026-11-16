@@ -7,6 +7,14 @@ const $$ = (sel, raiz = document) => [...raiz.querySelectorAll(sel)];
 const brl = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const pix = (v) => v * (1 - LOJA.pix);
 const parcela = (v) => v / LOJA.parcelas;
+// LOJA.parcelas é o sem juros, que a loja assume; acima dele, até parcelasMax(), a cliente paga os juros
+const parcelasMax = () => Math.max(LOJA.parcelas, Number(LOJA.parcelasMax) || LOJA.parcelas);
+const textoCartao = () => {
+  const sj = LOJA.parcelas;
+  const max = parcelasMax();
+  if (max > sj) return sj > 1 ? `cartão em até ${sj}x sem juros ou em até ${max}x com juros` : `cartão em até ${max}x com juros`;
+  return sj > 1 ? `cartão em até ${sj}x sem juros` : 'cartão à vista';
+};
 const pctPix = () => `${(LOJA.pix * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
 const item = (id) => PRODUTOS.find((p) => p.id === id) || KITS.find((k) => k.id === id);
 const nomeCurto = (it) => it.curto || it.nome;
@@ -193,7 +201,7 @@ function montarRodape() {
           <li><a href="${LOJA.antesDepois}" target="_blank" rel="noopener">Antes e depois de clientes</a></li>
         </ul>
           <h4 style="margin-top:22px">Pagamento</h4>
-          <div class="pagamentos"><span>Pix</span><span>Crédito ${LOJA.parcelas}x</span>${pagaNoSite() ? '' : '<span>Boleto</span>'}</div>
+          <div class="pagamentos"><span>Pix</span><span>Crédito ${parcelasMax()}x</span>${pagaNoSite() ? '' : '<span>Boleto</span>'}</div>
         </div>
       </div>
       <div class="rodape-base">${LOJA.empresa && LOJA.documento && LOJA.enderecoLoja
@@ -379,7 +387,7 @@ function finalizar() {
       <p><b>Você paga aqui mesmo, no Pix ou no cartão.</b> O pagamento é protegido pelo Mercado Pago e a Paola recebe seu pedido na hora.</p>
     </div>
     <ul class="espera-lista aviso-lista">
-      <li>Pix com ${pctPix()} de desconto ou cartão em até ${LOJA.parcelas}x sem juros</li>
+      <li>Pix com ${pctPix()} de desconto ou ${textoCartao()}</li>
       <li>A Paola confere seu tamanho antes de enviar e, se precisar, te chama no WhatsApp</li>
       <li>Você acompanha cada etapa pelo link do pedido</li>
     </ul>` : `
@@ -390,7 +398,7 @@ function finalizar() {
     </div>
     <ul class="espera-lista aviso-lista">
       <li>Ela confere seu tamanho antes de enviar e, se precisar, pede uma foto de frente</li>
-      <li>Você recebe dela o link de pagamento: Pix com ${pctPix()} de desconto ou cartão em até ${LOJA.parcelas}x</li>
+      <li>Você recebe dela o link de pagamento: Pix com ${pctPix()} de desconto ou ${textoCartao()}</li>
       <li>Nada é cobrado agora</li>
     </ul>`}
     <form class="checkout" id="form-checkout" novalidate>
@@ -409,7 +417,7 @@ function finalizar() {
         <div class="campo"><label for="ck-uf">UF</label><input id="ck-uf" name="uf" autocomplete="address-level1" maxlength="2" required></div>
       </div>
       <div class="campo"><span class="rotulo">Como prefere pagar?</span>
-        <div class="tamanhos" role="radiogroup" aria-label="Forma de pagamento">${['Pix', 'Cartão'].map((f) => `<button class="chip" type="button" role="radio" data-pag="${f}" aria-checked="${f === pagamento}">${f === 'Pix' ? `Pix (${pctPix()} off)` : `Cartão em até ${LOJA.parcelas}x`}</button>`).join('')}</div>
+        <div class="tamanhos" role="radiogroup" aria-label="Forma de pagamento">${['Pix', 'Cartão'].map((f) => `<button class="chip" type="button" role="radio" data-pag="${f}" aria-checked="${f === pagamento}">${f === 'Pix' ? `Pix (${pctPix()} off)` : `Cartão em até ${parcelasMax()}x`}</button>`).join('')}</div>
       </div>
       <div class="ck-total"><span>Total do pedido</span><b>${brl(subtotal(s))}</b></div>
       <p class="dica-tam erro" data-erro hidden></p>
@@ -861,7 +869,7 @@ function telaProduto() {
           ${it.uso ? `<details><summary>Como usar</summary><div class="conteudo">${it.uso}</div></details>` : ''}
           ${usaTam ? `<details><summary>Dobra? Marca? Machuca?</summary><div class="conteudo"><p><b>Dobra ou enrola?</b> Não. As barbatanas mantêm a cinta no lugar, mesmo sentada ou treinando.</p><p style="margin-top:10px"><b>Quantas regulagens?</b> Duas regulagens de colchete por dentro e mais o zíper por fora, na frente.</p><p style="margin-top:10px"><b>Marca na roupa?</b> Não marca por baixo da roupa.</p><p style="margin-top:10px"><b>Machuca?</b> O tecido cetinete é pós-cirúrgico e antialérgico. Comece com poucas horas por dia e aumente aos poucos.</p></div></details>` : ''}
           ${usaTam ? `<details><summary>Tabela de medidas</summary><div class="conteudo">${tabelaHTML()}<p style="margin-top:10px">A cinta estica, então o que vale é o número da calça ou short, não a medida em centímetros.</p></div></details>` : ''}
-          <details><summary>Entrega e pagamento</summary><div class="conteudo">Enviamos do ${LOJA.cidade} para todo o Brasil. Pix com ${pctPix()} de desconto ou cartão em até ${LOJA.parcelas}x sem juros. O prazo de entrega a Paola confirma no WhatsApp.</div></details>
+          <details><summary>Entrega e pagamento</summary><div class="conteudo">Enviamos do ${LOJA.cidade} para todo o Brasil. Pix com ${pctPix()} de desconto ou ${textoCartao()}. O prazo de entrega a Paola confirma no WhatsApp.</div></details>
         </div>
       </div>
     </div>`;
@@ -1246,6 +1254,7 @@ function preencherValores() {
     'duplo-a-mais': brlLimpo(item('combo-duplo').preco - item('cinta-ziper-30').preco),
     'pix-pct': pctPix(),
     parcelas: `${LOJA.parcelas}x`,
+    'parcelas-max': `${parcelasMax()}x`,
   };
   $$('[data-v]').forEach((el) => { el.textContent = valores[el.dataset.v]; });
   $$('[data-so-de]').forEach((el) => { el.hidden = !kit.de; });
@@ -1253,7 +1262,7 @@ function preencherValores() {
   if (pagaNoSite()) {
     const textos = {
       hero: 'Pague no Pix ou no cartão aqui no site. A Paola confere seu tamanho antes de enviar.',
-      faq: `<summary>Como é o pagamento?</summary><p>Você paga aqui no site, com a proteção do Mercado Pago: no Pix (com ${pctPix()} de desconto) ou no cartão em até ${LOJA.parcelas}x sem juros. Depois, a Paola confere seu tamanho e envia do ${esc(LOJA.cidade.split(',')[0])} para todo o Brasil.</p>`,
+      faq: `<summary>Como é o pagamento?</summary><p>Você paga aqui no site, com a proteção do Mercado Pago: no Pix (com ${pctPix()} de desconto) ou no ${textoCartao()}. Depois, a Paola confere seu tamanho e envia do ${esc(LOJA.cidade.split(',')[0])} para todo o Brasil.</p>`,
     };
     $$('[data-texto-site]').forEach((el) => { el.innerHTML = textos[el.dataset.textoSite]; });
   }

@@ -2390,10 +2390,13 @@ function abaLoja(alvo) {
         ${campo('Cidade de envio', 'cidade', l.cidade)}
       </section>
       <section class="pn-card"><h2>Vendas</h2>
-        <div class="pn-3">
+        <div class="pn-2">
           ${campo('Frete grátis acima de', 'freteGratis', precoTxt(l.freteGratis), { attrs: 'inputmode="decimal"' })}
           ${campo('Desconto no Pix (%)', 'pixPct', precoTxt(Math.round(l.pix * 1000) / 10), { attrs: 'inputmode="decimal"' })}
-          ${campo('Parcelas sem juros', 'parcelas', l.parcelas, { tipo: 'number', attrs: 'inputmode="numeric" min="1" max="24"' })}
+        </div>
+        <div class="pn-2">
+          ${campo('Parcelas sem juros', 'parcelas', l.parcelas, { tipo: 'number', attrs: 'inputmode="numeric" min="1" max="24"', ajuda: 'Você paga os juros. Use o mesmo número do "parcelado vendedor" do Mercado Pago.' })}
+          ${campo('Parcela no máximo em', 'parcelasMax', Math.max(l.parcelas, Number(l.parcelasMax) || l.parcelas), { tipo: 'number', attrs: 'inputmode="numeric" min="1" max="24"', ajuda: 'Acima das parcelas sem juros, a cliente paga os juros.' })}
         </div>
         ${campo('Lançamento da moda praia', 'lancamentoPraia', (l.lancamentoPraia || '').slice(0, 16), { tipo: 'datetime-local', ajuda: 'Vazio: a contagem regressiva não aparece. Só use data real.' })}
       </section>
@@ -2476,8 +2479,10 @@ function abaLoja(alvo) {
     if (frete === null || Number.isNaN(frete)) return falhar('O frete grátis precisa ser um valor. Ex.: 299.');
     if (pixPct === null || Number.isNaN(pixPct) || pixPct > 50) return falhar('O desconto no Pix precisa ficar entre 0 e 50%.');
     if (!Number.isInteger(parcelas) || parcelas < 1 || parcelas > 24) return falhar('As parcelas precisam ficar entre 1 e 24.');
+    const parcelasMax = Number(el.parcelasMax.value);
+    if (!Number.isInteger(parcelasMax) || parcelasMax < parcelas || parcelasMax > 24) return falhar('O máximo de parcelas precisa ser igual ou maior que as parcelas sem juros, até 24.');
     const pgModo = el.pgModo?.value || 'desligado';
-    if (pgModo !== 'desligado' && parcelas > 12) return falhar('O Mercado Pago parcela em até 12x. Ajuste as parcelas sem juros.');
+    if (pgModo !== 'desligado' && parcelasMax > 12) return falhar('O Mercado Pago parcela em até 12x. Ajuste o máximo de parcelas.');
     if (pgModo === 'site' && (!el.empresa.value.trim() || soNumeros(el.documento.value).length < 11 || !el.enderecoLoja.value.trim())) {
       return falhar('Para cobrar no site, preencha nome, CPF ou CNPJ e endereço da loja.');
     }
@@ -2508,6 +2513,7 @@ function abaLoja(alvo) {
       freteGratis: frete,
       pix: pixPct / 100,
       parcelas,
+      parcelasMax,
       lancamentoPraia: dataPraia ? `${dataPraia}:00-03:00` : '',
       ...(el.pgModo ? {
         pagarNoSite: pgModo === 'site',

@@ -17,7 +17,9 @@ const LOJA = {
   cidade: 'Rio de Janeiro, RJ',
   freteGratis: 299,
   pix: 0.05,
-  parcelas: 6,
+  // Sem juros (a loja assume, igual ao "parcelado vendedor" do Mercado Pago) e o máximo no cartão, com juros para a cliente acima disso
+  parcelas: 3,
+  parcelasMax: 6,
   // Pagamento no site pelo Mercado Pago: liga pelo painel (aba Loja). Desligado, a Paola manda o link no WhatsApp
   pagarNoSite: false,
   // Mostrar para a cliente quantas peças há no tamanho escolhido (liga no painel, em Produtos > Estoque)

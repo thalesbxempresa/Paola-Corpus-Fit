@@ -22,7 +22,7 @@ const NOME_NA_FATURA = 'PAOLACORPUSFIT';
 const ABERTOS = ['pending', 'in_process'];
 
 type Resposta = [number, Record<string, unknown>];
-type Config = { modo: string; pix: number; parcelas: number };
+type Config = { modo: string; pix: number; parcelas: number; parcelasMax: number };
 
 const texto = (v: string) => new TextEncoder().encode(v);
 const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
@@ -53,10 +53,13 @@ async function lerLista(caminho: string, init?: RequestInit) {
 async function config(): Promise<Config> {
   const [c] = await lerLista('loja_config?id=eq.1&select=dados');
   const d = c?.dados ?? {};
+  // parcelas: sem juros, a loja assume (igual ao "parcelado vendedor" da conta). parcelasMax: acima delas, a cliente paga os juros
+  const parcelas = Math.min(12, Math.max(1, Number(d.loja?.parcelas) || 1));
   return {
     modo: d.pagamento?.modo ?? 'desligado',
     pix: Number(d.loja?.pix) || 0,
-    parcelas: Math.min(12, Math.max(1, Number(d.loja?.parcelas) || 1)),
+    parcelas,
+    parcelasMax: Math.min(12, Math.max(parcelas, Number(d.loja?.parcelasMax) || parcelas)),
   };
 }
 async function lerPedido(id: string) {
@@ -244,6 +247,7 @@ async function dados(id: string): Promise<Resposta> {
     cartao: v.cartao,
     pix: v.pix,
     parcelas: cfg.parcelas,
+    parcelasMax: cfg.parcelasMax,
     aberto: ABERTOS.includes(mp.status) ? { pix: mp.metodo === 'pix', codigo: mp.pix_codigo ?? null, url: mp.pix_url ?? null } : null,
   }];
 }
@@ -261,7 +265,7 @@ function validarFormulario(f: Record<string, any>, cfg: Config, tipoInformado: u
   if (metodo === 'pix') return { pix: true, metodo, tipo: 'bank_transfer', payer };
   const token = String(f.token ?? '');
   const parcelas = Number(f.installments);
-  if (!/^[\w-]{10,120}$/.test(token) || !Number.isInteger(parcelas) || parcelas < 1 || parcelas > cfg.parcelas) return null;
+  if (!/^[\w-]{10,120}$/.test(token) || !Number.isInteger(parcelas) || parcelas < 1 || parcelas > cfg.parcelasMax) return null;
   const debito = tipoInformado === 'debit_card' || metodo.startsWith('deb');
   if (debito && parcelas !== 1) return null;
   return { pix: false, metodo, tipo: debito ? 'debit_card' : 'credit_card', token, parcelas, payer };
