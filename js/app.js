@@ -14,6 +14,13 @@ const temPreco = (it) => it.preco != null;
 const visivel = (it) => it.ativo !== false;
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const linkAcompanhar = (id) => new URL(`acompanhar.html?p=${encodeURIComponent(id)}`, location.href).href;
+// No rodapé, CNPJ e CPF saem formatados mesmo que a loja tenha digitado só os números
+const documentoBonito = (v) => {
+  const d = String(v ?? '').replace(/\D/g, '');
+  if (d.length === 14) return `CNPJ ${d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5')}`;
+  if (d.length === 11) return `CPF ${d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4')}`;
+  return String(v ?? '').trim();
+};
 // "R$ 30" quando é valor redondo; "R$ 30,50" quando não é
 const brlLimpo = (v) => { const c = Math.round(v * 100) / 100; return Number.isInteger(c) ? `R$ ${c.toLocaleString('pt-BR')}` : brl(c); };
 const precisaTamanho = (it) => (it.itens ? it.itens.some((i) => item(i).tamanhos) : !!it.tamanhos);
@@ -190,7 +197,7 @@ function montarRodape() {
         </div>
       </div>
       <div class="rodape-base">${LOJA.empresa && LOJA.documento && LOJA.enderecoLoja
-        ? `© 2026 ${esc(LOJA.empresa)} · ${esc(LOJA.documento)} · ${esc(LOJA.enderecoLoja)}${LOJA.email ? ` · ${esc(LOJA.email)}` : ''}${pagaNoSite() ? ' · Pagamentos pelo Mercado Pago' : ''}`
+        ? `© 2026 ${esc(LOJA.empresa)} · ${esc(documentoBonito(LOJA.documento))} ·${esc(LOJA.enderecoLoja)}${LOJA.email ? ` · ${esc(LOJA.email)}` : ''}${pagaNoSite() ? ' · Pagamentos pelo Mercado Pago' : ''}`
         : '© 2026 Paola Corpus Fit · Protótipo visual de demonstração: nenhum pedido é cobrado.'}</div>
     </div>
   </footer>`;
