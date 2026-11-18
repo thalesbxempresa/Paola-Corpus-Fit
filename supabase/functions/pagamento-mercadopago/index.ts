@@ -10,10 +10,16 @@
 const BASE = Deno.env.get('SUPABASE_URL')!;
 const segredos = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') ?? '{}');
 const CHAVE: string = segredos.default ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const ACCESS_TOKEN = Deno.env.get('MERCADOPAGO_ACCESS_TOKEN') ?? '';
-const PUBLIC_KEY = Deno.env.get('MERCADOPAGO_PUBLIC_KEY') ?? '';
-const WEBHOOK_SECRET = Deno.env.get('MERCADOPAGO_WEBHOOK_SECRET') ?? '';
 const AMBIENTE_TESTE = Deno.env.get('MERCADOPAGO_AMBIENTE') === 'teste';
+// Os dois jogos de chaves ficam guardados lado a lado e nunca se misturam:
+// em teste (MERCADOPAGO_AMBIENTE = teste) valem MERCADOPAGO_...; sem esse segredo valem as de produção, MERCADOPAGO_PROD_...
+// Para vender de verdade basta apagar MERCADOPAGO_AMBIENTE. Sem as chaves de produção, o pagamento fica desligado.
+const chaveMP = (nome: string, producao = !AMBIENTE_TESTE) => (Deno.env.get(`MERCADOPAGO_${producao ? 'PROD_' : ''}${nome}`) ?? '').trim();
+const ACCESS_TOKEN = chaveMP('ACCESS_TOKEN');
+const PUBLIC_KEY = chaveMP('PUBLIC_KEY');
+const WEBHOOK_SECRET = chaveMP('WEBHOOK_SECRET');
+// Só para o painel saber se a loja já pode sair do teste. Diz se existem, nunca o conteúdo
+const PRODUCAO_PRONTA = ['ACCESS_TOKEN', 'PUBLIC_KEY', 'WEBHOOK_SECRET'].every((nome) => !!chaveMP(nome, true));
 const MP = 'https://api.mercadopago.com';
 const SITE = 'https://paolacorpusfit.vercel.app';
 const ORIGENS = [SITE, 'https://thalesbxempresa.github.io'];
@@ -448,7 +454,7 @@ Deno.serve(async (req: Request) => {
     if (url.pathname.endsWith('/webhook')) return responder(req.method === 'POST' ? await webhook(req, url) : [405, { ok: false }]);
     if (req.method === 'GET') {
       const cfg = await config();
-      return responder([200, { ok: true, modo: cfg.modo, credenciais: !!(ACCESS_TOKEN && PUBLIC_KEY), webhook: !!WEBHOOK_SECRET, teste: AMBIENTE_TESTE }]);
+      return responder([200, { ok: true, modo: cfg.modo, credenciais: !!(ACCESS_TOKEN && PUBLIC_KEY), webhook: !!WEBHOOK_SECRET, teste: AMBIENTE_TESTE, producao: PRODUCAO_PRONTA }]);
     }
     if (req.method !== 'POST') return responder([405, { ok: false }]);
     const corpo = await req.json().catch(() => ({}));
