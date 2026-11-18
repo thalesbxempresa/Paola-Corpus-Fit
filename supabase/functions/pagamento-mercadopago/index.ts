@@ -21,8 +21,9 @@ const WEBHOOK_SECRET = chaveMP('WEBHOOK_SECRET');
 // Só para o painel saber se a loja já pode sair do teste. Diz se existem, nunca o conteúdo
 const PRODUCAO_PRONTA = ['ACCESS_TOKEN', 'PUBLIC_KEY', 'WEBHOOK_SECRET'].every((nome) => !!chaveMP(nome, true));
 const MP = 'https://api.mercadopago.com';
-const SITE = 'https://paolacorpusfit.vercel.app';
-const ORIGENS = [SITE, 'https://thalesbxempresa.github.io'];
+const SITE = 'https://paolacorpusfit.com.br';
+// O www e o endereço antigo da Vercel continuam aceitos: links e pedidos já enviados ainda abrem por eles
+const ORIGENS = [SITE, 'https://www.paolacorpusfit.com.br', 'https://paolacorpusfit.vercel.app', 'https://thalesbxempresa.github.io'];
 const NOME_NA_FATURA = 'PAOLACORPUSFIT';
 // Situações em que ainda pode entrar dinheiro: antes de cobrar de novo, a cobrança antiga é cancelada
 const ABERTOS = ['pending', 'in_process'];

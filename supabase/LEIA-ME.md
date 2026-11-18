@@ -89,7 +89,9 @@ Já testado com as chaves de teste: cartão aprovado, Pix gerado na página e av
 
 Se o aviso do Mercado Pago atrasar, a página de pagamento e a de acompanhamento pedem para a função conferir a cobrança, então o pedido é confirmado mesmo assim enquanto a cliente estiver com a página aberta.
 
-Se o site ganhar domínio próprio, atualize `SITE` e `ORIGENS` no começo da função e publique a função de novo. Sem isso, o navegador recusa o pagamento vindo do domínio novo, e o link de pagamento aponta para o endereço antigo.
+O site responde em `https://paolacorpusfit.com.br`. O domínio está registrado na Super Domínios e usa o DNS de lá (*Gerenciar DNS*): `@` do tipo A para `216.198.79.1` e `www` do tipo CNAME para o endereço que a Vercel mostra em *Domains*. O `www` redireciona para o endereço sem www (regra em `vercel.json`), e o endereço antigo `paolacorpusfit.vercel.app` continua funcionando.
+
+Se o domínio mudar, atualize `SITE` e `ORIGENS` no começo da função e publique a função de novo. Sem isso, o navegador recusa o pagamento vindo do domínio novo, e o link de pagamento aponta para o endereço antigo. Atualize também *Authentication > URL Configuration* no Supabase.
 
 Access Token e assinatura do webhook nunca entram no site nem no GitHub. A Public Key também fica no Supabase, para trocar de teste para produção sem publicar o site.
 
