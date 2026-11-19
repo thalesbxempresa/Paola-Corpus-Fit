@@ -95,6 +95,17 @@ Se o domínio mudar, atualize `SITE` e `ORIGENS` no começo da função e publiq
 
 Access Token e assinatura do webhook nunca entram no site nem no GitHub. A Public Key também fica no Supabase, para trocar de teste para produção sem publicar o site.
 
+## Gestão do pedido no painel
+
+Cada pedido tem um próximo passo só (confirmar, preparar, enviar, entregar). O que foge disso aparece como pendência, numa fila própria em Início ("Precisam de atenção"), e o pedido com pendência fica fora de preparar, de enviar e do lote de etiquetas até alguém resolver.
+
+- **Dinheiro devolvido (estorno):** se o pedido ainda não tinha sido enviado, a função de pagamento cancela o pedido sozinha, o estoque volta e ele sai do faturamento. Se já tinha sido enviado, o pedido continua como está, sai do faturamento e pede conferência.
+- **Contestação no banco ou devolução de parte do valor:** o pedido para e pede conferência. Não é cancelado sozinho.
+- **Cancelar pedido:** pede o motivo. Se a cliente tinha deixado um Pix ou cartão em aberto, a cobrança é cancelada no Mercado Pago antes, para ela não pagar um pedido cancelado. Cancelar **não devolve dinheiro**: pedido pago pelo site e cancelado fica como "Falta devolver o dinheiro" até a devolução ser feita no Mercado Pago (o aviso some sozinho) ou a loja marcar que devolveu de outro jeito.
+- **Reabrir pedido:** volta para a etapa em que estava. Se o dinheiro foi devolvido, volta a esperar pagamento.
+- **Editar pedido:** troca peça, tamanho e quantidade e corrige nome, WhatsApp e endereço. Em pedido já pago pelo site o valor cobrado não muda: o painel mostra a diferença para a loja acertar com a cliente. Em pedido ainda não pago, o valor é refeito e a cobrança antiga em aberto é cancelada. O banco acerta o estoque sozinho na troca.
+- **Excluir pedido** e **corrigir a etapa** ficam em "Mais opções", porque são para engano, não para o dia a dia.
+
 ## O que cada um pode fazer
 
 | Quem | Pode | Não pode |

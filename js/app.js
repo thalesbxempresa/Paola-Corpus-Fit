@@ -1068,12 +1068,16 @@ function pedidoAcompanhadoHTML(p, volta = null) {
     <h1 class="titulo">Oi, ${esc(p.primeiro_nome)}!</h1>
     ${aviso}
     ${pagar ? `<a class="btn btn-preto btn-bloco acomp-pagar" href="${esc(pagar)}">Pagar agora no Pix ou no cartão</a>` : ''}
-    ${cancelado ? '<p class="acomp-cancelado">Este pedido foi cancelado. Se tiver alguma dúvida, é só falar com a Paola.</p>' : `<ol class="acomp-etapas">${etapas}</ol>`}
+    ${cancelado
+    ? `<p class="acomp-cancelado">${p.devolvido
+      ? 'Este pedido foi cancelado e o pagamento foi devolvido pelo Mercado Pago. O prazo para o valor voltar depende do seu banco ou cartão.'
+      : 'Este pedido foi cancelado. Se tiver alguma dúvida, é só falar com a Paola.'}</p>`
+    : `<ol class="acomp-etapas">${etapas}</ol>`}
     ${rastreio}
     <section class="acomp-resumo">
       <h2>Seu pedido</h2>
       <ul>${(p.itens || []).map((x) => `<li>${esc(x.qtd || 1)}x ${esc(x.nome)}${x.tam ? `<small>Tamanho ${esc(x.tam)}</small>` : ''}</li>`).join('')}</ul>
-      <div class="acomp-total"><span>Total</span><b>${brl(Number(p.total))}</b></div>
+      <div class="acomp-total"><span>${p.pago && p.valor != null ? 'Total pago' : 'Total'}</span><b>${brl(Number(p.pago && p.valor != null ? p.valor : p.total))}</b></div>
       ${p.cidade ? `<p class="dica-tam">Entrega em ${esc(p.cidade)}/${esc(p.uf)}</p>` : ''}
     </section>
     <a class="btn btn-claro btn-bloco" href="${esc(zapDoPedido(p.numero))}" target="_blank" rel="noopener">${I.whats}Falar com a Paola sobre este pedido</a>

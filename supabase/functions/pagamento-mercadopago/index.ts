@@ -111,7 +111,8 @@ async function lerOrdem(id: string) {
 function situacaoDaOrdem(o: Record<string, any>) {
   const s = String(o?.status ?? '');
   const d = String(o?.status_detail ?? '');
-  if (s === 'processed') return d === 'accredited' ? 'approved' : d === 'partially_refunded' ? 'refunded' : 'in_process';
+  // Devolução de só uma parte não é estorno: a venda continua valendo, a loja só confere o valor
+  if (s === 'processed') return d === 'accredited' ? 'approved' : d === 'partially_refunded' ? 'partially_refunded' : 'in_process';
   if (s === 'action_required') return 'pending';
   if (s === 'failed') return 'rejected';
   if (['canceled', 'cancelled', 'expired'].includes(s)) return 'cancelled';
@@ -188,8 +189,19 @@ async function aplicar(o: Record<string, any>, adotar = false): Promise<boolean>
     } else {
       campos.conferir = true;
     }
-  } else if (['refunded', 'charged_back'].includes(st) && mp.pago_em) {
-    // Estorno ou contestação depois de pago: a loja precisa olhar antes de enviar
+  } else if (st === 'refunded' && mp.pago_em) {
+    registro.estornado_em = mp.estornado_em ?? agora();
+    if (['novo', 'pago', 'preparando'].includes(p.status)) {
+      // Dinheiro devolvido antes do envio: o pedido é cancelado sozinho, e o banco devolve as peças ao estoque
+      campos.status = 'cancelado';
+      campos.conferir = false;
+      campos.motivo_cancelamento = 'Pagamento devolvido pelo Mercado Pago';
+    } else if (p.status !== 'cancelado' && !mp.estornado_em) {
+      // Já tinha saído: a loja decide o que fazer. Avisa uma vez só, para o "Já conferi" não ser desfeito por aviso repetido
+      campos.conferir = true;
+    }
+  } else if (['partially_refunded', 'charged_back'].includes(st) && mp.pago_em && mp.status !== st) {
+    // Devolução parcial ou contestação no banco: a loja precisa olhar. Também avisa uma vez só
     campos.conferir = true;
   }
   await salvarPedido(id, campos);
@@ -439,6 +451,23 @@ async function criarLink(id: string): Promise<Resposta> {
   return [200, { ok: true, url: link }];
 }
 
+// A loja cancelou o pedido ou mudou o valor: o Pix ou cartão que a cliente deixou em aberto é cancelado no Mercado Pago,
+// para ela não pagar um pedido cancelado nem um valor antigo. Se ela pagou nesse meio-tempo, o pedido fica pago
+async function cancelarCobranca(id: string): Promise<Resposta> {
+  const p = await lerPedido(id);
+  if (!p) return [404, { ok: false }];
+  const mp = p.mercadopago ?? {};
+  if (mp.pago_em) return [200, { ok: true, cancelada: false, pago: true }];
+  if (!ACCESS_TOKEN || !mp.ordem_id || !ABERTOS.includes(mp.status)) return [200, { ok: true, cancelada: false }];
+  const r = await cancelarOrdem(mp.ordem_id, id, 'loja');
+  if (r === 'pago') return [200, { ok: true, cancelada: false, pago: true }];
+  if (r === true) {
+    const atual = (await lerPedido(id))?.mercadopago ?? mp;
+    await salvarPedido(id, { mercadopago: { ...atual, status: 'cancelled', pix_codigo: null, pix_url: null, atualizado_em: agora() } });
+  }
+  return [200, { ok: true, cancelada: r === true }];
+}
+
 // ---------- Entrada ----------
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
@@ -463,6 +492,7 @@ Deno.serve(async (req: Request) => {
     if (corpo.acao === 'dados' && ehId(corpo.id)) return responder(await dados(corpo.id));
     if (corpo.acao === 'situacao' && ehId(corpo.id)) return responder(await situacao(corpo.id));
     if (corpo.acao === 'link' && ehId(corpo.id)) return responder(await ehAdmin(req) ? await criarLink(corpo.id) : [401, { ok: false }]);
+    if (corpo.acao === 'cancelar' && ehId(corpo.id)) return responder(await ehAdmin(req) ? await cancelarCobranca(corpo.id) : [401, { ok: false }]);
     return responder([400, { ok: false }]);
   } catch (e) {
     // Nunca o erro inteiro: ele pode conter dados do pagamento

@@ -53,21 +53,41 @@ const VENDA = new Set(['pago', 'preparando', 'enviado', 'entregue']); // Faturam
 const ETAPAS = [['novo', 'Pedido recebido'], ['pago', 'Pagamento confirmado'], ['preparando', 'Preparando'], ['enviado', 'Enviado'], ['entregue', 'Entregue']];
 const PROXIMA = { novo: ['pago', 'Confirmar pagamento'], pago: ['preparando', 'Começar a preparar'], preparando: ['enviado', 'Marcar como enviado'], enviado: ['entregue', 'Marcar como entregue'] };
 const valorDe = (p) => Number(p.valor ?? p.total ?? 0); // O que foi cobrado de fato: com desconto do Pix ou ajustado à mão
+// Pagamento pelo site: o que o Mercado Pago informou sobre o dinheiro deste pedido
+const pagoOnline = (p) => !!p.mercadopago?.pago_em;
+const estornado = (p) => pagoOnline(p) && p.mercadopago.status === 'refunded';
+const cobrancaAberta = (p) => !pagoOnline(p) && !!p.mercadopago?.ordem_id && ['pending', 'in_process'].includes(p.mercadopago.status);
+// Cancelado depois de pago pelo site e ainda sem o dinheiro devolvido
+const faltaDevolver = (p) => p.status === 'cancelado' && pagoOnline(p) && p.mercadopago.status === 'approved' && !p.mercadopago.devolvido_por_fora;
+// Pendência: valor que não bateu, estorno, contestação ou dinheiro a devolver.
+// Enquanto existir, o pedido fica fora de preparar, de enviar e do lote de etiquetas
+const precisaAtencao = (p) => !!p.conferir || faltaDevolver(p);
+function seloPendencia(p) {
+  const st = p.mercadopago?.status;
+  if (faltaDevolver(p)) return ['Falta devolver o dinheiro', 'alerta'];
+  if (estornado(p)) return p.status === 'cancelado' ? ['Dinheiro devolvido', 'info'] : ['Estornado', 'alerta'];
+  if (pagoOnline(p) && st === 'charged_back') return ['Contestado no banco', 'alerta'];
+  if (pagoOnline(p) && st === 'partially_refunded') return ['Devolução parcial', p.conferir ? 'alerta' : 'info'];
+  if (p.conferir) return ['Conferir valor', 'alerta'];
+  return null;
+}
 // O que a Paola precisa fazer: cada fila abre os pedidos daquela etapa
 const FILTROS = {
-  abertos: ['Em aberto', (p) => ['novo', 'pago', 'preparando'].includes(p.status)],
-  novo: ['Aguardando', (p) => p.status === 'novo'],
-  pago: ['Confirmado', (p) => p.status === 'pago'],
-  preparando: ['Preparando', (p) => p.status === 'preparando'],
+  abertos: ['Em aberto', (p) => ['novo', 'pago', 'preparando'].includes(p.status) || precisaAtencao(p)],
+  atencao: ['Atenção', precisaAtencao],
+  novo: ['Aguardando', (p) => p.status === 'novo' && !precisaAtencao(p)],
+  pago: ['Confirmado', (p) => p.status === 'pago' && !precisaAtencao(p)],
+  preparando: ['Preparando', (p) => p.status === 'preparando' && !precisaAtencao(p)],
   enviado: ['Enviado', (p) => p.status === 'enviado'],
   semrastreio: ['Sem código', (p) => p.status === 'enviado' && !p.rastreio_codigo && !p.rastreio_link],
   entregue: ['Entregue', (p) => p.status === 'entregue'],
   cancelado: ['Cancelado', (p) => p.status === 'cancelado'],
   todos: ['Todos', () => true],
 };
-const FILAS_A_FAZER = new Set(['abertos', 'novo', 'pago', 'preparando', 'semrastreio']);
+const FILAS_A_FAZER = new Set(['abertos', 'atencao', 'novo', 'pago', 'preparando', 'semrastreio']);
 const FILAS = [
-  ['novo', 'Aguardando pagamento', 'Confirme quando ela pagar'],
+  ['atencao', 'Precisam de atenção', 'Estorno, contestação ou valor a conferir'],
+  ['novo', 'Aguardando pagamento', 'A cliente ainda não pagou'],
   ['pago', 'Para preparar', 'Pagamento já confirmado'],
   ['preparando', 'Para enviar', 'Imprima a etiqueta e poste'],
   ['semrastreio', 'Enviados sem código', 'Coloque o rastreio'],
@@ -75,7 +95,7 @@ const FILAS = [
 const CATEGORIAS = [['cintas', 'Cintas'], ['sutias', 'Sutiã'], ['tratamento', 'Tratamento']];
 const FOCOS = [['barriga', 'Segura a barriga'], ['busto', 'Sustenta o busto'], ['bumbum', 'Valoriza o bumbum']];
 
-const estado = { catalogo: null, pedidos: [], eventos: [], periodo: 30, busca: '', filtro: 'abertos', segmento: 'produtos', editor: null, avisoValores: null };
+const estado = { catalogo: null, pedidos: [], eventos: [], periodo: 30, busca: '', filtro: 'abertos', segmento: 'produtos', editor: null, avisoValores: null, cancelando: null };
 
 // ---------------- Conta: ajudantes de criptografia ----------------
 const ITERACOES = 210000;
@@ -139,6 +159,7 @@ const Local = {
   async pedidosRecentes() { return (await this.pedidos()).slice(0, 5); },
   async situacaoPagamento() { return { instalada: false }; },
   async criarLinkPagamento() { throw new Error('conecte o Supabase primeiro'); },
+  async cancelarCobranca() { return { cancelada: false }; },
   // Sem banco, o estoque fica no catálogo salvo neste navegador
   async lerEstoque() { return JSON.parse(JSON.stringify(estado.catalogo?.estoque?.itens || {})); },
   async salvarEstoque(id, tam, qtd) {
@@ -267,6 +288,14 @@ const Nuvem = (() => {
       if (d.pago) throw new Error('Este pedido já foi pago.');
       if (!r.ok || !d.url) throw new Error(d.erro || 'o Mercado Pago não respondeu');
       return d.url;
+    },
+    // A loja cancelou ou mudou o valor do pedido: o Pix ou cartão que estava em aberto é cancelado no Mercado Pago
+    async cancelarCobranca(id) {
+      const { data } = await sb.auth.getSession();
+      const r = await fetch(`${PCF_SUPABASE.url}/functions/v1/pagamento-mercadopago`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token ?? ''}` }, body: JSON.stringify({ acao: 'cancelar', id }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.erro || 'o Mercado Pago não respondeu');
+      return d;
     },
     async eventos() { return checar(await sb.from('eventos_dia').select('*').limit(4000)); },
     async catalogo() {
@@ -912,7 +941,7 @@ function recorte(dias) {
 }
 
 function medir(lista) {
-  const vendas = lista.filter((p) => VENDA.has(p.status));
+  const vendas = lista.filter((p) => VENDA.has(p.status) && !estornado(p)); // Dinheiro devolvido não é venda
   const faturamento = vendas.reduce((t, p) => t + valorDe(p), 0);
   const aguardando = lista.filter((p) => p.status === 'novo');
   return {
@@ -964,12 +993,12 @@ async function abaResumo(alvo) {
 
 // Primeira coisa ao abrir o painel: o que está esperando por ela, antes dos números
 function fazerHTML() {
-  const filas = FILAS.map(([id, nome, dica]) => ({ id, nome, dica, n: estado.pedidos.filter(FILTROS[id][1]).length }));
+  const filas = FILAS.map(([id, nome, dica]) => ({ id, nome, dica, n: estado.pedidos.filter(FILTROS[id][1]).length })).filter((f) => f.id !== 'atencao' || f.n);
   const tem = filas.some((f) => f.n);
   return `<section class="pn-fazer">
     <h1 class="pn-h1">O que fazer agora</h1>
     ${tem ? '' : `<p class="pn-em-dia">${I.ok}<span>${estado.pedidos.length ? 'Tudo em dia: nenhum pedido esperando por você.' : 'Nenhum pedido ainda. Eles aparecem aqui assim que chegarem.'}</span></p>`}
-    ${estado.pedidos.length ? `<div class="pn-filas">${filas.map((f) => `<a class="pn-fila ${f.n ? 'tem' : ''}" href="#pedidos" data-fila="${f.id}"><strong>${num(f.n)}</strong><span>${f.nome}</span><small>${f.dica}</small></a>`).join('')}</div>` : ''}
+    ${estado.pedidos.length ? `<div class="pn-filas">${filas.map((f) => `<a class="pn-fila ${f.n ? 'tem' : ''} ${f.id === 'atencao' ? 'alerta' : ''}" href="#pedidos" data-fila="${f.id}"><strong>${num(f.n)}</strong><span>${f.nome}</span><small>${f.dica}</small></a>`).join('')}</div>` : ''}
     <a class="pn-link" href="#pedidos" data-registrar-venda>Registrar uma venda feita fora do site</a>
     <div class="pn-aviso-caixa" id="aviso-inicio"></div>
   </section>
@@ -1116,7 +1145,10 @@ const itemCurto = (x) => {
 };
 
 function etapasHTML(p) {
-  if (p.status === 'cancelado') return '<p class="pn-etapa-cancelada">Este pedido foi cancelado.</p>';
+  if (p.status === 'cancelado') {
+    const quando = (p.historico || []).filter((h) => h.status === 'cancelado').pop()?.em;
+    return `<p class="pn-etapa-cancelada">Pedido cancelado${quando ? ` em ${dataHora(quando)}` : ''}.${p.motivo_cancelamento ? ` Motivo: ${esc(p.motivo_cancelamento)}.` : ''}${estornado(p) ? ' O dinheiro foi devolvido pelo Mercado Pago.' : ''}</p>`;
+  }
   const atual = ETAPAS.findIndex(([id]) => id === p.status);
   return `<ol class="pn-etapas">${ETAPAS.map(([id, nome], i) => {
     const registro = (p.historico || []).filter((h) => h.status === id).pop();
@@ -1140,19 +1172,32 @@ function rastreioHTML(p) {
     <button class="pn-link" type="button" data-editar-rastreio>${p.rastreio_codigo || p.rastreio_link ? 'Corrigir rastreio' : 'Colocar código de rastreio'}</button></div>`;
 }
 
+// Onde a cliente paga este pedido. Com o pagamento no site, é a página do próprio pedido;
+// no modo link (ou em venda registrada à mão), só depois que a loja libera
+function linkDePagamento(p) {
+  if (p.status !== 'novo' || pagoOnline(p) || p.conferir) return null;
+  const modo = modoPagamento();
+  if (modo === 'desligado') return null;
+  if (modo === 'site' && p.origem !== 'manual') return new URL(`pagamento.html?p=${encodeURIComponent(p.id)}`, location.href).href;
+  return p.mercadopago?.link || null;
+}
+
 // Mensagem pronta para a cliente, de acordo com a etapa do pedido
 function avisoCliente(p) {
   const n = p.numero;
-  const linkPagar = p.status === 'novo' && !p.mercadopago?.pago_em ? p.mercadopago?.link : null;
+  const modo = modoPagamento();
+  const linkPagar = linkDePagamento(p);
   const textos = {
     novo: linkPagar
-      ? `Recebi seu pedido ${n}. Para pagar no Pix ou no cartão, é só usar este link:\n${linkPagar}`
-      : `Recebi seu pedido ${n}. Vou conferir seu tamanho e te mandar o link de pagamento.`,
+      ? `Seu pedido ${n} está esperando o pagamento. Para pagar no Pix ou no cartão, é só usar este link:\n${linkPagar}`
+      : modo === 'link' ? `Recebi seu pedido ${n}. Vou conferir seu tamanho e te mandar o link de pagamento.` : `Recebi seu pedido ${n}. Vou conferir seu tamanho e combinar o pagamento com você.`,
     pago: `Pagamento confirmado! Seu pedido ${n} já está garantido.`,
     preparando: `Estou preparando seu pedido ${n}.`,
     enviado: `Seu pedido ${n} foi enviado!${p.rastreio_codigo ? `\nCódigo de rastreio: ${p.rastreio_codigo}` : ''}`,
     entregue: `Seu pedido ${n} consta como entregue. Qualquer dúvida, é só me chamar!`,
-    cancelado: `Seu pedido ${n} foi cancelado. Qualquer dúvida, é só me chamar.`,
+    cancelado: estornado(p)
+      ? `Seu pedido ${n} foi cancelado e o pagamento foi devolvido pelo Mercado Pago. O prazo para o valor voltar depende do seu banco ou cartão.`
+      : `Seu pedido ${n} foi cancelado. Qualquer dúvida, é só me chamar.`,
   };
   const link = Banco.modo === 'supabase' && p.status !== 'cancelado' ? `\n\nAcompanhe por aqui: ${linkAcompanhar(p)}` : '';
   return `Oi, ${primeiroNome(p)}! ${textos[p.status] || textos.novo}${link}`;
@@ -1166,20 +1211,22 @@ function zapCliente(p) {
 // Pagamento pelo Mercado Pago dentro do cartão do pedido: gerar o link, mandar e ver o que foi pago
 const modoPagamento = () => (Banco.modo === 'supabase' ? estado.catalogo.pagamento?.modo || 'desligado' : 'desligado');
 const comoPagou = (m) => (m.metodo === 'pix' ? 'Pix' : m.tipo === 'debit_card' ? 'débito' : `cartão${m.parcelas > 1 ? ` em ${m.parcelas}x` : ''}`);
-const ALERTA_PAGAMENTO = { refunded: 'Pagamento estornado', charged_back: 'A cliente contestou no banco', in_mediation: 'Em disputa no Mercado Pago' };
+// O que aconteceu com o dinheiro depois de pago. O que fazer com isso aparece no aviso do alto do pedido
+const DEPOIS_DE_PAGO = { refunded: 'O dinheiro foi devolvido.', partially_refunded: 'Parte do valor foi devolvida.', charged_back: 'A cliente contestou no banco.', in_mediation: 'Em disputa no Mercado Pago.' };
 const ANDAMENTO_PAGAMENTO = { pending: 'Pagamento em andamento.', in_process: 'Pagamento em análise no Mercado Pago.', rejected: 'O último cartão foi recusado. A cliente pode tentar de novo.' };
 function pagamentoOnlineHTML(p) {
   const m = p.mercadopago || {};
   if (m.pago_em) {
-    const alerta = ALERTA_PAGAMENTO[m.status];
-    return `<p class="pn-pago-online">${I.ok}<span>Pago pelo Mercado Pago no ${comoPagou(m)}, em ${dataHora(m.pago_em)}.${alerta ? ` <b>${alerta}: confira no Mercado Pago antes de enviar.</b>` : ''}</span></p>`;
+    const depois = DEPOIS_DE_PAGO[m.status];
+    return `<p class="pn-pago-online ${depois ? 'pn-pago-problema' : ''}">${depois ? I.alerta : I.ok}<span>Pago pelo Mercado Pago no ${comoPagou(m)}, em ${dataHora(m.pago_em)}.${depois ? ` <b>${depois}</b>` : ''}</span></p>`;
   }
   if (modoPagamento() === 'desligado' || p.status !== 'novo') return '';
   const andamento = m.status === 'pending' && m.metodo === 'pix' ? 'Pix gerado, esperando a cliente pagar.' : ANDAMENTO_PAGAMENTO[m.status];
   const situacao = andamento ? `<p class="pn-nota">${andamento}</p>` : '';
   // O link abre a página de pagamento da loja e cobra sempre o valor que estiver no pedido na hora
-  if (m.link) {
-    return `${situacao}<div class="pn-link-pagamento"><small>Link de pagamento</small><span>${esc(m.link)}</span>
+  const link = linkDePagamento(p);
+  if (link) {
+    return `${situacao}<div class="pn-link-pagamento"><small>Link de pagamento</small><span>${esc(link)}</span>
       <div class="pn-acoes-linha"><button class="pn-link" type="button" data-copiar-pagamento>Copiar link</button></div></div>`;
   }
   return `${situacao}<button class="btn btn-claro pn-btn-p" type="button" data-gerar-pagamento>Gerar link de pagamento</button>`;
@@ -1194,23 +1241,86 @@ function tempoNaEtapa(p) {
   return `<span class="pn-parado">${dias === 1 ? 'Nesta etapa desde ontem' : `Nesta etapa há ${dias} dias`}</span>`;
 }
 
-function cartaoPedido(p, aberto = false) {
+const MOTIVOS_CANCELAR = ['A cliente desistiu', 'A cliente não pagou', 'Sem a peça ou o tamanho', 'Pedido repetido ou de teste', 'Outro motivo'];
+const LINK_MP = '<a class="pn-link" href="https://www.mercadopago.com.br/activities" target="_blank" rel="noopener">Abrir o Mercado Pago</a>';
+
+// Aviso no alto do pedido: o que aconteceu com o dinheiro e o que fazer agora
+function pendenciaHTML(p) {
+  const m = p.mercadopago || {};
+  const caixa = (texto, acoes) => `<div class="pn-pendencia" role="alert">${I.alerta}<div><p>${texto}</p><div class="pn-acoes-linha">${acoes}</div></div></div>`;
+  const conferi = '<button class="pn-link" type="button" data-conferido>Já conferi</button>';
+  if (faltaDevolver(p)) {
+    return caixa(`<b>Falta devolver ${brl(m.valor_cliente || valorDe(p))} para a cliente.</b> Este pedido foi pago pelo site e está cancelado. No Mercado Pago, abra a venda e toque em "Devolver dinheiro". Quando a devolução for feita, este aviso some sozinho.`,
+      `${LINK_MP}<button class="pn-link" type="button" data-devolvi-fora>Já devolvi de outro jeito</button>`);
+  }
+  if (!p.conferir) return '';
+  if (estornado(p)) {
+    return ['enviado', 'entregue'].includes(p.status)
+      ? caixa('<b>O dinheiro deste pedido foi devolvido depois do envio.</b> Combine com a cliente a volta do produto. O pedido já saiu do faturamento.', `${LINK_MP}${conferi}`)
+      : caixa('<b>O dinheiro deste pedido foi devolvido.</b> Não envie. Cancele o pedido para as peças voltarem ao estoque.', '<button class="pn-link" type="button" data-cancelar>Cancelar pedido</button>');
+  }
+  if (pagoOnline(p) && m.status === 'charged_back') return caixa('<b>A cliente contestou esta compra no banco.</b> Não envie antes de resolver. A resposta à contestação é feita na conta do Mercado Pago.', `${LINK_MP}${conferi}`);
+  if (pagoOnline(p) && m.status === 'partially_refunded') return caixa('<b>Parte do valor deste pedido foi devolvida.</b> Confira se o valor cobrado, logo abaixo, está certo.', `${LINK_MP}${conferi}`);
+  if (pagoOnline(p)) return caixa('<b>O Mercado Pago avisou de algo fora do normal neste pagamento</b>, como valor diferente ou cobrança repetida. Confira na conta do Mercado Pago antes de enviar.', `${LINK_MP}${conferi}`);
+  return caixa('<b>O valor enviado pelo site não bateu com o preço da loja.</b> Enquanto estiver assim, este pedido não pode ser pago pelo site. Acerte o valor a cobrar, logo abaixo, e avise que conferiu.', conferi);
+}
+
+// Cancelar pede o motivo e avisa do dinheiro antes: cancelar aqui nunca devolve pagamento sozinho
+function cancelarHTML(p) {
+  const m = p.mercadopago || {};
+  const id = esc(p.id);
+  const aviso = pagoOnline(p) && !estornado(p)
+    ? `<p class="pn-cancelar-aviso"><b>Este pedido foi pago pelo site (${brl(m.valor_cliente || valorDe(p))}).</b> Cancelar aqui não devolve o dinheiro: depois de cancelar, faça a devolução no Mercado Pago.</p>`
+    : cobrancaAberta(p) ? '<p class="pn-cancelar-aviso">O Pix ou cartão que a cliente deixou em aberto também é cancelado, para ela não pagar por engano.</p>'
+      : VENDA.has(p.status) && !estornado(p) ? '<p class="pn-cancelar-aviso">Se ela já pagou, combine a devolução do dinheiro com ela.</p>' : '';
+  return `<div class="pn-cancelar">
+    <h3>Cancelar este pedido?</h3>
+    ${aviso}
+    <div class="campo"><label for="mc-${id}">Motivo</label><select id="mc-${id}" data-motivo>${MOTIVOS_CANCELAR.map((t) => `<option>${t}</option>`).join('')}</select></div>
+    <div class="campo"><label for="mo-${id}">Observação</label><input id="mo-${id}" data-motivo-obs maxlength="120" placeholder="Opcional"></div>
+    <p class="pn-nota">O pedido sai do faturamento e as peças voltam para o estoque. Dá para reabrir depois.</p>
+    <button class="btn btn-preto btn-bloco" type="button" data-confirmar-cancelar>Cancelar o pedido</button>
+    <button class="pn-link" type="button" data-desistir-cancelar>Voltar sem cancelar</button>
+  </div>`;
+}
+
+// O próximo passo é sempre um botão só. Pedido com pendência não avança antes de resolver
+function proximoPassoHTML(p) {
+  if (estado.cancelando === p.id) return cancelarHTML(p);
+  if (p.status === 'cancelado') return '<button class="btn btn-claro pn-btn-p" type="button" data-reabrir>Reabrir pedido</button>';
+  if (estado.enviando === p.id) return '';
+  if (precisaAtencao(p)) return '<p class="pn-nota">Resolva o aviso acima para continuar com este pedido.</p>';
   const proxima = PROXIMA[p.status];
-  const enviando = estado.enviando === p.id;
+  if (!proxima) return '';
+  // Pedido do site que ainda não foi pago: a confirmação chega sozinha. Confirmar à mão é só para quem recebeu por fora
+  if (p.status === 'novo' && linkDePagamento(p)) {
+    return `<p class="pn-espera">${I.relogio}<span>${cobrancaAberta(p) ? 'A cliente abriu o pagamento e ainda não concluiu.' : 'Esperando a cliente pagar pelo site.'} Quando ela pagar, o pedido passa sozinho para Confirmado.</span></p>
+        <button class="pn-link" type="button" data-avancar="pago">Recebi de outro jeito: confirmar pagamento</button>`;
+  }
+  return `<button class="btn btn-preto btn-bloco" type="button" data-avancar="${proxima[0]}">${proxima[1]}</button>
+        ${p.status === 'pago' ? '<button class="pn-link" type="button" data-avancar="enviado">Já enviei: pular para enviado</button>' : ''}`;
+}
+
+function cartaoPedido(p, aberto = false) {
   const zap = zapCliente(p);
   const comDesconto = p.pagamento === 'Pix' && valorDe(p) < Number(p.total);
-  return `<details class="pn-ped" data-id="${esc(p.id)}" ${aberto ? 'open' : ''}>
+  const selo = seloPendencia(p);
+  const pago = pagoOnline(p);
+  const cancelado = p.status === 'cancelado';
+  // Pedido cancelado ou parado por pendência não ganha etiqueta: não é para postar
+  const semEtiqueta = cancelado || (precisaAtencao(p) && !['enviado', 'entregue'].includes(p.status));
+  return `<details class="pn-ped ${precisaAtencao(p) ? 'pn-ped-atencao' : ''}" data-id="${esc(p.id)}" ${aberto ? 'open' : ''}>
     <summary>
-      <div class="pn-ped-l1"><b>${esc(p.numero)}</b>${etiquetaStatus(p.status)}${p.conferir ? `<span class="pn-st pn-st-conferir">${I.alerta}Conferir valor</span>` : ''}</div>
+      <div class="pn-ped-l1"><b>${esc(p.numero)}</b>${etiquetaStatus(p.status)}${selo ? `<span class="pn-st pn-st-${selo[1]}">${selo[1] === 'alerta' ? I.alerta : ''}${selo[0]}</span>` : ''}</div>
       <div class="pn-ped-l2"><span>${esc(p.nome)}</span><b>${brl(valorDe(p))}</b></div>
       <div class="pn-ped-itens-resumo">${(p.itens || []).map((x) => `<span>${esc(itemCurto(x))}</span>`).join('')}</div>
       <div class="pn-ped-l3">${dataHora(p.data)}${p.origem === 'manual' ? ' · Venda fora do site' : ''}${tempoNaEtapa(p)}</div>
     </summary>
     <div class="pn-ped-corpo">
+      ${pendenciaHTML(p)}
       <div class="pn-andamento">
         ${etapasHTML(p)}
-        ${proxima && !enviando ? `<button class="btn btn-preto btn-bloco" type="button" data-avancar="${proxima[0]}">${proxima[1]}</button>` : ''}
-        ${p.status === 'pago' && !enviando ? '<button class="pn-link" type="button" data-avancar="enviado">Já enviei: pular para enviado</button>' : ''}
+        ${proximoPassoHTML(p)}
         ${rastreioHTML(p)}
       </div>
       <div class="pn-aviso-cliente"><h3>Avisar a cliente</h3>
@@ -1219,13 +1329,11 @@ function cartaoPedido(p, aberto = false) {
         <button class="${zap ? 'pn-link' : 'btn btn-claro pn-btn-p'}" type="button" data-copiar-aviso>Copiar aviso desta etapa</button>
         ${Banco.modo === 'supabase' ? '<button class="pn-link" type="button" data-copiar-link>Copiar só o link de acompanhamento</button>' : ''}
       </div>
-      ${p.conferir ? `<p class="pn-exemplo"><span>${p.mercadopago?.pago_em
-        ? 'O Mercado Pago avisou de algo fora do normal neste pagamento (valor diferente, estorno ou cobrança repetida). Confira na conta do Mercado Pago antes de enviar.'
-        : 'O valor enviado pelo site não bateu com o preço do banco. Enquanto estiver assim, este pedido não pode ser pago pelo site. Acerte o valor a cobrar e avise que conferiu.'}</span>
-        <button class="pn-link" type="button" data-conferido>Já conferi</button></p>` : ''}
       <div class="pn-cobranca"><h3>Pagamento: ${esc(p.pagamento || 'não informado')}</h3>
-        <div class="campo"><label for="vl-${esc(p.id)}">Valor a cobrar</label><input id="vl-${esc(p.id)}" data-valor inputmode="decimal" value="${esc(precoTxt(valorDe(p)))}"></div>
-        <small class="pn-ajuda">${comDesconto ? `Já com o desconto do Pix (preço cheio: ${brl(p.total)}). ` : ''}Mude se somar frete ou der outro desconto. É este valor que entra no faturamento.</small>
+        <div class="campo"><label for="vl-${esc(p.id)}">${pago ? 'Valor cobrado' : 'Valor a cobrar'}</label><input id="vl-${esc(p.id)}" data-valor inputmode="decimal" value="${esc(precoTxt(valorDe(p)))}"></div>
+        <small class="pn-ajuda">${pago
+          ? 'Pago pelo site. Só mude se devolveu parte do valor: é este número que entra no faturamento.'
+          : `${comDesconto ? `Já com o desconto do Pix (preço cheio: ${brl(p.total)}). ` : ''}Mude se somar frete ou der outro desconto. É este valor que entra no faturamento.`}</small>
         ${pagamentoOnlineHTML(p)}
       </div>
       <div><h3>Itens</h3><ul class="pn-ped-itens">${(p.itens || []).map((x) => {
@@ -1233,13 +1341,21 @@ function cartaoPedido(p, aberto = false) {
         return `<li><span>${x.qtd || 1}x ${esc(nomeDoItem(x))}${x.extra ? ` + ${esc(nomeDoItem({ id: x.extra }))}` : ''}${tam ? `<small>Tamanho ${esc(tam)}${x.calca ? ` · veste calça ${esc(x.calca)}` : ''}</small>` : ''}</span>${x.preco != null ? `<b>${brl(x.preco * (x.qtd || 1))}</b>` : ''}</li>`;
       }).join('')}</ul></div>
       <div><h3>Entrega</h3><p class="pn-endereco">${esc(enderecoDe(p)) || 'Sem endereço no pedido'}</p>
-        <div class="pn-acoes-linha">${enderecoDe(p) ? `<button class="pn-link" type="button" data-copiar>Copiar endereço</button><button class="pn-link" type="button" data-imprimir>${I.imprimir}Imprimir etiqueta</button>` : ''}</div>
+        <div class="pn-acoes-linha">${enderecoDe(p) ? `<button class="pn-link" type="button" data-copiar>Copiar endereço</button>${semEtiqueta ? '' : `<button class="pn-link" type="button" data-imprimir>${I.imprimir}Imprimir etiqueta</button>`}` : ''}</div>
       </div>
       <div class="campo"><label for="nt-${esc(p.id)}">Anotação interna</label><textarea id="nt-${esc(p.id)}" data-nota rows="2" placeholder="Só aparece aqui no painel">${esc(p.nota || '')}</textarea></div>
-      <div class="campo"><label for="st-${esc(p.id)}">Corrigir a etapa ou cancelar</label>
-        <select id="st-${esc(p.id)}" data-status>${Object.entries(STATUS).map(([id, [nome]]) => `<option value="${id}" ${id === p.status ? 'selected' : ''}>${nome}</option>`).join('')}</select>
-      </div>
-      <button class="pn-link pn-perigo" type="button" data-excluir>Excluir pedido</button>
+      ${cancelado ? '' : `<div class="pn-gerir">
+        <button class="btn btn-claro pn-btn-p" type="button" data-editar-pedido>Editar pedido</button>
+        ${estado.cancelando === p.id ? '' : '<button class="pn-link pn-perigo" type="button" data-cancelar>Cancelar pedido</button>'}
+      </div>`}
+      <details class="pn-mais"><summary>Mais opções</summary>
+        ${cancelado ? '' : `<div class="campo"><label for="st-${esc(p.id)}">Corrigir a etapa</label>
+          <select id="st-${esc(p.id)}" data-status>${Object.entries(STATUS).filter(([id]) => id !== 'cancelado').map(([id, [nome]]) => `<option value="${id}" ${id === p.status ? 'selected' : ''}>${nome}</option>`).join('')}</select>
+          <small class="pn-ajuda">Só para quando uma etapa foi marcada por engano.</small>
+        </div>`}
+        <button class="pn-link pn-perigo" type="button" data-excluir>Excluir pedido</button>
+        <small class="pn-ajuda">Excluir apaga o pedido de vez. Para venda desfeita, prefira cancelar.</small>
+      </details>
     </div>
   </details>`;
 }
@@ -1294,6 +1410,7 @@ function imprimirEtiquetas(lista) {
 }
 
 async function abaPedidos(alvo) {
+  estado.cancelando = null; // Quem saiu da tela no meio de um cancelamento começa de novo
   await carregarDados();
   if (estado.abrirNovo) {
     estado.abrirNovo = false;
@@ -1301,9 +1418,9 @@ async function abaPedidos(alvo) {
     return;
   }
   const conta = (f) => estado.pedidos.filter(FILTROS[f][1]).length;
-  const paraEnviar = () => estado.pedidos.filter((p) => p.status === 'preparando' && enderecoDe(p));
+  const paraEnviar = () => estado.pedidos.filter((p) => p.status === 'preparando' && enderecoDe(p) && !precisaAtencao(p));
   const chips = () => Object.entries(FILTROS)
-    .filter(([id]) => id !== 'semrastreio' || conta(id) > 0 || estado.filtro === id)
+    .filter(([id]) => !['semrastreio', 'atencao'].includes(id) || conta(id) > 0 || estado.filtro === id)
     .map(([id, [nome]]) => `<button class="chip" type="button" role="radio" data-filtro="${id}" aria-checked="${id === estado.filtro}">${nome} <small>${conta(id)}</small></button>`).join('');
   alvo.innerHTML = `
     ${avisoExemplos()}
@@ -1432,7 +1549,7 @@ async function abaPedidos(alvo) {
       return;
     }
     if (botao.matches('[data-copiar-pagamento]')) {
-      await copiar(pedidoDe(botao).mercadopago.link, 'Link de pagamento copiado');
+      await copiar(linkDePagamento(pedidoDe(botao)), 'Link de pagamento copiado');
       return;
     }
     if (botao.matches('[data-editar-rastreio]')) {
@@ -1477,6 +1594,62 @@ async function abaPedidos(alvo) {
       await copiar(`${p.nome}\n${enderecoDe(p)}`, 'Endereço copiado');
       return;
     }
+    if (botao.matches('[data-cancelar]')) {
+      const p = pedidoDe(botao);
+      estado.cancelando = p.id;
+      redesenharCartao(p, botao);
+      $('.pn-cancelar', lista)?.scrollIntoView({ block: 'center' });
+      return;
+    }
+    if (botao.matches('[data-desistir-cancelar]')) {
+      const p = pedidoDe(botao);
+      estado.cancelando = null;
+      redesenharCartao(p, botao);
+      return;
+    }
+    if (botao.matches('[data-confirmar-cancelar]')) {
+      const p = pedidoDe(botao);
+      const caixa = botao.closest('.pn-cancelar');
+      const motivo = [$('[data-motivo]', caixa).value, $('[data-motivo-obs]', caixa).value.trim()].filter(Boolean).join(': ').slice(0, 200);
+      botao.disabled = true;
+      // Pix ou cartão ainda em aberto: a cobrança é cancelada antes, para a cliente não pagar um pedido cancelado
+      if (cobrancaAberta(p)) {
+        const r = await Banco.cancelarCobranca(p.id).catch(() => null);
+        if (r?.pago) {
+          estado.cancelando = null;
+          estado.abrirPedido = p.id;
+          await carregarDados();
+          $('#filtros-pedidos', alvo).innerHTML = chips();
+          desenhar();
+          toast('Esta cliente acabou de pagar. O pedido não foi cancelado.');
+          return;
+        }
+      }
+      const devolver = pagoOnline(p) && !estornado(p);
+      estado.cancelando = null;
+      await atualizar(p, botao, { status: 'cancelado', motivo_cancelamento: motivo || null, ...(estornado(p) ? { conferir: false } : {}) },
+        devolver ? 'Pedido cancelado. Falta devolver o dinheiro no Mercado Pago.' : 'Pedido cancelado. Avise a cliente.');
+      if (botao.isConnected) { estado.cancelando = p.id; botao.disabled = false; }
+      return;
+    }
+    if (botao.matches('[data-reabrir]')) {
+      const p = pedidoDe(botao);
+      // Volta para a etapa em que estava. Se o dinheiro foi devolvido, volta a esperar pagamento
+      const anterior = (p.historico || []).filter((h) => h.status !== 'cancelado').pop()?.status || 'novo';
+      const volta = estornado(p) ? 'novo' : anterior;
+      await atualizar(p, botao, { status: volta, motivo_cancelamento: null }, `Pedido reaberto em "${STATUS[volta][0]}".`);
+      return;
+    }
+    if (botao.matches('[data-devolvi-fora]')) {
+      const p = pedidoDe(botao);
+      await atualizar(p, botao, { mercadopago: { ...p.mercadopago, devolvido_por_fora: true } }, 'Anotado: dinheiro devolvido.');
+      return;
+    }
+    if (botao.matches('[data-editar-pedido]')) {
+      abrirNovoPedido(alvo, pedidoDe(botao));
+      scrollTo(0, 0);
+      return;
+    }
     if (botao.matches('[data-excluir]')) {
       const p = pedidoDe(botao);
       if (!confirm(`Excluir o pedido ${p.numero} de ${p.nome}? Isso não pode ser desfeito. Para venda desfeita, prefira cancelar.`)) return;
@@ -1491,16 +1664,38 @@ async function abaPedidos(alvo) {
   });
 }
 
-// Venda feita fora do site (Instagram, WhatsApp, pessoalmente): entra igual às outras nas etapas e no faturamento
-function abrirNovoPedido(alvo) {
-  const vendaveis = [...estado.catalogo.kits, ...estado.catalogo.produtos].filter((x) => x.ativo !== false);
-  const acha = (id) => [...estado.catalogo.kits, ...estado.catalogo.produtos].find((x) => x.id === id);
+// Venda feita fora do site (Instagram, WhatsApp, pessoalmente): entra igual às outras nas etapas e no faturamento.
+// O mesmo formulário edita um pedido que já existe: trocar tamanho ou peça, corrigir nome, WhatsApp e endereço
+function abrirNovoPedido(alvo, existente = null) {
+  const todos = [...estado.catalogo.kits, ...estado.catalogo.produtos];
+  const acha = (id) => todos.find((x) => x.id === id);
+  // Na edição, o que já está no pedido continua na lista mesmo se saiu da loja
+  const noPedido = new Set((existente?.itens || []).map((x) => x.id));
+  const vendaveis = todos.filter((x) => x.ativo !== false || noPedido.has(x.id));
   const pedeTamanho = (it) => (it.itens ? it.itens.some((i) => acha(i)?.tamanhos) : !!it.tamanhos);
-  const np = { itens: [{ id: vendaveis[0].id, calca: '', extra: '', qtd: 1 }], pagamento: 'Pix', valorManual: false };
+  const tamDaCalca = (c) => estado.catalogo.tabela.find((t) => t.calca.includes(Number(c)))?.t || null;
+  // Pedido do site pode ter só a letra do tamanho: o formulário escolhe pela calça, então entra a primeira calça daquela letra
+  const calcaInicial = (x) => String(x.calca || estado.catalogo.tabela.find((t) => t.t === x.tam)?.calca[0] || '');
+  // Pago pelo site: o valor cobrado não muda aqui, só o que vai na caixa
+  const jaPago = !!existente && pagoOnline(existente);
+  const np = existente
+    ? { itens: (existente.itens || []).map((x) => ({ id: x.id, calca: calcaInicial(x), extra: x.extra || '', qtd: x.qtd || 1, original: x })), pagamento: existente.pagamento || 'Pix', valorManual: true, mudou: false }
+    : { itens: [{ id: vendaveis[0].id, calca: '', extra: '', qtd: 1 }], pagamento: 'Pix', valorManual: false, mudou: false };
   estado.novoAberto = true;
+  // Peça que não mudou continua com o preço que tinha no pedido; peça nova ou trocada usa o preço de hoje
+  const precoDe = (x) => (x.original && x.original.id === x.id && x.original.preco != null ? Number(x.original.preco) : acha(x.id)?.preco || 0);
 
   const linhaItem = (x, i) => {
     const it = acha(x.id);
+    const tirar = np.itens.length > 1 ? '<button class="pn-link pn-perigo" type="button" data-np-tirar>Tirar este item</button>' : '';
+    // Item que não existe mais no catálogo fica como está: só dá para mudar a quantidade ou tirar
+    if (!it) {
+      return `<div class="pn-np-item" data-i="${i}">
+        <p class="pn-np-fixo"><b>${esc(x.original?.nome || x.id)}</b><small>Este item não está mais no catálogo.</small></p>
+        ${campo('Quantidade', `np-qtd-${i}`, x.qtd, { tipo: 'number', attrs: 'data-np="qtd" inputmode="numeric" min="1" max="99"' })}
+        ${tirar}
+      </div>`;
+    }
     // Tamanho esgotado só ganha um aviso: quem vende aqui é a própria dona, ela sabe se ainda tem
     const fora = tamanhosEsgotados(it);
     const calcas = estado.catalogo.tabela.flatMap((t) => t.calca.map((c) => [String(c), `${c} (tamanho ${t.t}${fora.includes(t.t) ? ', esgotado' : ''})`]));
@@ -1511,79 +1706,107 @@ function abrirNovoPedido(alvo) {
         ${it.escolha ? seletor('Item à escolha', `np-extra-${i}`, x.extra, [['', 'Escolha'], ...it.escolha.map((e) => [e, esc(acha(e)?.curto || acha(e)?.nome || e)])], { attrs: 'data-np="extra"' }) : ''}
         ${campo('Quantidade', `np-qtd-${i}`, x.qtd, { tipo: 'number', attrs: 'data-np="qtd" inputmode="numeric" min="1" max="99"' })}
       </div>
-      ${np.itens.length > 1 ? '<button class="pn-link pn-perigo" type="button" data-np-tirar>Tirar este item</button>' : ''}
+      ${tirar}
     </div>`;
   };
 
+  const ex = existente || {};
   alvo.innerHTML = `
     <button class="pn-voltar" type="button" data-voltar>${I.voltar}Voltar para os pedidos</button>
-    <div class="pn-cab"><h1 class="pn-h1">Novo pedido</h1></div>
-    <p class="pn-nota pn-dica-lista">Para vendas feitas no Instagram, no WhatsApp ou pessoalmente.</p>
+    <div class="pn-cab"><h1 class="pn-h1">${existente ? `Editar pedido ${esc(existente.numero)}` : 'Novo pedido'}</h1></div>
+    <p class="pn-nota pn-dica-lista">${existente ? 'Troque o tamanho ou a peça, ou corrija os dados da cliente. A etapa do pedido não muda.' : 'Para vendas feitas no Instagram, no WhatsApp ou pessoalmente.'}</p>
     <form id="form-novo" class="pn-form" novalidate>
       <section class="pn-card"><h2>Cliente</h2>
-        ${campo('Nome', 'nome', '', { attrs: 'autocomplete="off" required' })}
-        ${campo('WhatsApp', 'telefone', '', { tipo: 'tel', attrs: 'inputmode="tel" placeholder="(21) 99999-9999" autocomplete="off"', ajuda: 'Opcional, mas com ele você avisa a cliente em um toque.' })}
+        ${campo('Nome', 'nome', ex.nome || '', { attrs: 'autocomplete="off" required' })}
+        ${campo('WhatsApp', 'telefone', ex.telefone ? telefoneBonito(ex.telefone) : '', { tipo: 'tel', attrs: 'inputmode="tel" placeholder="(21) 99999-9999" autocomplete="off"', ajuda: 'Opcional, mas com ele você avisa a cliente em um toque.' })}
       </section>
-      <section class="pn-card"><h2>O que ela comprou</h2>
+      <section class="pn-card"><h2>${existente ? 'Itens do pedido' : 'O que ela comprou'}</h2>
         <div id="np-itens" class="pn-np-itens"></div>
         <button class="pn-link pn-add" type="button" data-np-add>Adicionar outro item</button>
       </section>
       <section class="pn-card"><h2>Pagamento</h2>
-        ${seletor('Forma de pagamento', 'pagamento', np.pagamento, [['Pix', 'Pix'], ['Cartão', 'Cartão'], ['Dinheiro', 'Dinheiro']])}
-        ${campo('Valor a cobrar', 'valor', '', { attrs: 'inputmode="decimal"', ajuda: 'Calculado pelos preços da loja. Pode mudar à vontade.' })}
-        ${chave('Já está pago', 'pago', false, { ajuda: 'Marque se ela já pagou. O pedido entra como confirmado.' })}
+        ${jaPago
+          ? `<p class="pn-pago-online">${I.ok}<span>Pago pelo site: ${brl(valorDe(existente))}. O valor pago não muda aqui.</span></p>
+             <p class="pn-nota" data-diferenca hidden></p>`
+          : `${seletor('Forma de pagamento', 'pagamento', np.pagamento, [['Pix', 'Pix'], ['Cartão', 'Cartão'], ['Dinheiro', 'Dinheiro']])}
+             ${campo('Valor a cobrar', 'valor', existente ? precoTxt(valorDe(existente)) : '', { attrs: 'inputmode="decimal"', ajuda: existente ? 'Se trocar os itens, o valor é refeito pelos preços da loja. Pode mudar à vontade.' : 'Calculado pelos preços da loja. Pode mudar à vontade.' })}
+             ${existente ? '' : chave('Já está pago', 'pago', false, { ajuda: 'Marque se ela já pagou. O pedido entra como confirmado.' })}`}
       </section>
       <section class="pn-card"><h2>Entrega</h2>
         <p class="pn-nota">Deixe vazio se a entrega for em mãos.</p>
-        ${campo('CEP', 'cep', '', { attrs: 'inputmode="numeric" placeholder="00000-000" maxlength="9"' })}
-        ${campo('Rua', 'rua', '')}
-        <div class="pn-2">${campo('Número', 'num', '')}${campo('Complemento', 'complemento', '')}</div>
-        ${campo('Bairro', 'bairro', '')}
-        <div class="pn-2">${campo('Cidade', 'cidade', '')}${campo('UF', 'uf', '', { attrs: 'maxlength="2" autocapitalize="characters"' })}</div>
+        ${campo('CEP', 'cep', ex.cep || '', { attrs: 'inputmode="numeric" placeholder="00000-000" maxlength="9"' })}
+        ${campo('Rua', 'rua', ex.rua || '')}
+        <div class="pn-2">${campo('Número', 'num', ex.num || '')}${campo('Complemento', 'complemento', ex.complemento || '')}</div>
+        ${campo('Bairro', 'bairro', ex.bairro || '')}
+        <div class="pn-2">${campo('Cidade', 'cidade', ex.cidade || '')}${campo('UF', 'uf', ex.uf || '', { attrs: 'maxlength="2" autocapitalize="characters"' })}</div>
       </section>
       <section class="pn-card"><h2>Anotação</h2>
-        ${area('Só aparece aqui no painel', 'nota', '', { linhas: 2 })}
+        ${area('Só aparece aqui no painel', 'nota', ex.nota || '', { linhas: 2 })}
       </section>
-      <div class="pn-salvar"><p class="dica-tam erro" data-erro hidden></p><button class="btn btn-preto btn-bloco" type="submit">Salvar pedido</button></div>
+      <div class="pn-salvar"><p class="dica-tam erro" data-erro hidden></p><button class="btn btn-preto btn-bloco" type="submit">${existente ? 'Salvar alterações' : 'Salvar pedido'}</button></div>
     </form>`;
 
   const form = $('#form-novo', alvo);
   const caixaItens = $('#np-itens', form);
-  const somaItens = () => np.itens.reduce((t, x) => t + (acha(x.id)?.preco || 0) * (Number(x.qtd) || 1), 0);
+  const somaItens = () => np.itens.reduce((t, x) => t + precoDe(x) * (Number(x.qtd) || 1), 0);
+  const comPix = (soma, forma) => Math.round(soma * (1 - (forma === 'Pix' ? estado.catalogo.loja.pix : 0)) * 100) / 100;
   const sugerirValor = () => {
-    if (np.valorManual) return;
     const soma = somaItens();
-    const pix = form.elements.pagamento.value === 'Pix' ? estado.catalogo.loja.pix : 0;
-    form.elements.valor.value = soma ? precoTxt(Math.round(soma * (1 - pix) * 100) / 100) : '';
+    if (jaPago) {
+      // Troca em pedido já pago: mostra a diferença para a loja acertar com a cliente
+      const aviso = $('[data-diferenca]', form);
+      const novoValor = comPix(soma, existente.pagamento);
+      const dif = Math.round((novoValor - valorDe(existente)) * 100) / 100;
+      aviso.hidden = !np.mudou || Math.abs(dif) < 0.01;
+      aviso.textContent = dif > 0
+        ? `Com a troca, o pedido passa a valer ${brl(novoValor)}. Faltam ${brl(dif)}: combine com a cliente.`
+        : `Com a troca, o pedido passa a valer ${brl(novoValor)}. Sobram ${brl(-dif)} para devolver à cliente.`;
+      return;
+    }
+    if (np.valorManual) return;
+    form.elements.valor.value = soma ? precoTxt(comPix(soma, form.elements.pagamento.value)) : '';
+  };
+  // Na edição, o valor só é refeito quando os itens mudam
+  const itensMudaram = () => {
+    np.mudou = true;
+    if (existente && !jaPago) np.valorManual = false;
   };
   const desenharItens = () => {
     caixaItens.innerHTML = np.itens.map(linhaItem).join('');
     sugerirValor();
   };
   desenharItens();
-  form.elements.nome.focus();
+  if (!existente) form.elements.nome.focus();
 
   caixaItens.addEventListener('change', (e) => {
     const qual = e.target.dataset.np;
     if (!qual) return;
     const x = np.itens[Number(e.target.closest('.pn-np-item').dataset.i)];
     x[qual] = e.target.value;
+    if (qual !== 'calca' && qual !== 'extra') itensMudaram();
     if (qual === 'id') { x.calca = ''; x.extra = ''; desenharItens(); } else sugerirValor();
   });
   caixaItens.addEventListener('click', (e) => {
     if (!e.target.matches('[data-np-tirar]')) return;
     np.itens.splice(Number(e.target.closest('.pn-np-item').dataset.i), 1);
+    itensMudaram();
     desenharItens();
   });
   $('[data-np-add]', form).addEventListener('click', () => {
     np.itens.push({ id: vendaveis[0].id, calca: '', extra: '', qtd: 1 });
+    itensMudaram();
     desenharItens();
   });
-  form.elements.pagamento.addEventListener('change', sugerirValor);
-  form.elements.valor.addEventListener('input', () => { np.valorManual = true; });
+  form.elements.pagamento?.addEventListener('change', sugerirValor);
+  form.elements.valor?.addEventListener('input', () => { np.valorManual = true; });
   form.elements.telefone.addEventListener('input', (e) => { e.target.value = mascaraTelefone(e.target.value); });
   ligarBuscaCep(form.elements.cep, form);
-  $('[data-voltar]', alvo).addEventListener('click', () => { estado.novoAberto = false; abaPedidos(alvo); scrollTo(0, 0); });
+  $('[data-voltar]', alvo).addEventListener('click', () => {
+    estado.novoAberto = false;
+    if (existente) estado.abrirPedido = existente.id;
+    abaPedidos(alvo);
+    scrollTo(0, 0);
+  });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1591,24 +1814,27 @@ function abrirNovoPedido(alvo) {
     const erro = $('[data-erro]', form);
     const falhar = (msg, campoAlvo) => { erro.hidden = false; erro.textContent = msg; campoAlvo?.focus(); };
     const nome = el.nome.value.trim();
-    const valor = lerPreco(el.valor.value);
+    const valor = jaPago ? valorDe(existente) : lerPreco(el.valor.value);
     const tel = soNumeros(el.telefone.value);
     if (!nome) return falhar('Escreva o nome da cliente.', el.nome);
     if (tel && tel.length < 10) return falhar('O WhatsApp precisa ter DDD e número.', el.telefone);
     if (!valor) return falhar('Escreva o valor a cobrar. Ex.: 479,00.', el.valor);
-    const semEscolha = np.itens.find((x) => acha(x.id).escolha && !x.extra);
+    const semEscolha = np.itens.find((x) => acha(x.id)?.escolha && !x.extra);
     if (semEscolha) return falhar('Escolha o item do combo.');
     erro.hidden = true;
-    const agora = new Date();
-    const dois = (n) => String(n).padStart(2, '0');
     const itens = np.itens.map((x) => {
       const it = acha(x.id);
+      const o = x.original;
+      const qtd = Number(x.qtd) || 1;
+      if (!it) return { ...o, qtd };
       const calca = x.calca ? Number(x.calca) : null;
-      return { id: x.id, nome: it.nome, calca, tam: estado.catalogo.tabela.find((t) => t.calca.includes(calca))?.t || null, extra: x.extra || null, qtd: Number(x.qtd) || 1, preco: it.preco ?? null };
+      const base = { id: x.id, nome: it.nome, calca, tam: tamDaCalca(calca), extra: x.extra || null, qtd, preco: it.preco ?? null };
+      if (!o || o.id !== x.id) return base;
+      // Mesma peça: se o tamanho não mudou, ficam a calça e o preço que já estavam no pedido
+      const mesmoTam = !pedeTamanho(it) || (tamanhoDoItem(o) || null) === base.tam;
+      return { ...o, extra: base.extra, qtd, ...(mesmoTam ? {} : { calca, tam: base.tam }) };
     });
-    const novo = {
-      id: crypto.randomUUID(),
-      numero: `PCF-${dois(agora.getDate())}${dois(agora.getMonth() + 1)}-${Math.floor(1000 + Math.random() * 9000)}`,
+    const dados = {
       nome,
       telefone: tel || null,
       cep: el.cep.value.trim() || null,
@@ -1618,16 +1844,47 @@ function abrirNovoPedido(alvo) {
       bairro: el.bairro.value.trim() || null,
       cidade: el.cidade.value.trim() || null,
       uf: el.uf.value.trim().toUpperCase() || null,
-      pagamento: el.pagamento.value,
       itens,
-      total: somaItens() || valor,
-      valor,
-      status: el.pago.checked ? 'pago' : 'novo',
       nota: el.nota.value.trim() || null,
-      origem: 'manual',
     };
     const botao = $('button[type=submit]', form);
     botao.disabled = true;
+
+    if (existente) {
+      try {
+        // O valor mudou e a cliente tinha deixado um Pix ou cartão em aberto com o valor antigo: essa cobrança é cancelada
+        if (!jaPago && cobrancaAberta(existente) && valor !== valorDe(existente)) {
+          const r = await Banco.cancelarCobranca(existente.id).catch(() => null);
+          if (r?.pago) {
+            botao.disabled = false;
+            return falhar('Esta cliente acabou de pagar o valor antigo. Volte para os pedidos e abra de novo antes de editar.');
+          }
+        }
+        await Banco.alterarPedido(existente.id, { ...dados, total: somaItens() || existente.total, ...(jaPago ? {} : { pagamento: el.pagamento.value, valor }) });
+        estado.novoAberto = false;
+        estado.abrirPedido = existente.id;
+        await abaPedidos(alvo);
+        scrollTo(0, 0);
+        toast('Pedido atualizado');
+      } catch (ex2) {
+        botao.disabled = false;
+        falhar(`Não salvou: ${ex2.message}`);
+      }
+      return;
+    }
+
+    const agora = new Date();
+    const dois = (n) => String(n).padStart(2, '0');
+    const novo = {
+      id: crypto.randomUUID(),
+      numero: `PCF-${dois(agora.getDate())}${dois(agora.getMonth() + 1)}-${Math.floor(1000 + Math.random() * 9000)}`,
+      ...dados,
+      pagamento: el.pagamento.value,
+      total: somaItens() || valor,
+      valor,
+      status: el.pago.checked ? 'pago' : 'novo',
+      origem: 'manual',
+    };
     try {
       await Banco.criarPedido(novo);
       estado.novoAberto = false;
@@ -1636,9 +1893,9 @@ function abrirNovoPedido(alvo) {
       await abaPedidos(alvo);
       scrollTo(0, 0);
       toast('Pedido criado');
-    } catch (ex) {
+    } catch (ex2) {
       botao.disabled = false;
-      falhar(`Não salvou: ${ex.message}`);
+      falhar(`Não salvou: ${ex2.message}`);
     }
   });
 }

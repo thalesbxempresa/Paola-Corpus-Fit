@@ -179,22 +179,18 @@ alter table public.pedidos add column if not exists estoque_baixado boolean not 
 -- Pedido que já estava pago antes de existir a contagem não mexe no estoque
 update public.pedidos set estoque_baixado = true where status in ('pago', 'preparando', 'enviado', 'entregue') and not estoque_baixado;
 
--- Pedido pago dá baixa; cancelado (ou de volta para "novo") devolve. Uma vez só, mesmo mudando de etapa várias vezes.
--- O combo baixa cada peça que vai nele (2 sutiãs = 2 peças) e a escolha da cliente (gel ou sutiã).
-create or replace function public.pedido_estoque() returns trigger
+-- Soma ou tira do estoque as peças de uma lista de itens de pedido (p_sinal: -1 dá baixa, 1 devolve).
+-- O combo conta cada peça que vai nele (2 sutiãs = 2 peças) e a escolha da cliente (gel ou sutiã).
+create or replace function public.mexer_estoque(p_itens jsonb, p_sinal int) returns void
 language plpgsql security definer set search_path = '' as $$
 declare
-  v_baixa boolean := new.status in ('pago', 'preparando', 'enviado', 'entregue');
-  v_sinal int;
   v_linha jsonb;
   v_dados jsonb;
   v_peca text;
   v_tam text;
   v_qtd int;
 begin
-  if v_baixa = coalesce(new.estoque_baixado, false) then return new; end if;
-  v_sinal := case when v_baixa then -1 else 1 end;
-  for v_linha in select * from jsonb_array_elements(coalesce(new.itens, '[]'::jsonb)) loop
+  for v_linha in select * from jsonb_array_elements(coalesce(p_itens, '[]'::jsonb)) loop
     v_qtd := least(greatest(coalesce((v_linha ->> 'qtd')::int, 1), 1), 99);
     select i.dados into v_dados from public.itens i where i.id = v_linha ->> 'id';
     for v_peca in
@@ -204,16 +200,42 @@ begin
     loop
       v_tam := case when coalesce((select (p.dados ->> 'tamanhos')::boolean from public.itens p where p.id = v_peca), false)
         then coalesce(v_linha ->> 'tam', '') else '' end;
-      update public.estoque e set qtd = least(greatest(e.qtd + v_sinal * v_qtd, -9999), 9999) where e.item = v_peca and e.tam = v_tam;
+      update public.estoque e set qtd = least(greatest(e.qtd + p_sinal * v_qtd, -9999), 9999) where e.item = v_peca and e.tam = v_tam;
     end loop;
   end loop;
+end;
+$$;
+revoke all on function public.mexer_estoque(jsonb, int) from public, anon, authenticated;
+
+-- Pedido pago dá baixa; cancelado (ou de volta para "novo") devolve. Uma vez só, mesmo mudando de etapa várias vezes.
+-- Troca de peça ou de tamanho em pedido que já deu baixa: devolve o que tinha saído e baixa o que entra.
+create or replace function public.pedido_estoque() returns trigger
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_baixa boolean := new.status in ('pago', 'preparando', 'enviado', 'entregue');
+  v_baixado boolean := coalesce(new.estoque_baixado, false);
+begin
+  if tg_op = 'UPDATE' and v_baixa and v_baixado and new.itens is distinct from old.itens then
+    perform public.mexer_estoque(old.itens, 1);
+    perform public.mexer_estoque(new.itens, -1);
+    return new;
+  end if;
+  if v_baixa = v_baixado then return new; end if;
+  -- Ao devolver, valem os itens que tinham saído, mesmo que o pedido tenha sido editado na mesma gravação
+  perform public.mexer_estoque(case when tg_op = 'UPDATE' and not v_baixa then old.itens else new.itens end, case when v_baixa then -1 else 1 end);
   new.estoque_baixado := v_baixa;
   return new;
 end;
 $$;
 drop trigger if exists pedido_estoque on public.pedidos;
-create trigger pedido_estoque before insert or update of status on public.pedidos
+create trigger pedido_estoque before insert or update of status, itens on public.pedidos
   for each row execute function public.pedido_estoque();
+
+-- ---------- Gestão do pedido ----------
+-- Por que o pedido foi cancelado: a loja escolhe no painel, ou a função de pagamento anota quando o dinheiro é devolvido.
+alter table public.pedidos add column if not exists motivo_cancelamento text;
+alter table public.pedidos drop constraint if exists pedidos_motivo_cancelamento_check;
+alter table public.pedidos add constraint pedidos_motivo_cancelamento_check check (motivo_cancelamento is null or length(motivo_cancelamento) <= 200);
 
 -- Só pedido do site avisa: venda registrada à mão foi a própria loja que fez.
 -- Em projeto novo, troque o endereço pelo do novo projeto (veja LEIA-ME.md).
@@ -358,6 +380,10 @@ language sql stable security definer set search_path = '' as $$
     'uf', p.uf,
     'itens', coalesce((select jsonb_agg(jsonb_build_object('nome', i ->> 'nome', 'tam', i ->> 'tam', 'qtd', i -> 'qtd')) from jsonb_array_elements(p.itens) i), '[]'::jsonb),
     'total', p.total,
+    -- O que foi cobrado de fato (com o desconto do Pix) e o que aconteceu com o dinheiro
+    'valor', p.valor,
+    'pago', p.status in ('pago', 'preparando', 'enviado', 'entregue') or (p.mercadopago ->> 'pago_em') is not null,
+    'devolvido', (p.mercadopago ->> 'pago_em') is not null and p.mercadopago ->> 'status' = 'refunded',
     'rastreio_codigo', p.rastreio_codigo,
     'rastreio_link', p.rastreio_link,
     -- Quem ainda não pagou pode voltar a pagar pela página do pedido
