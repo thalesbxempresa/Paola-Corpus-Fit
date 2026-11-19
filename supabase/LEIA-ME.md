@@ -43,7 +43,7 @@ Com o cadastro fechado, crie a conta dela em *Authentication > Users > Add user 
 
 ## Acompanhamento do pedido
 
-A cliente acompanha em `acompanhar.html`, pelo link que vai na mensagem do pedido ou digitando o número do pedido e o CEP. Ela vê etapas, datas, rastreio, itens, cidade e o primeiro nome. Endereço, sobrenome e anotações internas nunca aparecem. As datas de cada etapa são registradas pelo próprio banco.
+A cliente acompanha em `acompanhar.html`, pelo link que vai na mensagem do pedido ou digitando o WhatsApp e o CEP de entrega que usou na compra (função `buscar_pedidos`; não precisa do número do pedido). O WhatsApp vale com ou sem o 55 e com ou sem o 9 da frente: o banco compara o DDD e os 8 últimos números. Com mais de um pedido, ela escolhe na lista. Ela vê etapas, datas, rastreio, itens, cidade e o primeiro nome. Endereço, sobrenome e anotações internas nunca aparecem. As datas de cada etapa são registradas pelo próprio banco.
 
 ## Aviso de pedido novo
 
@@ -113,7 +113,7 @@ Ao finalizar, depois dos dados de entrega e antes do pagamento, a cliente cria a
 - **Login próprio da loja**, separado do login do painel: o Supabase Auth continua só para administradores e o cadastro público dele segue desligado. As contas ficam nas tabelas `clientes` e `clientes_sessoes`, que ninguém do site lê; tudo passa pelas funções `cliente_*`.
 - **Sem e-mail de confirmação.** A senha fica embaralhada (bcrypt) e a sessão é um código guardado no aparelho dela; o banco guarda só a impressão digital desse código. Vale 180 dias, em até 10 aparelhos.
 - **5 senhas erradas** seguidas travam a conta por 15 minutos.
-- **Pedido entra na conta** quando é feito com ela aberta, quando ela entra num aparelho que já tinha pedidos, pelo link "Guardar este pedido na minha conta" na tela do pedido, ou por número + CEP em Minha conta. Pedido que já é de uma conta não passa para outra.
+- **Pedido entra na conta** quando é feito com ela aberta, quando ela entra num aparelho que já tinha pedidos, pelo link "Guardar este pedido na minha conta" na tela do pedido, ou pelo WhatsApp + CEP da compra em Minha conta (entram todos os pedidos com esses dados). Pedido que já é de uma conta não passa para outra.
 - **Esqueceu a senha:** hoje ela chama a Paola no WhatsApp ("Esqueci minha senha" abre a conversa). No painel, em Loja > Conta das clientes, a Paola digita o e-mail dela, gera o link e manda pelo WhatsApp. O link vale 48 horas e uma vez só.
 - **Recuperação por e-mail (ainda desligada):** falta só o envio. Uma função do servidor chama `cliente_codigo_senha(e-mail)` (liberada só para o `service_role`), monta o link `conta.html?nova=<código>` e manda por um serviço de e-mail. A tela de senha nova já é a mesma.
 

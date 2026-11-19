@@ -614,42 +614,77 @@ begin
 end;
 $$;
 
--- Liga um pedido à conta: pelo link do pedido (id) ou por número + CEP, as mesmas provas do acompanhamento.
+-- Pedidos de quem informa o WhatsApp e o CEP usados na compra: dados que a cliente sabe de cor,
+-- sem depender do número do pedido nem do link. O WhatsApp vale com ou sem o 55 e com ou sem o 9 da frente
+-- (compara o DDD e os 8 últimos números).
+create or replace function public.pedidos_do_contato(p_telefone text, p_cep text) returns setof uuid
+language sql stable security definer set search_path = '' as $$
+  with t as (
+    select regexp_replace(regexp_replace(coalesce(p_telefone, ''), '\D', '', 'g'), '^55(\d{10,11})$', '\1') as tel,
+           regexp_replace(coalesce(p_cep, ''), '\D', '', 'g') as cep
+  )
+  select p.id
+  from public.pedidos p, t
+  where length(t.tel) between 10 and 11
+    and length(t.cep) = 8
+    and regexp_replace(coalesce(p.cep, ''), '\D', '', 'g') = t.cep
+    and left(regexp_replace(regexp_replace(coalesce(p.telefone, ''), '\D', '', 'g'), '^55(\d{10,11})$', '\1'), 2) = left(t.tel, 2)
+    and right(regexp_replace(coalesce(p.telefone, ''), '\D', '', 'g'), 8) = right(t.tel, 8)
+  order by p.criado_em desc
+  limit 20;
+$$;
+
+-- Acompanhar sem o link: os pedidos (até 10) do WhatsApp + CEP, com os mesmos dados do acompanhamento
+create or replace function public.buscar_pedidos(p_telefone text, p_cep text) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select coalesce(jsonb_agg(public.acompanhar_pedido(x.id) order by x.criado_em desc), '[]'::jsonb)
+  from (
+    select p.id, p.criado_em from public.pedidos p
+    where p.id in (select public.pedidos_do_contato(p_telefone, p_cep))
+    order by p.criado_em desc
+    limit 10
+  ) x;
+$$;
+
+-- Liga pedidos à conta: pelo link do pedido (id) ou pelo WhatsApp + CEP da compra (todos os pedidos que baterem).
 -- Pedido que já é de outra conta não muda de dona.
-create or replace function public.cliente_vincular(p_sessao text, p_id uuid default null, p_numero text default null, p_cep text default null) returns jsonb
+drop function if exists public.cliente_vincular(text, uuid, text, text);
+create or replace function public.cliente_vincular(p_sessao text, p_id uuid default null, p_telefone text default null, p_cep text default null) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
   v_cliente uuid := public.cliente_da_sessao(p_sessao);
-  v_pedido uuid;
-  v_dona uuid;
+  v_achados uuid[];
+  v_ligados int;
+  v_outra int;
+  v_ultimo uuid;
 begin
   if v_cliente is null then
     return jsonb_build_object('ok', false, 'erro', 'sessao');
   end if;
-  select p.id, p.cliente_id into v_pedido, v_dona
-  from public.pedidos p
-  where p.id = p_id
-    or (
-      length(regexp_replace(coalesce(p_cep, ''), '\D', '', 'g')) = 8
-      and upper(p.numero) = upper(trim(p_numero))
-      and regexp_replace(coalesce(p.cep, ''), '\D', '', 'g') = regexp_replace(p_cep, '\D', '', 'g')
-    )
-  order by p.criado_em desc
-  limit 1;
-  if v_pedido is null then
+  if p_id is not null then
+    v_achados := array(select p.id from public.pedidos p where p.id = p_id);
+  else
+    v_achados := array(select public.pedidos_do_contato(p_telefone, p_cep));
+  end if;
+  if cardinality(v_achados) = 0 then
     return jsonb_build_object('ok', false, 'erro', 'nao_achou');
   end if;
-  if v_dona is not null and v_dona <> v_cliente then
+  update public.pedidos p set cliente_id = v_cliente where p.id = any(v_achados) and p.cliente_id is null;
+  select count(*) filter (where p.cliente_id = v_cliente), count(*) filter (where p.cliente_id <> v_cliente)
+    into v_ligados, v_outra
+    from public.pedidos p where p.id = any(v_achados);
+  if v_ligados = 0 then
     return jsonb_build_object('ok', false, 'erro', 'outra_conta');
   end if;
-  update public.pedidos set cliente_id = v_cliente where id = v_pedido and cliente_id is null;
-  -- Conta criada sem nome aproveita o nome e o WhatsApp do pedido
+  -- Conta criada sem nome aproveita o nome e o WhatsApp do pedido mais recente
+  select p.id into v_ultimo from public.pedidos p
+    where p.id = any(v_achados) and p.cliente_id = v_cliente order by p.criado_em desc limit 1;
   update public.clientes c
     set nome = case when c.nome = '' then left(p.nome, 120) else c.nome end,
         telefone = coalesce(c.telefone, left(p.telefone, 15))
     from public.pedidos p
-    where c.id = v_cliente and p.id = v_pedido and (c.nome = '' or c.telefone is null);
-  return jsonb_build_object('ok', true, 'id', v_pedido);
+    where c.id = v_cliente and p.id = v_ultimo and (c.nome = '' or c.telefone is null);
+  return jsonb_build_object('ok', true, 'id', v_ultimo, 'n', v_ligados, 'outra_conta', v_outra);
 end;
 $$;
 
@@ -716,9 +751,10 @@ alter table public.clientes_sessoes enable row level security;
 revoke all on public.clientes, public.clientes_sessoes from anon, authenticated;
 revoke all on function public.cliente_digital(text), public.cliente_resumo(uuid), public.cliente_abrir_sessao(uuid), public.cliente_da_sessao(text),
   public.cliente_criar(text, text, text, text), public.cliente_entrar(text, text), public.cliente_sair(text), public.cliente_pedidos(text),
-  public.cliente_vincular(text, uuid, text, text), public.cliente_codigo_senha(text), public.cliente_link_senha(text), public.cliente_nova_senha(text, text)
+  public.cliente_vincular(text, uuid, text, text), public.cliente_codigo_senha(text), public.cliente_link_senha(text), public.cliente_nova_senha(text, text),
+  public.pedidos_do_contato(text, text), public.buscar_pedidos(text, text)
   from public, anon, authenticated;
 grant execute on function public.cliente_criar(text, text, text, text), public.cliente_entrar(text, text), public.cliente_sair(text), public.cliente_pedidos(text),
-  public.cliente_vincular(text, uuid, text, text), public.cliente_nova_senha(text, text) to anon, authenticated;
+  public.cliente_vincular(text, uuid, text, text), public.cliente_nova_senha(text, text), public.buscar_pedidos(text, text) to anon, authenticated;
 grant execute on function public.cliente_link_senha(text) to authenticated;
 grant execute on function public.cliente_codigo_senha(text) to service_role;

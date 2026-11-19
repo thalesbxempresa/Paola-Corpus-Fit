@@ -112,12 +112,19 @@ const Catalogo = (() => {
   }
   if (ligado && document.body.dataset.pagina !== 'admin') (parse(ler(FILA)) || []).forEach(enviar);
 
-  // Acompanhamento: pelo link do pedido ({ p_id }) ou por número + CEP ({ p_numero, p_cep })
+  // Acompanhamento pelo link do pedido ({ p_id })
   async function acompanhar(filtro) {
     const r = await rpc('acompanhar_pedido', filtro);
     if (r.status === 400) return null; // Link adulterado: mesmo caso de não encontrar
     if (!r.ok) throw new Error('Acompanhamento indisponível');
     return r.json();
+  }
+  // Sem o link: os pedidos do WhatsApp + CEP usados na compra (lista, do mais novo para o mais antigo)
+  async function buscarPedidos(telefone, cep) {
+    const r = await rpc('buscar_pedidos', { p_telefone: telefone, p_cep: cep });
+    if (!r.ok) throw new Error('Acompanhamento indisponível');
+    const lista = await r.json();
+    return Array.isArray(lista) ? lista : [];
   }
 
   // Pagamento no site. O pedido precisa estar no banco antes de abrir o pagamento: o servidor cobra com o que está lá
@@ -170,7 +177,7 @@ const Catalogo = (() => {
         if (r.ok && c && r.cliente) gravar(CONTA, JSON.stringify({ ...c, email: r.cliente.email || c.email, nome: r.cliente.nome || c.nome }));
         return r;
       },
-      // Liga um pedido à conta: { p_id } pelo link do pedido ou { p_numero, p_cep }
+      // Liga pedidos à conta: { p_id } pelo link do pedido ou { p_telefone, p_cep } da compra
       vincular: (filtro) => comSessao('cliente_vincular', filtro),
       sair() {
         const c = atual();
@@ -195,5 +202,5 @@ const Catalogo = (() => {
     aplicar(padrao);
   };
 
-  return { ligado, FIXOS, pronto, doc, valido, salvarLocal, restaurar, evento, enviarPedido, acompanhar, pagar, pagamento: funcaoPagamento, conta };
+  return { ligado, FIXOS, pronto, doc, valido, salvarLocal, restaurar, evento, enviarPedido, acompanhar, buscarPedidos, pagar, pagamento: funcaoPagamento, conta };
 })();

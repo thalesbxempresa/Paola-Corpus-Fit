@@ -69,6 +69,35 @@ const pagaNoSite = () => Catalogo.ligado && LOJA.pagarNoSite === true;
 // Conta da cliente (e-mail e senha): precisa do banco ligado
 const temConta = () => Catalogo.ligado;
 
+// Máscaras de WhatsApp e CEP enquanto a cliente digita
+const mascaraTelefone = (v) => {
+  const d = String(v || '').replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, '').slice(0, 11);
+  return d.length <= 2 ? d
+    : d.length <= 6 ? `(${d.slice(0, 2)}) ${d.slice(2)}`
+      : d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+};
+const mascaraCep = (v) => { const d = String(v || '').replace(/\D/g, '').slice(0, 8); return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d; };
+
+// Achar pedido sem o link nem o número: o WhatsApp e o CEP que ela usou na compra, que ela sabe de cor.
+// Neste aparelho, já vêm preenchidos com o que ela digitou na última compra.
+const contatoHTML = (prefixo) => `
+  <div class="campo"><label for="${prefixo}-tel">WhatsApp que você usou na compra</label><input id="${prefixo}-tel" name="telefone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="(21) 99999-9999" maxlength="15" required></div>
+  <div class="campo"><label for="${prefixo}-cep">CEP de entrega</label><input id="${prefixo}-cep" name="cep" inputmode="numeric" placeholder="00000-000" maxlength="9" autocomplete="postal-code" required></div>`;
+function ligarContato(form) {
+  const ultimo = lerJSON('pcf-cliente', {});
+  form.telefone.value = mascaraTelefone(ultimo.telefone);
+  form.cep.value = mascaraCep(ultimo.cep);
+  form.telefone.addEventListener('input', () => { form.telefone.value = mascaraTelefone(form.telefone.value); });
+  form.cep.addEventListener('input', () => { form.cep.value = mascaraCep(form.cep.value); });
+  return () => {
+    const telefone = form.telefone.value.replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, '');
+    const cep = form.cep.value.replace(/\D/g, '');
+    if (telefone.length < 10) { form.telefone.focus(); return { erro: 'Escreva o WhatsApp com DDD, do jeito que você usou na compra.' }; }
+    if (cep.length !== 8) { form.cep.focus(); return { erro: 'Digite os 8 números do CEP de entrega.' }; }
+    return { telefone, cep };
+  };
+}
+
 // O número da calça é perguntado uma vez só e vale para o site todo
 let calcaMemoria = null;
 function lerCalca() {
@@ -442,12 +471,7 @@ function finalizar() {
   const form = $('#form-checkout', m);
   const CAMPOS = ['nome', 'telefone', 'cep', 'rua', 'num', 'complemento', 'bairro', 'cidade', 'uf'];
   CAMPOS.forEach((c) => { form[c].value = cliente[c] || ''; });
-  form.telefone.addEventListener('input', () => {
-    const d = form.telefone.value.replace(/\D/g, '').slice(0, 11);
-    form.telefone.value = d.length <= 2 ? d
-      : d.length <= 6 ? `(${d.slice(0, 2)}) ${d.slice(2)}`
-        : d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
-  });
+  form.telefone.addEventListener('input', () => { form.telefone.value = mascaraTelefone(form.telefone.value); });
   // Pelo CEP, o endereço se preenche sozinho (ViaCEP, serviço público e gratuito); se falhar, ela digita
   const status = $('[data-status]', m);
   let ultimoCep = '';
@@ -646,6 +670,12 @@ async function ligarPedidosDaConta() {
 }
 
 const ROTULO_ETAPA = { pago: 'Pagamento confirmado', preparando: 'Preparando', enviado: 'Enviado', entregue: 'Entregue', cancelado: 'Cancelado' };
+// Uma linha da lista de pedidos (Minha conta e busca por WhatsApp + CEP): leva ao acompanhamento do pedido
+function linhaPedidoHTML(p) {
+  const itens = (p.itens || []).map((x) => `${x.qtd || 1}x ${x.nome}`).join(', ');
+  const rotulo = ROTULO_ETAPA[p.status] || (pagaNoSite() || p.link_pagamento ? 'Aguardando pagamento' : 'Pedido recebido');
+  return `<a href="${esc(linkAcompanhar(p.id))}"><span><b>${esc(p.numero)}</b><small>${esc(new Date(p.criado_em).toLocaleDateString('pt-BR'))} · ${brl(Number(p.pago && p.valor != null ? p.valor : p.total))}</small><small>${esc(itens)}</small></span><em class="conta-etapa etapa-${esc(p.status)}">${rotulo}</em>${I.seta}</a>`;
+}
 
 function telaConta() {
   const caixa = $('#conta');
@@ -658,12 +688,6 @@ function telaConta() {
   const pedidoDoLink = /^[0-9a-f-]{36}$/i.test(busca.get('pedido') || '') ? busca.get('pedido') : null;
   // O código de senha nova não fica no endereço nem no histórico do navegador
   if (codigo) history.replaceState(null, '', 'conta.html');
-
-  const linhaPedido = (p) => {
-    const itens = (p.itens || []).map((x) => `${x.qtd || 1}x ${x.nome}`).join(', ');
-    const rotulo = ROTULO_ETAPA[p.status] || (pagaNoSite() || p.link_pagamento ? 'Aguardando pagamento' : 'Pedido recebido');
-    return `<a href="${esc(linkAcompanhar(p.id))}"><span><b>${esc(p.numero)}</b><small>${esc(new Date(p.criado_em).toLocaleDateString('pt-BR'))} · ${brl(Number(p.pago && p.valor != null ? p.valor : p.total))}</small><small>${esc(itens)}</small></span><em class="conta-etapa etapa-${esc(p.status)}">${rotulo}</em>${I.seta}</a>`;
-  };
 
   async function mostrarPedidos() {
     caixa.innerHTML = '<p class="acomp-carregando">Buscando seus pedidos…</p>';
@@ -684,14 +708,13 @@ function telaConta() {
     caixa.innerHTML = `<span class="sobre">Minha conta</span>
       <h1 class="titulo">${nome ? `Oi, ${esc(nome)}!` : 'Seus pedidos'}</h1>
       <section class="acomp-meus conta-pedidos"><h2>${nome ? 'Seus pedidos' : 'Tudo o que você comprou'}</h2>
-        ${r.pedidos.length ? r.pedidos.map(linhaPedido).join('') : '<p class="conta-vazio">Você ainda não tem pedidos nesta conta. Quando comprar, o pedido aparece aqui.</p>'}
+        ${r.pedidos.length ? r.pedidos.map(linhaPedidoHTML).join('') : '<p class="conta-vazio">Você ainda não tem pedidos nesta conta. Quando comprar, o pedido aparece aqui.</p>'}
       </section>
       ${r.pedidos.length ? '' : '<a class="btn btn-preto btn-bloco" href="index.html#comprar">Fazer meu pedido</a>'}
-      <details class="conta-achar"><summary>Comprou e o pedido não aparece aqui?</summary>
+      <details class="conta-achar" ${r.pedidos.length ? '' : 'open'}><summary>Comprou e o pedido não aparece aqui?</summary>
         <form class="acomp-form" id="form-achar" novalidate>
-          <p>Digite o número do pedido e o CEP de entrega para guardar esse pedido na sua conta.</p>
-          <div class="campo"><label for="ac-numero">Número do pedido</label><input id="ac-numero" name="numero" placeholder="PCF-0411-1234" autocapitalize="characters" autocomplete="off" required></div>
-          <div class="campo"><label for="ac-cep">CEP de entrega</label><input id="ac-cep" name="cep" inputmode="numeric" placeholder="00000-000" maxlength="9" autocomplete="postal-code" required></div>
+          <p>Digite o WhatsApp e o CEP de entrega que você usou na compra. Os pedidos com esses dados entram na sua conta.</p>
+          ${contatoHTML('ach')}
           <p class="dica-tam erro" data-erro hidden></p>
           <button class="btn btn-claro btn-bloco" type="submit">Guardar na minha conta</button>
         </form>
@@ -705,23 +728,25 @@ function telaConta() {
     });
     const form = $('#form-achar', caixa);
     const erro = $('[data-erro]', form);
-    form.cep.addEventListener('input', () => {
-      const d = form.cep.value.replace(/\D/g, '').slice(0, 8);
-      form.cep.value = d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
-    });
+    const lerContato = ligarContato(form);
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const numero = form.numero.value.trim();
-      const cep = form.cep.value.replace(/\D/g, '');
       erro.hidden = false;
-      if (!numero || cep.length !== 8) { erro.textContent = 'Preencha o número do pedido e os 8 números do CEP.'; return; }
+      const c = lerContato();
+      if (c.erro) { erro.textContent = c.erro; return; }
       const botao = $('button[type=submit]', form);
       botao.disabled = true;
       try {
-        const v = await Catalogo.conta.vincular({ p_numero: numero, p_cep: cep });
-        if (v.ok) { toast('Pedido guardado na sua conta'); return mostrarPedidos(); }
+        const v = await Catalogo.conta.vincular({ p_telefone: c.telefone, p_cep: c.cep });
+        if (v.ok) {
+          const n = Number(v.n) || 1;
+          toast(n > 1 ? `${n} pedidos estão na sua conta` : 'Pedido guardado na sua conta');
+          return mostrarPedidos();
+        }
         if (v.erro === 'sessao') return mostrarEntrada('Sua conta foi fechada neste aparelho. Entre de novo.');
-        erro.textContent = v.erro === 'outra_conta' ? 'Esse pedido já está guardado em outra conta. Fale com a Paola.' : 'Não encontramos esse pedido. Confira o número e o CEP.';
+        erro.textContent = v.erro === 'outra_conta'
+          ? 'Os pedidos com esse WhatsApp e CEP já estão guardados em outra conta. Fale com a Paola.'
+          : 'Não encontramos pedido com esse WhatsApp e CEP. Confira os dois ou fale com a Paola.';
       } catch (ex) {
         erro.textContent = 'Não conseguimos buscar agora. Confira a internet e tente de novo.';
       }
@@ -1404,9 +1429,8 @@ function telaAcompanhar() {
         ${doAparelho.map((x) => `<a href="${esc(linkAcompanhar(x.id))}"><span><b>${esc(x.numero)}</b><small>${esc(new Date(x.data).toLocaleDateString('pt-BR'))} · ${brl(Number(x.total))}</small></span>${I.seta}</a>`).join('')}
       </section>` : ''}
       <form class="acomp-form" id="form-acomp" novalidate>
-        <p>Digite o número do pedido e o CEP de entrega. O número aparece na tela do seu pedido e nas mensagens da Paola.</p>
-        <div class="campo"><label for="ac-numero">Número do pedido</label><input id="ac-numero" name="numero" placeholder="PCF-0411-1234" autocapitalize="characters" autocomplete="off" required></div>
-        <div class="campo"><label for="ac-cep">CEP de entrega</label><input id="ac-cep" name="cep" inputmode="numeric" placeholder="00000-000" maxlength="9" autocomplete="postal-code" required></div>
+        <p>Digite o WhatsApp e o CEP de entrega que você usou na compra. Não precisa do número do pedido.</p>
+        ${contatoHTML('ac')}
         <p class="dica-tam erro" data-erro ${aviso ? '' : 'hidden'}>${esc(aviso)}</p>
         <button class="btn btn-preto btn-bloco" type="submit">Ver meu pedido</button>
       </form>
@@ -1414,31 +1438,33 @@ function telaAcompanhar() {
       <a class="link-tam envio-copiar" href="${esc(LOJA.whatsapp)}" target="_blank" rel="noopener">Não achou? Fale com a Paola</a>`;
     const form = $('#form-acomp', caixa);
     const erro = $('[data-erro]', form);
-    form.cep.addEventListener('input', () => {
-      const d = form.cep.value.replace(/\D/g, '').slice(0, 8);
-      form.cep.value = d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
-    });
+    const lerContato = ligarContato(form);
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const numero = form.numero.value.trim();
-      const cep = form.cep.value.replace(/\D/g, '');
-      if (!numero || cep.length !== 8) {
-        erro.hidden = false;
-        erro.textContent = 'Preencha o número do pedido e os 8 números do CEP.';
-        return;
-      }
+      erro.hidden = false;
+      const c = lerContato();
+      if (c.erro) { erro.textContent = c.erro; return; }
       const botao = $('button[type=submit]', form);
       botao.disabled = true;
       try {
-        const p = await Catalogo.acompanhar({ p_numero: numero, p_cep: cep });
-        if (p) return mostrarPedido(p);
-        erro.textContent = 'Não encontramos esse pedido. Confira o número e o CEP.';
+        const lista = await Catalogo.buscarPedidos(c.telefone, c.cep);
+        if (lista.length === 1) return mostrarPedido(lista[0]);
+        if (lista.length > 1) return mostrarLista(lista);
+        erro.textContent = 'Não encontramos pedido com esse WhatsApp e CEP. Confira os dois ou fale com a Paola.';
       } catch (ex) {
         erro.textContent = 'Não conseguimos buscar agora. Confira a internet e tente de novo.';
       }
-      erro.hidden = false;
       botao.disabled = false;
     });
+  };
+  // Mais de um pedido com o mesmo WhatsApp e CEP: ela escolhe qual quer ver
+  const mostrarLista = (lista) => {
+    caixa.innerHTML = `<span class="sobre">Paola Corpus Fit</span>
+      <h1 class="titulo">Seus pedidos</h1>
+      <section class="acomp-meus conta-pedidos"><h2>Encontramos ${lista.length} pedidos com esse WhatsApp e CEP</h2>${lista.map(linhaPedidoHTML).join('')}</section>
+      <button class="link-tam envio-copiar" type="button" data-voltar>Buscar de novo</button>`;
+    scrollTo(0, 0);
+    $('[data-voltar]', caixa).addEventListener('click', () => mostrarBusca());
   };
 
   if (!Catalogo.ligado) {
@@ -1449,7 +1475,7 @@ function telaAcompanhar() {
   const id = busca.get('p');
   if (!id) return mostrarBusca();
   Catalogo.acompanhar({ p_id: id })
-    .then((p) => (p ? mostrarPedido(p) : mostrarBusca('Não encontramos esse pedido. Digite o número e o CEP.')))
+    .then((p) => (p ? mostrarPedido(p) : mostrarBusca('Não encontramos esse pedido. Digite seu WhatsApp e o CEP.')))
     .catch(() => mostrarBusca('Não conseguimos buscar agora. Confira a internet e tente de novo.'));
 }
 
