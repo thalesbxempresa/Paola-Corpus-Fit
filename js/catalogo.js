@@ -133,6 +133,53 @@ const Catalogo = (() => {
     return `pagamento.html?p=${encodeURIComponent(p.id)}`;
   }
 
+  // Conta da cliente: login próprio da loja (e-mail e senha), para ela ver os pedidos em qualquer aparelho.
+  // A sessão é um código que fica neste aparelho; o banco guarda só a impressão digital dele.
+  const conta = (() => {
+    const CONTA = 'pcf-conta';
+    const atual = () => {
+      const c = parse(ler(CONTA));
+      return ligado && c && typeof c.sessao === 'string' && c.sessao.length === 64 ? c : null;
+    };
+    const esquecer = () => { try { localStorage.removeItem(CONTA); } catch (e) { /* ok */ } };
+    const guardar = (r) => {
+      if (r && r.ok && r.sessao) gravar(CONTA, JSON.stringify({ sessao: r.sessao, email: r.cliente?.email || '', nome: r.cliente?.nome || '' }));
+      return r;
+    };
+    const chamar = async (nome, corpo) => {
+      const r = await rpc(nome, corpo);
+      if (!r.ok) throw new Error('Conta indisponível');
+      return r.json();
+    };
+    // Com a sessão: se o banco disser que ela não vale mais, o aparelho sai da conta
+    const comSessao = async (nome, corpo) => {
+      const c = atual();
+      if (!c) return { ok: false, erro: 'sessao' };
+      const r = await chamar(nome, { p_sessao: c.sessao, ...corpo });
+      if (r && r.erro === 'sessao') esquecer();
+      return r;
+    };
+    return {
+      atual,
+      criar: (email, senha, nome, telefone) => chamar('cliente_criar', { p_email: email, p_senha: senha, p_nome: nome || '', p_telefone: telefone || '' }).then(guardar),
+      entrar: (email, senha) => chamar('cliente_entrar', { p_email: email, p_senha: senha }).then(guardar),
+      novaSenha: (codigo, senha) => chamar('cliente_nova_senha', { p_codigo: codigo, p_senha: senha }).then(guardar),
+      async pedidos() {
+        const r = await comSessao('cliente_pedidos');
+        const c = atual();
+        if (r.ok && c && r.cliente) gravar(CONTA, JSON.stringify({ ...c, email: r.cliente.email || c.email, nome: r.cliente.nome || c.nome }));
+        return r;
+      },
+      // Liga um pedido à conta: { p_id } pelo link do pedido ou { p_numero, p_cep }
+      vincular: (filtro) => comSessao('cliente_vincular', filtro),
+      sair() {
+        const c = atual();
+        esquecer();
+        if (c) rpc('cliente_sair', { p_sessao: c.sessao }, { keepalive: true }).catch(() => {});
+      },
+    };
+  })();
+
   // Versão crua para o painel (sem o tratamento de HTML da loja)
   const doc = () => {
     const salvo = parse(ler(CHAVE));
@@ -148,5 +195,5 @@ const Catalogo = (() => {
     aplicar(padrao);
   };
 
-  return { ligado, FIXOS, pronto, doc, valido, salvarLocal, restaurar, evento, enviarPedido, acompanhar, pagar, pagamento: funcaoPagamento };
+  return { ligado, FIXOS, pronto, doc, valido, salvarLocal, restaurar, evento, enviarPedido, acompanhar, pagar, pagamento: funcaoPagamento, conta };
 })();

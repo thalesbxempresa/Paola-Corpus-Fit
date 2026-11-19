@@ -514,3 +514,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .pn-fila.alerta.tem small { color: #8E2A1E; }
 .pn-np-fixo { display: grid; gap: 2px; margin: 0; }
 .pn-np-fixo small { font-size: 13px; color: var(--tinta-2); }
+
+.pn-link-senha { margin-top: 14px; }
+.pn-texto + .pn-form-mini { margin-top: 14px; }

@@ -160,6 +160,7 @@ const Local = {
   async situacaoPagamento() { return { instalada: false }; },
   async criarLinkPagamento() { throw new Error('conecte o Supabase primeiro'); },
   async cancelarCobranca() { return { cancelada: false }; },
+  async linkSenhaCliente() { throw new Error('conecte o Supabase primeiro'); },
   // Sem banco, o estoque fica no catálogo salvo neste navegador
   async lerEstoque() { return JSON.parse(JSON.stringify(estado.catalogo?.estoque?.itens || {})); },
   async salvarEstoque(id, tam, qtd) {
@@ -297,6 +298,8 @@ const Nuvem = (() => {
       if (!r.ok) throw new Error(d.erro || 'o Mercado Pago não respondeu');
       return d;
     },
+    // A cliente esqueceu a senha da conta dela na loja: o banco devolve o código do link de senha nova
+    async linkSenhaCliente(email) { return checar(await sb.rpc('cliente_link_senha', { p_email: email })); },
     async eventos() { return checar(await sb.from('eventos_dia').select('*').limit(4000)); },
     async catalogo() {
       const doc = checar(await sb.rpc('catalogo_publico'));
@@ -2698,6 +2701,15 @@ function abaLoja(alvo) {
       </ol>` : '<p class="pn-texto"><b>Conectado ao Supabase.</b> Pedidos, produtos e dados da loja estão salvos no banco.</p>'}
     </section>
 
+    ${local ? '' : `<section class="pn-card pn-espaco"><h2>Conta das clientes</h2>
+      <p class="pn-texto">A cliente cria a conta dela ao finalizar a compra, com e-mail e senha, e vê os pedidos em qualquer aparelho. <b>Ela esqueceu a senha?</b> Digite o e-mail dela, gere o link e mande pelo WhatsApp: por ele, ela cria uma senha nova. O link vale 48 horas e funciona uma vez só.</p>
+      <form id="form-senha-cliente" class="pn-form-mini" novalidate>
+        <div class="campo"><label for="email-cliente">E-mail da cliente</label><input id="email-cliente" type="email" inputmode="email" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="maria@gmail.com"></div>
+        <button class="btn btn-claro" type="submit">Gerar link de senha nova</button>
+      </form>
+      <div id="link-senha-cliente" class="pn-link-senha" hidden></div>
+    </section>`}
+
     <section class="pn-card pn-espaco"><h2>Sua conta</h2>
       <form id="form-senha" class="pn-form-mini" novalidate>
         <div class="campo"><label for="nova-senha">Nova senha</label><input id="nova-senha" type="password" autocomplete="new-password" minlength="8"></div>
@@ -2805,6 +2817,34 @@ function abaLoja(alvo) {
       inp.value = '';
       toast('Senha trocada');
     } catch (ex) { toast(`Não trocou: ${ex.message}`); }
+  });
+  $('#form-senha-cliente')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = $('#email-cliente').value.trim();
+    const caixa = $('#link-senha-cliente');
+    caixa.hidden = true;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return toast('Digite o e-mail da cliente');
+    const botao = $('button[type=submit]', e.currentTarget);
+    botao.disabled = true;
+    try {
+      const r = await Banco.linkSenhaCliente(email);
+      if (!r?.ok) return toast('Não existe conta com esse e-mail');
+      const link = new URL(`conta.html?nova=${encodeURIComponent(r.codigo)}`, location.href).href;
+      const nome = (r.nome || '').split(' ')[0];
+      const mensagem = `Oi${nome ? `, ${nome}` : ''}! Aqui está o link para você criar uma senha nova na loja:\n${link}\nEle vale por 48 horas.`;
+      const copiar = async (texto, aviso) => {
+        try { await navigator.clipboard.writeText(texto); toast(aviso); } catch (ex) { toast('Não deu para copiar. Tente de novo.'); }
+      };
+      caixa.hidden = false;
+      caixa.innerHTML = `<p class="pn-texto"><b>Link pronto${nome ? ` para ${esc(nome)}` : ''}.</b> Mande para ela pelo WhatsApp. Se gerar outro, este para de valer.</p>
+        <div class="pn-acoes"><button class="btn btn-preto pn-btn-p" type="button" data-copiar-msg>Copiar mensagem com o link</button><button class="btn btn-claro pn-btn-p" type="button" data-copiar-link>Copiar só o link</button></div>`;
+      $('[data-copiar-msg]', caixa).addEventListener('click', () => copiar(mensagem, 'Mensagem copiada'));
+      $('[data-copiar-link]', caixa).addEventListener('click', () => copiar(link, 'Link copiado'));
+    } catch (ex) {
+      toast(`Não gerou o link: ${ex.message}`);
+    } finally {
+      botao.disabled = false;
+    }
   });
   $('[data-baixar-cat]', alvo).addEventListener('click', () => baixar(`catalogo-${new Date().toLocaleDateString('en-CA')}.json`, JSON.stringify(estado.catalogo, null, 2), 'application/json'));
   $('[data-restaurar]', alvo)?.addEventListener('click', () => {

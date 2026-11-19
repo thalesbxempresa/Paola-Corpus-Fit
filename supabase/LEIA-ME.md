@@ -106,11 +106,23 @@ Cada pedido tem um próximo passo só (confirmar, preparar, enviar, entregar). O
 - **Editar pedido:** troca peça, tamanho e quantidade e corrige nome, WhatsApp e endereço. Em pedido já pago pelo site o valor cobrado não muda: o painel mostra a diferença para a loja acertar com a cliente. Em pedido ainda não pago, o valor é refeito e a cobrança antiga em aberto é cancelada. O banco acerta o estoque sozinho na troca.
 - **Excluir pedido** e **corrigir a etapa** ficam em "Mais opções", porque são para engano, não para o dia a dia.
 
+## Conta da cliente
+
+Ao finalizar, depois dos dados de entrega e antes do pagamento, a cliente cria a conta (e-mail e senha) ou entra na que já tem. Dá para seguir sem conta: a venda vem antes do cadastro. Com a conta, ela abre **Minha conta** (`conta.html`, ícone no topo do site) em qualquer celular ou computador e vê os pedidos dela.
+
+- **Login próprio da loja**, separado do login do painel: o Supabase Auth continua só para administradores e o cadastro público dele segue desligado. As contas ficam nas tabelas `clientes` e `clientes_sessoes`, que ninguém do site lê; tudo passa pelas funções `cliente_*`.
+- **Sem e-mail de confirmação.** A senha fica embaralhada (bcrypt) e a sessão é um código guardado no aparelho dela; o banco guarda só a impressão digital desse código. Vale 180 dias, em até 10 aparelhos.
+- **5 senhas erradas** seguidas travam a conta por 15 minutos.
+- **Pedido entra na conta** quando é feito com ela aberta, quando ela entra num aparelho que já tinha pedidos, pelo link "Guardar este pedido na minha conta" na tela do pedido, ou por número + CEP em Minha conta. Pedido que já é de uma conta não passa para outra.
+- **Esqueceu a senha:** hoje ela chama a Paola no WhatsApp ("Esqueci minha senha" abre a conversa). No painel, em Loja > Conta das clientes, a Paola digita o e-mail dela, gera o link e manda pelo WhatsApp. O link vale 48 horas e uma vez só.
+- **Recuperação por e-mail (ainda desligada):** falta só o envio. Uma função do servidor chama `cliente_codigo_senha(e-mail)` (liberada só para o `service_role`), monta o link `conta.html?nova=<código>` e manda por um serviço de e-mail. A tela de senha nova já é a mesma.
+
 ## O que cada um pode fazer
 
 | Quem | Pode | Não pode |
 |---|---|---|
 | Cliente (sem login) | Ler o catálogo, registrar pedido, somar contador do funil, acompanhar o próprio pedido | Ler a lista de pedidos, alterar preço, alterar catálogo |
+| Cliente (com conta) | O mesmo, mais ver a lista dos pedidos dela (sem endereço nem telefone) | Ver pedido de outra conta, ler as tabelas de clientes |
 | Administrador | Tudo no painel | - |
 
 O total do pedido é sempre recalculado no banco com os preços de lá. Se o valor enviado pelo site não bater, o pedido entra marcado como **Conferir valor**.

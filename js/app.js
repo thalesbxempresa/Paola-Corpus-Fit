@@ -66,6 +66,8 @@ const textoEstoque = (it, t, extra = null) => {
 const TAMANHO_ACABOU = 'Esse tamanho acabou nesta opção. Marque outro número ou fale com a Paola.';
 // Pagamento no site pelo Mercado Pago. Desligado (padrão): a cliente fecha com a Paola no WhatsApp, como sempre
 const pagaNoSite = () => Catalogo.ligado && LOJA.pagarNoSite === true;
+// Conta da cliente (e-mail e senha): precisa do banco ligado
+const temConta = () => Catalogo.ligado;
 
 // O número da calça é perguntado uma vez só e vale para o site todo
 let calcaMemoria = null;
@@ -115,6 +117,7 @@ const I = {
   chat: svg('<path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3.5 20.5l1.4-4.8A8.5 8.5 0 1 1 21 11.5z"/>'),
   escudo: svg('<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>'),
   ok: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 'stroke-width="3"'),
+  pessoa: svg('<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/>'),
   insta: svg('<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.4" cy="6.6" r="1" fill="currentColor"/>'),
   whats: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.5-.3z"/></svg>',
 };
@@ -149,6 +152,7 @@ function montarTopo() {
       </nav>
       <div class="cab-dir">
         <a class="zap-topo" href="${LOJA.whatsapp}" target="_blank" rel="noopener">${I.whats}WhatsApp</a>
+        ${temConta() ? `<a class="ico-btn conta-btn" href="conta.html" aria-label="Minha conta">${I.pessoa}</a>` : ''}
         <button class="ico-btn" type="button" data-abrir="sacola" aria-label="Abrir seu pedido">${I.sacola}<span class="conta-sacola" hidden>0</span></button>
       </div>
     </div>
@@ -158,7 +162,7 @@ function montarTopo() {
     <div class="gaveta-topo"><h2>Menu</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
     <div class="gaveta-corpo">
       <a class="btn btn-preto btn-bloco" href="index.html#comprar" data-fechar>Fazer meu pedido</a>
-      <nav class="menu-links" style="margin-top:14px">${[...MENU.slice(1, 4), ['Acompanhar meu pedido', 'acompanhar.html']].map(([nome, link]) => `<a href="${link}" data-fechar>${nome}${I.seta}</a>`).join('')}</nav>
+      <nav class="menu-links" style="margin-top:14px">${[...MENU.slice(1, 4), ...(temConta() ? [['Minha conta', 'conta.html']] : []), ['Acompanhar meu pedido', 'acompanhar.html']].map(([nome, link]) => `<a href="${link}" data-fechar>${nome}${I.seta}</a>`).join('')}</nav>
       <a class="menu-praia" href="moda-praia.html"><span>Lançamento</span><b>Moda Praia</b><span>Entre na lista de espera →</span></a>
       <div class="menu-contato">
         <a class="btn btn-claro" href="${LOJA.whatsapp}" target="_blank" rel="noopener">${I.whats}Falar com a Paola</a>
@@ -178,6 +182,16 @@ function montarTopo() {
   let i = 0;
   setInterval(() => { i = (i + 1) % avisos.length; $('.aviso').innerHTML = `<span>${avisos[i]}</span>`; }, 4000);
   desenharSacola();
+  marcarConta();
+}
+
+// O ícone da conta ganha um ponto verde quando a cliente está dentro
+function marcarConta() {
+  const b = $('.conta-btn');
+  if (!b) return;
+  const dentro = !!Catalogo.conta.atual();
+  b.classList.toggle('logada', dentro);
+  b.setAttribute('aria-label', dentro ? 'Minha conta' : 'Entrar ou criar conta');
 }
 
 function montarRodape() {
@@ -191,6 +205,7 @@ function montarRodape() {
         </div>
         <div><h4>Loja</h4><ul>${MENU.map(([nome, link]) => `<li><a href="${link}">${nome}</a></li>`).join('')}</ul></div>
         <div><h4>Ajuda</h4><ul>
+          ${temConta() ? '<li><a href="conta.html">Minha conta</a></li>' : ''}
           <li><a href="acompanhar.html">Acompanhar meu pedido</a></li>
           <li><a href="index.html#comprar">Descobrir meu tamanho</a></li>
           <li><a href="index.html#duvidas">Dúvidas frequentes</a></li>
@@ -420,6 +435,7 @@ function finalizar() {
         <div class="tamanhos" role="radiogroup" aria-label="Forma de pagamento">${['Pix', 'Cartão'].map((f) => `<button class="chip" type="button" role="radio" data-pag="${f}" aria-checked="${f === pagamento}">${f === 'Pix' ? `Pix (${pctPix()} off)` : `Cartão em até ${parcelasMax()}x`}</button>`).join('')}</div>
       </div>
       <div class="ck-total"><span>Total do pedido</span><b>${brl(subtotal(s))}</b></div>
+      ${Catalogo.conta.atual() ? `<p class="dica-tam conta-nota">${I.pessoa}<span>Este pedido fica guardado na sua conta${Catalogo.conta.atual().email ? ` (${esc(Catalogo.conta.atual().email)})` : ''}.</span></p>` : ''}
       <p class="dica-tam erro" data-erro hidden></p>
       <button class="btn btn-preto btn-bloco btn-pedir" type="submit">${noSite ? 'Ir para o pagamento' : `${I.whats}Continuar no WhatsApp`}</button>
     </form>`);
@@ -472,22 +488,296 @@ function finalizar() {
       || ((!d.cidade || d.uf.length !== 2) && ['cidade', 'Escreva a cidade e a UF (ex.: RJ).']);
     if (falta) { erro.hidden = false; erro.textContent = falta[1]; form[falta[0]].focus(); return; }
     gravarJSON('pcf-cliente', { ...d, pagamento });
-    const pedido = registrarPedido(s, { ...d, pagamento });
-    gravarSacola([]);
-    if (noSite) {
-      const botao = $('.btn-pedir', form);
-      botao.disabled = true;
-      botao.textContent = 'Abrindo o pagamento…';
-      try {
-        location.href = await Catalogo.pagar(pedido);
-        return;
-      } catch (ex) {
-        // A venda nunca se perde: sem o link, o pedido segue pelo WhatsApp e a Paola manda o pagamento
-        toast('Não deu para abrir o pagamento agora. Seu pedido foi registrado.');
+    // O pedido só é registrado aqui, uma vez: depois da conta (criada, aberta ou pulada)
+    let fechando = false;
+    const fechar = async (botao) => {
+      if (fechando) return;
+      fechando = true;
+      const pedido = registrarPedido(s, { ...d, pagamento });
+      gravarSacola([]);
+      if (noSite) {
+        if (botao) { botao.disabled = true; botao.textContent = 'Abrindo o pagamento…'; }
+        try {
+          const destino = await Catalogo.pagar(pedido);
+          // O pedido já está no banco: entra na conta antes de trocar de página, sem segurar a cliente se demorar
+          await Promise.race([ligarPedidosDaConta(), new Promise((ok) => { setTimeout(ok, 2500); })]);
+          location.href = destino;
+          return;
+        } catch (ex) {
+          // A venda nunca se perde: sem o link, o pedido segue pelo WhatsApp e a Paola manda o pagamento
+          toast('Não deu para abrir o pagamento agora. Seu pedido foi registrado.');
+        }
       }
-    }
-    enviarWhatsApp(textoPedido(pedido), 'A Paola confere seu tamanho e te envia o link de pagamento', pedido.numero, pedido.id);
+      enviarWhatsApp(textoPedido(pedido), 'A Paola confere seu tamanho e te envia o link de pagamento', pedido.numero, pedido.id);
+      setTimeout(ligarPedidosDaConta, 3000);
+    };
+    if (temConta() && !Catalogo.conta.atual()) pedirConta(d, noSite, fechar);
+    else fechar($('.btn-pedir', form));
   });
+}
+
+// ---------------- Conta da cliente ----------------
+// E-mail e senha, sem confirmação por e-mail. Serve para ela ver os pedidos em qualquer celular ou computador.
+const EMAIL_OK = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const ERROS_CONTA = {
+  email: 'Confira o e-mail. Exemplo: maria@gmail.com',
+  senha: 'A senha precisa ter pelo menos 6 letras ou números.',
+  existe: 'Esse e-mail já tem conta. Entre com a sua senha.',
+  invalido: 'E-mail ou senha não conferem.',
+  cheio: 'Não deu para criar a conta agora. Tente de novo daqui a pouco.',
+  codigo: 'Este link de senha nova venceu ou já foi usado. Peça outro para a Paola.',
+};
+const zapSenha = (email) => (LOJA.whatsappNumero
+  ? `https://wa.me/${LOJA.whatsappNumero}?text=${encodeURIComponent(`Oi, Paola! Esqueci a senha da minha conta no site.${email ? ` Meu e-mail é ${email}` : ''}`)}`
+  : LOJA.whatsapp);
+const campoSenhaHTML = (id, rotulo, nova) => `<div class="campo"><label for="${id}">${rotulo}</label>
+    <div class="conta-senha"><input id="${id}" name="senha" type="password" autocomplete="${nova ? 'new-password' : 'current-password'}" maxlength="72" required><button class="link-tam" type="button" data-ver-senha>Mostrar</button></div>
+    ${nova ? '<small class="ck-status">Pelo menos 6 letras ou números. Anote para não esquecer.</small>' : ''}</div>`;
+function ligarVerSenha(form) {
+  $('[data-ver-senha]', form).addEventListener('click', (e) => {
+    const ver = form.senha.type === 'password';
+    form.senha.type = ver ? 'text' : 'password';
+    e.currentTarget.textContent = ver ? 'Esconder' : 'Mostrar';
+  });
+}
+
+// Desenha "criar conta" ou "entrar" dentro de `caixa` e troca de um para o outro.
+// op: { modo, email, nome, telefone, topo(modo), acaoCriar, acaoEntrar, pular, aoEntrar(botao), aoPular(botao) }
+function montarConta(caixa, op) {
+  let modo = op.modo || 'criar';
+  let emailDigitado = op.email || '';
+  const desenhar = (aviso = '') => {
+    const criar = modo === 'criar';
+    caixa.innerHTML = `${op.topo ? op.topo(modo) : ''}
+    <form class="checkout conta-form" id="form-conta" novalidate>
+      <div class="campo"><label for="ct-email">Seu e-mail</label><input id="ct-email" name="email" type="email" inputmode="email" autocomplete="${criar ? 'email' : 'username'}" autocapitalize="none" spellcheck="false" placeholder="maria@gmail.com" maxlength="120" required></div>
+      ${campoSenhaHTML('ct-senha', criar ? 'Crie uma senha' : 'Sua senha', criar)}
+      <p class="dica-tam erro" data-erro hidden></p>
+      <button class="btn btn-preto btn-bloco" type="submit">${esc(criar ? op.acaoCriar : op.acaoEntrar)}</button>
+      <div class="conta-links">
+        <button class="link-tam" type="button" data-modo="${criar ? 'entrar' : 'criar'}">${criar ? 'Já tenho conta: entrar' : 'Ainda não tenho conta: criar'}</button>
+        ${criar ? '' : '<button class="link-tam" type="button" data-esqueci>Esqueci minha senha</button>'}
+        ${op.pular ? `<button class="link-tam conta-pular" type="button" data-pular>${esc(op.pular)}</button>` : ''}
+      </div>
+    </form>`;
+    const form = $('#form-conta', caixa);
+    const erro = $('[data-erro]', form);
+    const mostrarErro = (t) => { erro.hidden = false; erro.textContent = t; };
+    form.email.value = emailDigitado;
+    if (aviso) mostrarErro(aviso);
+    ligarVerSenha(form);
+    $('[data-modo]', form).addEventListener('click', (e) => {
+      emailDigitado = form.email.value.trim();
+      modo = e.currentTarget.dataset.modo;
+      desenhar();
+    });
+    $('[data-esqueci]', form)?.addEventListener('click', () => window.open(zapSenha(form.email.value.trim()), '_blank', 'noopener'));
+    $('[data-pular]', form)?.addEventListener('click', (e) => op.aoPular(e.currentTarget));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = form.email.value.trim();
+      const senha = form.senha.value;
+      if (!EMAIL_OK.test(email)) { mostrarErro(ERROS_CONTA.email); form.email.focus(); return; }
+      if (criar ? senha.length < 6 : !senha) { mostrarErro(criar ? ERROS_CONTA.senha : 'Digite a sua senha.'); form.senha.focus(); return; }
+      const botao = $('button[type=submit]', form);
+      const texto = botao.textContent;
+      botao.disabled = true;
+      botao.textContent = criar ? 'Criando sua conta…' : 'Entrando…';
+      try {
+        const r = criar ? await Catalogo.conta.criar(email, senha, op.nome, op.telefone) : await Catalogo.conta.entrar(email, senha);
+        if (r.ok) { marcarConta(); return op.aoEntrar(botao); }
+        if (r.erro === 'existe') { emailDigitado = email; modo = 'entrar'; return desenhar(ERROS_CONTA.existe); }
+        mostrarErro(r.erro === 'bloqueada'
+          ? `Muitas tentativas. Tente de novo em ${Number(r.minutos) || 15} min ou fale com a Paola.`
+          : (ERROS_CONTA[r.erro] || ERROS_CONTA.cheio));
+      } catch (ex) {
+        mostrarErro(op.pular
+          ? 'Não deu para falar com a conta agora. Você pode continuar sem conta e criar depois.'
+          : 'Não deu para falar com a conta agora. Confira a internet e tente de novo.');
+      }
+      botao.disabled = false;
+      botao.textContent = texto;
+    });
+  };
+  desenhar();
+}
+
+// Ao finalizar: depois dos dados de entrega e antes do pagamento, a cliente cria a conta (ou entra).
+// Dá para seguir sem conta: a venda vem antes do cadastro.
+function pedirConta(dados, noSite, seguir) {
+  const m = abrirModal('<div data-conta></div>');
+  montarConta($('[data-conta]', m), {
+    modo: 'criar',
+    nome: dados.nome,
+    telefone: dados.telefone,
+    acaoCriar: noSite ? 'Criar conta e ir para o pagamento' : 'Criar conta e continuar',
+    acaoEntrar: noSite ? 'Entrar e ir para o pagamento' : 'Entrar e continuar',
+    pular: 'Continuar sem conta',
+    topo: (modo) => `
+    <div class="modal-topo"><h2>${modo === 'criar' ? 'Crie sua conta' : 'Entre na sua conta'}</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
+    <div class="aviso-real">
+      <span class="aviso-ico">${I.pessoa}</span>
+      <p>${modo === 'criar'
+    ? '<b>Sua compra fica guardada na sua conta.</b> Com e-mail e senha você entra em qualquer celular ou computador e vê o seu pedido.'
+    : '<b>Entre para guardar esta compra na sua conta.</b> Ela aparece junto com os seus outros pedidos.'}</p>
+    </div>
+    ${modo === 'criar' ? `<ul class="espera-lista aviso-lista">
+      <li>Acompanhe cada etapa: pagamento, envio e rastreio</li>
+      <li>Veja suas compras sempre que quiser</li>
+      <li>É rápido: não precisa confirmar o e-mail</li>
+    </ul>` : ''}`,
+    aoEntrar: seguir,
+    aoPular: seguir,
+  });
+}
+
+// Liga à conta os pedidos feitos neste aparelho. Roda ao entrar e a cada visita, até o banco confirmar.
+async function ligarPedidosDaConta() {
+  if (!Catalogo.conta.atual()) return;
+  const prontos = new Set();
+  for (const p of lerPedidos()) {
+    if (!p.id || p.conta) continue;
+    const r = await Catalogo.conta.vincular({ p_id: p.id }).catch(() => null);
+    if (!r || r.erro === 'sessao') break; // sem internet ou fora da conta: tenta na próxima visita
+    // "Não achou" é pedido que ainda não chegou ao banco: tenta por 1 dia e depois desiste
+    if (r.ok || r.erro === 'outra_conta' || Date.now() - new Date(p.data).getTime() > 864e5) prontos.add(p.id);
+  }
+  if (prontos.size) gravarJSON('pcf-pedidos', lerPedidos().map((p) => (prontos.has(p.id) ? { ...p, conta: true } : p)));
+}
+
+const ROTULO_ETAPA = { pago: 'Pagamento confirmado', preparando: 'Preparando', enviado: 'Enviado', entregue: 'Entregue', cancelado: 'Cancelado' };
+
+function telaConta() {
+  const caixa = $('#conta');
+  if (!temConta()) {
+    caixa.innerHTML = `<h1 class="titulo">Minha conta</h1><p class="acomp-cancelado">Para saber do seu pedido, fale com a Paola no WhatsApp.</p><a class="btn btn-preto btn-bloco" href="${esc(LOJA.whatsapp)}" target="_blank" rel="noopener">${I.whats}Falar com a Paola</a>`;
+    return;
+  }
+  const busca = new URLSearchParams(location.search);
+  const codigo = busca.get('nova');
+  const pedidoDoLink = /^[0-9a-f-]{36}$/i.test(busca.get('pedido') || '') ? busca.get('pedido') : null;
+  // O código de senha nova não fica no endereço nem no histórico do navegador
+  if (codigo) history.replaceState(null, '', 'conta.html');
+
+  const linhaPedido = (p) => {
+    const itens = (p.itens || []).map((x) => `${x.qtd || 1}x ${x.nome}`).join(', ');
+    const rotulo = ROTULO_ETAPA[p.status] || (pagaNoSite() || p.link_pagamento ? 'Aguardando pagamento' : 'Pedido recebido');
+    return `<a href="${esc(linkAcompanhar(p.id))}"><span><b>${esc(p.numero)}</b><small>${esc(new Date(p.criado_em).toLocaleDateString('pt-BR'))} · ${brl(Number(p.pago && p.valor != null ? p.valor : p.total))}</small><small>${esc(itens)}</small></span><em class="conta-etapa etapa-${esc(p.status)}">${rotulo}</em>${I.seta}</a>`;
+  };
+
+  async function mostrarPedidos() {
+    caixa.innerHTML = '<p class="acomp-carregando">Buscando seus pedidos…</p>';
+    let r;
+    try {
+      if (pedidoDoLink) await Catalogo.conta.vincular({ p_id: pedidoDoLink });
+      await ligarPedidosDaConta();
+      r = await Catalogo.conta.pedidos();
+    } catch (ex) {
+      caixa.innerHTML = '<h1 class="titulo">Minha conta</h1><p class="acomp-cancelado">Não conseguimos buscar seus pedidos agora. Confira a internet.</p><button class="btn btn-preto btn-bloco" type="button" data-de-novo>Tentar de novo</button>';
+      $('[data-de-novo]', caixa).addEventListener('click', mostrarPedidos);
+      return;
+    }
+    marcarConta();
+    if (!r.ok) return mostrarEntrada('Sua conta foi fechada neste aparelho. Entre de novo.');
+    if (pedidoDoLink) history.replaceState(null, '', 'conta.html');
+    const nome = (r.cliente?.nome || '').split(' ')[0];
+    caixa.innerHTML = `<span class="sobre">Minha conta</span>
+      <h1 class="titulo">${nome ? `Oi, ${esc(nome)}!` : 'Seus pedidos'}</h1>
+      <section class="acomp-meus conta-pedidos"><h2>${nome ? 'Seus pedidos' : 'Tudo o que você comprou'}</h2>
+        ${r.pedidos.length ? r.pedidos.map(linhaPedido).join('') : '<p class="conta-vazio">Você ainda não tem pedidos nesta conta. Quando comprar, o pedido aparece aqui.</p>'}
+      </section>
+      ${r.pedidos.length ? '' : '<a class="btn btn-preto btn-bloco" href="index.html#comprar">Fazer meu pedido</a>'}
+      <details class="conta-achar"><summary>Comprou e o pedido não aparece aqui?</summary>
+        <form class="acomp-form" id="form-achar" novalidate>
+          <p>Digite o número do pedido e o CEP de entrega para guardar esse pedido na sua conta.</p>
+          <div class="campo"><label for="ac-numero">Número do pedido</label><input id="ac-numero" name="numero" placeholder="PCF-0411-1234" autocapitalize="characters" autocomplete="off" required></div>
+          <div class="campo"><label for="ac-cep">CEP de entrega</label><input id="ac-cep" name="cep" inputmode="numeric" placeholder="00000-000" maxlength="9" autocomplete="postal-code" required></div>
+          <p class="dica-tam erro" data-erro hidden></p>
+          <button class="btn btn-claro btn-bloco" type="submit">Guardar na minha conta</button>
+        </form>
+      </details>
+      <p class="conta-pe">Conta: <b>${esc(r.cliente?.email || '')}</b></p>
+      <button class="link-tam envio-copiar" type="button" data-sair>Sair da conta neste aparelho</button>`;
+    $('[data-sair]', caixa).addEventListener('click', () => {
+      Catalogo.conta.sair();
+      marcarConta();
+      mostrarEntrada();
+    });
+    const form = $('#form-achar', caixa);
+    const erro = $('[data-erro]', form);
+    form.cep.addEventListener('input', () => {
+      const d = form.cep.value.replace(/\D/g, '').slice(0, 8);
+      form.cep.value = d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
+    });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const numero = form.numero.value.trim();
+      const cep = form.cep.value.replace(/\D/g, '');
+      erro.hidden = false;
+      if (!numero || cep.length !== 8) { erro.textContent = 'Preencha o número do pedido e os 8 números do CEP.'; return; }
+      const botao = $('button[type=submit]', form);
+      botao.disabled = true;
+      try {
+        const v = await Catalogo.conta.vincular({ p_numero: numero, p_cep: cep });
+        if (v.ok) { toast('Pedido guardado na sua conta'); return mostrarPedidos(); }
+        if (v.erro === 'sessao') return mostrarEntrada('Sua conta foi fechada neste aparelho. Entre de novo.');
+        erro.textContent = v.erro === 'outra_conta' ? 'Esse pedido já está guardado em outra conta. Fale com a Paola.' : 'Não encontramos esse pedido. Confira o número e o CEP.';
+      } catch (ex) {
+        erro.textContent = 'Não conseguimos buscar agora. Confira a internet e tente de novo.';
+      }
+      botao.disabled = false;
+    });
+  }
+
+  function mostrarEntrada(aviso = '') {
+    caixa.innerHTML = `<span class="sobre">Paola Corpus Fit</span>
+      <h1 class="titulo">Minha conta</h1>
+      ${aviso ? `<p class="acomp-esperando">${esc(aviso)}</p>` : ''}
+      <div class="acomp-form" data-conta></div>
+      <a class="link-tam envio-copiar" href="acompanhar.html">Acompanhar um pedido sem entrar</a>`;
+    montarConta($('[data-conta]', caixa), {
+      modo: 'entrar',
+      acaoCriar: 'Criar minha conta',
+      acaoEntrar: 'Entrar',
+      topo: (modo) => `<p>${modo === 'criar'
+        ? 'Crie sua conta com e-mail e senha para ver seus pedidos em qualquer celular ou computador. Não precisa confirmar o e-mail.'
+        : 'Entre com o e-mail e a senha da sua conta para ver seus pedidos.'}</p>`,
+      aoEntrar: mostrarPedidos,
+    });
+  }
+
+  function mostrarNovaSenha() {
+    caixa.innerHTML = `<span class="sobre">Minha conta</span>
+      <h1 class="titulo">Crie uma senha nova</h1>
+      <form class="acomp-form" id="form-nova" novalidate>
+        <p>Escolha a senha que você vai usar para entrar na sua conta daqui em diante.</p>
+        ${campoSenhaHTML('ns-senha', 'Senha nova', true)}
+        <p class="dica-tam erro" data-erro hidden></p>
+        <button class="btn btn-preto btn-bloco" type="submit">Salvar a senha e entrar</button>
+      </form>`;
+    const form = $('#form-nova', caixa);
+    const erro = $('[data-erro]', form);
+    ligarVerSenha(form);
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      erro.hidden = false;
+      if (form.senha.value.length < 6) { erro.textContent = ERROS_CONTA.senha; form.senha.focus(); return; }
+      const botao = $('button[type=submit]', form);
+      botao.disabled = true;
+      try {
+        const r = await Catalogo.conta.novaSenha(codigo, form.senha.value);
+        if (r.ok) { toast('Senha trocada'); return mostrarPedidos(); }
+        erro.textContent = ERROS_CONTA[r.erro] || ERROS_CONTA.codigo;
+      } catch (ex) {
+        erro.textContent = 'Não deu para trocar a senha agora. Confira a internet e tente de novo.';
+      }
+      botao.disabled = false;
+    });
+  }
+
+  if (codigo) return mostrarNovaSenha();
+  if (Catalogo.conta.atual()) return mostrarPedidos();
+  mostrarEntrada();
 }
 
 function enviarWhatsApp(texto, depois, numero, idPedido) {
@@ -1081,6 +1371,9 @@ function pedidoAcompanhadoHTML(p, volta = null) {
       ${p.cidade ? `<p class="dica-tam">Entrega em ${esc(p.cidade)}/${esc(p.uf)}</p>` : ''}
     </section>
     <a class="btn btn-claro btn-bloco" href="${esc(zapDoPedido(p.numero))}" target="_blank" rel="noopener">${I.whats}Falar com a Paola sobre este pedido</a>
+    ${temConta() ? (Catalogo.conta.atual()
+    ? '<a class="link-tam envio-copiar" href="conta.html">Ver todos os meus pedidos</a>'
+    : `<a class="link-tam envio-copiar" href="conta.html?pedido=${encodeURIComponent(p.id)}">Guardar este pedido na minha conta</a>`) : ''}
     <a class="link-tam envio-copiar" href="acompanhar.html">Ver outro pedido</a>`;
 }
 
@@ -1111,12 +1404,13 @@ function telaAcompanhar() {
         ${doAparelho.map((x) => `<a href="${esc(linkAcompanhar(x.id))}"><span><b>${esc(x.numero)}</b><small>${esc(new Date(x.data).toLocaleDateString('pt-BR'))} · ${brl(Number(x.total))}</small></span>${I.seta}</a>`).join('')}
       </section>` : ''}
       <form class="acomp-form" id="form-acomp" novalidate>
-        <p>Digite o número do pedido e o CEP de entrega. O número está na mensagem que você enviou para a Paola.</p>
+        <p>Digite o número do pedido e o CEP de entrega. O número aparece na tela do seu pedido e nas mensagens da Paola.</p>
         <div class="campo"><label for="ac-numero">Número do pedido</label><input id="ac-numero" name="numero" placeholder="PCF-0411-1234" autocapitalize="characters" autocomplete="off" required></div>
         <div class="campo"><label for="ac-cep">CEP de entrega</label><input id="ac-cep" name="cep" inputmode="numeric" placeholder="00000-000" maxlength="9" autocomplete="postal-code" required></div>
         <p class="dica-tam erro" data-erro ${aviso ? '' : 'hidden'}>${esc(aviso)}</p>
         <button class="btn btn-preto btn-bloco" type="submit">Ver meu pedido</button>
       </form>
+      ${temConta() ? `<a class="link-tam envio-copiar" href="conta.html">${Catalogo.conta.atual() ? 'Ver os pedidos da minha conta' : 'Tem conta? Entre para ver seus pedidos'}</a>` : ''}
       <a class="link-tam envio-copiar" href="${esc(LOJA.whatsapp)}" target="_blank" rel="noopener">Não achou? Fale com a Paola</a>`;
     const form = $('#form-acomp', caixa);
     const erro = $('[data-erro]', form);
@@ -1277,10 +1571,12 @@ Catalogo.pronto.then(() => {
   montarTopo();
   montarRodape();
   preencherValores();
-  ({ inicio: telaInicio, loja: telaLoja, produto: telaProduto, praia: telaPraia, acompanhar: telaAcompanhar, pagamento: window.telaPagamento })[document.body.dataset.pagina]?.();
+  ({ inicio: telaInicio, loja: telaLoja, produto: telaProduto, praia: telaPraia, acompanhar: telaAcompanhar, conta: telaConta, pagamento: window.telaPagamento })[document.body.dataset.pagina]?.();
   ligarMovimento();
   // Quem veio acompanhar ou pagar um pedido já comprou: não conta como visita no funil de vendas
-  if (!['acompanhar', 'pagamento'].includes(document.body.dataset.pagina)) Catalogo.evento('visita');
+  if (!['acompanhar', 'pagamento', 'conta'].includes(document.body.dataset.pagina)) Catalogo.evento('visita');
+  // Pedido feito neste aparelho que ainda não entrou na conta (a página de Minha conta já faz isso sozinha)
+  if (document.body.dataset.pagina !== 'conta') ligarPedidosDaConta();
 });
 
 document.addEventListener('click', (e) => {

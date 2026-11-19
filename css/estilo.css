@@ -81,7 +81,7 @@ h1, h2, h3, p { margin: 0; }
 @keyframes sobe { from { opacity: 0; transform: translateY(10px); } }
 
 .cab { position: sticky; top: 0; z-index: 50; background: rgba(246, 240, 234, .94); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border-bottom: 1px solid var(--areia-3); }
-.cab-in { display: grid; grid-template-columns: 44px 1fr 44px; grid-template-areas: 'menu logo dir'; align-items: center; height: 64px; }
+.cab-in { display: grid; grid-template-columns: 94px 1fr 94px; grid-template-areas: 'menu logo dir'; align-items: center; height: 64px; }
 .menu-btn { grid-area: menu; }
 .cab .logo { grid-area: logo; justify-self: center; }
 .cab .nav { grid-area: nav; display: none; }
@@ -936,3 +936,28 @@ section[id] { scroll-margin-top: 84px; }
 .pag-banco-quadro { width: 100%; height: 520px; border: 0; border-radius: 12px; background: var(--branco); }
 .pag-acoes { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 22px; }
 .pag-espera .acomp-pago, .pag-espera .acomp-esperando { margin: 0; }
+
+/* ---------- Conta da cliente ---------- */
+.conta-btn.logada::after { content: ''; position: absolute; top: 8px; right: 8px; width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2px var(--areia); }
+.conta-senha { position: relative; display: grid; }
+.conta-senha input { padding-right: 98px; }
+.conta-senha .link-tam { position: absolute; top: 50%; right: 16px; transform: translateY(-50%); }
+.conta-links { display: grid; justify-items: center; gap: 14px; margin-top: 2px; }
+.conta-links .conta-pular { color: var(--tinta-2); }
+.conta-nota { display: flex; align-items: flex-start; gap: 8px; margin: 0; overflow-wrap: anywhere; }
+.conta-nota svg { flex: none; width: 18px; height: 18px; margin-top: 1px; }
+.conta-pedidos a > span { flex: 1; min-width: 0; }
+.conta-pedidos small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conta-etapa { flex: none; padding: 5px 10px; border-radius: 999px; background: #E3F3E9; color: #1F5C39; font-size: 12px; font-weight: 800; font-style: normal; white-space: nowrap; }
+.conta-etapa.etapa-novo { background: #FFF3DC; color: #5F3F00; }
+.conta-etapa.etapa-cancelado { background: var(--areia-2); color: var(--tinta-2); }
+.conta-vazio { color: var(--tinta-2); line-height: 1.45; }
+.conta-achar { padding: 16px 18px; border-radius: 20px; background: var(--branco); }
+.conta-achar summary { cursor: pointer; font-size: 14.5px; font-weight: 800; }
+.conta-achar .acomp-form { padding: 14px 0 2px; }
+.conta-pe { text-align: center; font-size: 14px; color: var(--tinta-2); overflow-wrap: anywhere; }
+@media (max-width: 420px) {
+  .conta-pedidos a { flex-wrap: wrap; }
+  .conta-pedidos a > span { flex-basis: 100%; }
+  .conta-pedidos a > svg { margin-left: auto; }
+}

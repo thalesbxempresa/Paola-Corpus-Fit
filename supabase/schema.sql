@@ -461,3 +461,264 @@ create policy imagens_admin_troca on storage.objects for update to authenticated
 drop policy if exists imagens_admin_apaga on storage.objects;
 create policy imagens_admin_apaga on storage.objects for delete to authenticated
   using (bucket_id = 'imagens' and public.eh_admin());
+
+-- ---------- Conta da cliente ----------
+-- Login próprio da loja, separado do login do painel (o Supabase Auth continua só para administradores).
+-- A cliente cria a conta com e-mail e senha ao finalizar e vê os pedidos dela em qualquer aparelho.
+-- A senha fica embaralhada (bcrypt) e a sessão é um código longo, guardado só como impressão digital.
+-- Ninguém do site lê estas tabelas: tudo passa pelas funções abaixo. Não há e-mail de confirmação.
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
+
+create table if not exists public.clientes (
+  id uuid primary key default gen_random_uuid(),
+  email text not null unique check (email = lower(email) and length(email) between 5 and 120),
+  nome text not null default '' check (length(nome) <= 120),
+  telefone text check (length(telefone) <= 15),
+  senha_hash text not null,
+  criado_em timestamptz not null default now(),
+  -- 5 senhas erradas seguidas travam a conta por 15 minutos
+  tentativas int not null default 0,
+  bloqueada_ate timestamptz,
+  -- Código para criar uma senha nova: vale 48 h e uma vez só
+  senha_nova_sha256 text,
+  senha_nova_ate timestamptz
+);
+create table if not exists public.clientes_sessoes (
+  sessao_sha256 text primary key,
+  cliente_id uuid not null references public.clientes (id) on delete cascade,
+  criado_em timestamptz not null default now(),
+  expira_em timestamptz not null
+);
+create index if not exists clientes_sessoes_cliente on public.clientes_sessoes (cliente_id);
+alter table public.pedidos add column if not exists cliente_id uuid references public.clientes (id) on delete set null;
+create index if not exists pedidos_cliente on public.pedidos (cliente_id) where cliente_id is not null;
+
+create or replace function public.cliente_digital(p_texto text) returns text
+language sql immutable set search_path = '' as $$
+  select encode(sha256(convert_to(coalesce(p_texto, ''), 'UTF8')), 'hex');
+$$;
+
+create or replace function public.cliente_resumo(p_cliente uuid) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select jsonb_build_object('email', c.email, 'nome', c.nome) from public.clientes c where c.id = p_cliente;
+$$;
+
+-- Abre uma sessão e devolve o código dela. O código só existe nesta resposta: o banco guarda a impressão digital.
+create or replace function public.cliente_abrir_sessao(p_cliente uuid) returns text
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_codigo text := replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '');
+begin
+  delete from public.clientes_sessoes s where s.cliente_id = p_cliente and s.expira_em < now();
+  -- No máximo 10 aparelhos por conta: o mais antigo sai
+  delete from public.clientes_sessoes s where s.cliente_id = p_cliente and s.sessao_sha256 in (
+    select x.sessao_sha256 from public.clientes_sessoes x where x.cliente_id = p_cliente order by x.criado_em desc offset 9
+  );
+  insert into public.clientes_sessoes (sessao_sha256, cliente_id, expira_em)
+  values (public.cliente_digital(v_codigo), p_cliente, now() + interval '180 days');
+  return v_codigo;
+end;
+$$;
+
+create or replace function public.cliente_da_sessao(p_sessao text) returns uuid
+language sql stable security definer set search_path = '' as $$
+  select s.cliente_id from public.clientes_sessoes s
+  where length(coalesce(p_sessao, '')) = 64 and s.sessao_sha256 = public.cliente_digital(p_sessao) and s.expira_em > now();
+$$;
+
+create or replace function public.cliente_criar(p_email text, p_senha text, p_nome text default '', p_telefone text default '') returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_email text := lower(trim(coalesce(p_email, '')));
+  v_id uuid;
+begin
+  if length(v_email) > 120 or v_email !~ '^[^\s@]+@[^\s@]+\.[^\s@]{2,}$' then
+    return jsonb_build_object('ok', false, 'erro', 'email');
+  end if;
+  if length(coalesce(p_senha, '')) not between 6 and 72 then
+    return jsonb_build_object('ok', false, 'erro', 'senha');
+  end if;
+  if exists (select 1 from public.clientes c where c.email = v_email) then
+    return jsonb_build_object('ok', false, 'erro', 'existe');
+  end if;
+  -- Freio contra cadastro em massa: a compra continua sem conta e ela cria depois
+  if (select count(*) from public.clientes c where c.criado_em > now() - interval '1 hour') >= 60 then
+    return jsonb_build_object('ok', false, 'erro', 'cheio');
+  end if;
+  insert into public.clientes (email, nome, telefone, senha_hash)
+  values (
+    v_email,
+    left(trim(coalesce(p_nome, '')), 120),
+    nullif(left(regexp_replace(coalesce(p_telefone, ''), '\D', '', 'g'), 15), ''),
+    extensions.crypt(p_senha, extensions.gen_salt('bf', 10))
+  )
+  on conflict (email) do nothing
+  returning id into v_id;
+  if v_id is null then
+    return jsonb_build_object('ok', false, 'erro', 'existe');
+  end if;
+  return jsonb_build_object('ok', true, 'sessao', public.cliente_abrir_sessao(v_id), 'cliente', public.cliente_resumo(v_id));
+end;
+$$;
+
+create or replace function public.cliente_entrar(p_email text, p_senha text) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_email text := lower(trim(coalesce(p_email, '')));
+  c public.clientes%rowtype;
+begin
+  select * into c from public.clientes x where x.email = v_email for update;
+  if not found then
+    -- Gasta o mesmo tempo de uma senha errada
+    perform extensions.crypt(left(coalesce(p_senha, ''), 72), extensions.gen_salt('bf', 10));
+    return jsonb_build_object('ok', false, 'erro', 'invalido');
+  end if;
+  if c.bloqueada_ate is not null and c.bloqueada_ate > now() then
+    return jsonb_build_object('ok', false, 'erro', 'bloqueada', 'minutos', ceil(extract(epoch from c.bloqueada_ate - now()) / 60));
+  end if;
+  if length(coalesce(p_senha, '')) between 1 and 72 and c.senha_hash = extensions.crypt(p_senha, c.senha_hash) then
+    update public.clientes set tentativas = 0, bloqueada_ate = null where id = c.id;
+    return jsonb_build_object('ok', true, 'sessao', public.cliente_abrir_sessao(c.id), 'cliente', public.cliente_resumo(c.id));
+  end if;
+  update public.clientes
+    set tentativas = case when c.tentativas >= 4 then 0 else c.tentativas + 1 end,
+        bloqueada_ate = case when c.tentativas >= 4 then now() + interval '15 minutes' end
+    where id = c.id;
+  return jsonb_build_object('ok', false, 'erro', 'invalido');
+end;
+$$;
+
+create or replace function public.cliente_sair(p_sessao text) returns void
+language sql security definer set search_path = '' as $$
+  delete from public.clientes_sessoes s where s.sessao_sha256 = public.cliente_digital(p_sessao);
+$$;
+
+-- Os pedidos da conta, com os mesmos dados do acompanhamento (sem endereço, sobrenome ou anotações)
+create or replace function public.cliente_pedidos(p_sessao text) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  v_cliente uuid := public.cliente_da_sessao(p_sessao);
+begin
+  if v_cliente is null then
+    return jsonb_build_object('ok', false, 'erro', 'sessao');
+  end if;
+  return jsonb_build_object(
+    'ok', true,
+    'cliente', public.cliente_resumo(v_cliente),
+    'pedidos', coalesce((
+      select jsonb_agg(public.acompanhar_pedido(p.id) order by p.criado_em desc)
+      from (select x.id, x.criado_em from public.pedidos x where x.cliente_id = v_cliente order by x.criado_em desc limit 50) p
+    ), '[]'::jsonb)
+  );
+end;
+$$;
+
+-- Liga um pedido à conta: pelo link do pedido (id) ou por número + CEP, as mesmas provas do acompanhamento.
+-- Pedido que já é de outra conta não muda de dona.
+create or replace function public.cliente_vincular(p_sessao text, p_id uuid default null, p_numero text default null, p_cep text default null) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_cliente uuid := public.cliente_da_sessao(p_sessao);
+  v_pedido uuid;
+  v_dona uuid;
+begin
+  if v_cliente is null then
+    return jsonb_build_object('ok', false, 'erro', 'sessao');
+  end if;
+  select p.id, p.cliente_id into v_pedido, v_dona
+  from public.pedidos p
+  where p.id = p_id
+    or (
+      length(regexp_replace(coalesce(p_cep, ''), '\D', '', 'g')) = 8
+      and upper(p.numero) = upper(trim(p_numero))
+      and regexp_replace(coalesce(p.cep, ''), '\D', '', 'g') = regexp_replace(p_cep, '\D', '', 'g')
+    )
+  order by p.criado_em desc
+  limit 1;
+  if v_pedido is null then
+    return jsonb_build_object('ok', false, 'erro', 'nao_achou');
+  end if;
+  if v_dona is not null and v_dona <> v_cliente then
+    return jsonb_build_object('ok', false, 'erro', 'outra_conta');
+  end if;
+  update public.pedidos set cliente_id = v_cliente where id = v_pedido and cliente_id is null;
+  -- Conta criada sem nome aproveita o nome e o WhatsApp do pedido
+  update public.clientes c
+    set nome = case when c.nome = '' then left(p.nome, 120) else c.nome end,
+        telefone = coalesce(c.telefone, left(p.telefone, 15))
+    from public.pedidos p
+    where c.id = v_cliente and p.id = v_pedido and (c.nome = '' or c.telefone is null);
+  return jsonb_build_object('ok', true, 'id', v_pedido);
+end;
+$$;
+
+-- Senha nova. O código nasce aqui e chega à cliente por quem o pediu: hoje a Paola, pelo painel, manda o link no WhatsApp.
+-- Para ligar a recuperação por e-mail depois, uma função do servidor chama cliente_codigo_senha e envia o link.
+create or replace function public.cliente_codigo_senha(p_email text) returns text
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_codigo text := replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '');
+begin
+  update public.clientes
+    set senha_nova_sha256 = public.cliente_digital(v_codigo), senha_nova_ate = now() + interval '48 hours'
+    where email = lower(trim(coalesce(p_email, '')));
+  if not found then
+    return null;
+  end if;
+  return v_codigo;
+end;
+$$;
+
+create or replace function public.cliente_link_senha(p_email text) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_codigo text;
+begin
+  if not public.eh_admin() then
+    raise exception 'sem permissao';
+  end if;
+  v_codigo := public.cliente_codigo_senha(p_email);
+  if v_codigo is null then
+    return jsonb_build_object('ok', false, 'erro', 'nao_achou');
+  end if;
+  return jsonb_build_object('ok', true, 'codigo', v_codigo,
+    'nome', (select c.nome from public.clientes c where c.email = lower(trim(p_email))));
+end;
+$$;
+
+create or replace function public.cliente_nova_senha(p_codigo text, p_senha text) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_id uuid;
+begin
+  if length(coalesce(p_senha, '')) not between 6 and 72 then
+    return jsonb_build_object('ok', false, 'erro', 'senha');
+  end if;
+  select c.id into v_id from public.clientes c
+    where length(coalesce(p_codigo, '')) = 64 and c.senha_nova_sha256 = public.cliente_digital(p_codigo) and c.senha_nova_ate > now()
+    for update;
+  if v_id is null then
+    return jsonb_build_object('ok', false, 'erro', 'codigo');
+  end if;
+  update public.clientes
+    set senha_hash = extensions.crypt(p_senha, extensions.gen_salt('bf', 10)),
+        senha_nova_sha256 = null, senha_nova_ate = null, tentativas = 0, bloqueada_ate = null
+    where id = v_id;
+  -- Senha trocada: os outros aparelhos saem da conta
+  delete from public.clientes_sessoes s where s.cliente_id = v_id;
+  return jsonb_build_object('ok', true, 'sessao', public.cliente_abrir_sessao(v_id), 'cliente', public.cliente_resumo(v_id));
+end;
+$$;
+
+alter table public.clientes enable row level security;
+alter table public.clientes_sessoes enable row level security;
+revoke all on public.clientes, public.clientes_sessoes from anon, authenticated;
+revoke all on function public.cliente_digital(text), public.cliente_resumo(uuid), public.cliente_abrir_sessao(uuid), public.cliente_da_sessao(text),
+  public.cliente_criar(text, text, text, text), public.cliente_entrar(text, text), public.cliente_sair(text), public.cliente_pedidos(text),
+  public.cliente_vincular(text, uuid, text, text), public.cliente_codigo_senha(text), public.cliente_link_senha(text), public.cliente_nova_senha(text, text)
+  from public, anon, authenticated;
+grant execute on function public.cliente_criar(text, text, text, text), public.cliente_entrar(text, text), public.cliente_sair(text), public.cliente_pedidos(text),
+  public.cliente_vincular(text, uuid, text, text), public.cliente_nova_senha(text, text) to anon, authenticated;
+grant execute on function public.cliente_link_senha(text) to authenticated;
+grant execute on function public.cliente_codigo_senha(text) to service_role;
