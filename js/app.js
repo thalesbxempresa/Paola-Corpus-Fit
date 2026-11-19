@@ -1060,14 +1060,15 @@ function montarPedido(raiz) {
   };
   // Abaixo das 3 opções: a loja inteira, para ninguém achar que só existem essas
   const todosHTML = () => {
-    const naLoja = [...PRODUTOS, ...KITS].filter((x) => visivel(x) && temPreco(x));
+    // Os mesmos itens que a página da loja lista (inclusive os que vêm só nos combos)
+    const naLoja = [...KITS, ...PRODUTOS].filter(visivel);
     if (!naLoja.length) return '';
     // Quatro fotos juntas, começando pelo que não está nas 3 opções: mostra de cara que há mais coisa
     const dasOpcoes = (x) => ['combo-5', 'combo-duplo', ...cintasAVenda().map((c) => c.id)].includes(x.id);
     const fotos = [...naLoja.filter((x) => !dasOpcoes(x)), ...naLoja.filter(dasOpcoes)].slice(0, 4);
     return `<a class="kit-op kit-op-todos" href="loja.html">
         <span class="kit-op-foto ${fotos.length === 4 ? 'kit-op-mosaico' : ''}">${(fotos.length === 4 ? fotos : fotos.slice(0, 1)).map((x) => `<img src="${x.img}" alt="" loading="lazy">`).join('')}</span>
-        <span class="kit-op-txt"><b>Ver todos os produtos</b><small>${naLoja.length >= 6 ? `São ${naLoja.length} produtos na loja.` : 'Cada produto da loja, separado.'} Veja com foto e preço.</small></span>
+        <span class="kit-op-txt"><b>Ver todos os produtos</b><small>${naLoja.length >= 6 ? `São ${naLoja.length} produtos na loja.` : 'Cada produto da loja, separado.'} Veja cada um com foto e detalhes.</small></span>
         <span class="kit-op-seta" aria-hidden="true">${I.seta}</span>
       </a>`;
   };
