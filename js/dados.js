@@ -1,5 +1,5 @@
 // =============================================================
-// Paola Corpus Fit — dados do protótipo
+// Paola Corpus Fit — dados de reserva da loja (o catálogo que vale vem do banco)
 // Produtos, preços e combos passados pela Paola (áudios de 29/10/2026).
 // Sutiã, gel e creme ainda não têm preço avulso: aparecem só nos combos.
 // A moda praia é uma prévia de lançamento.
@@ -14,14 +14,14 @@ const LOJA = {
   instagram: 'https://www.instagram.com/paolacorpusfit/',
   antesDepois: 'https://www.instagram.com/stories/highlights/18047489036211417/',
   arroba: '@paolacorpusfit',
-  cidade: 'Rio de Janeiro, RJ',
+  cidade: 'Conceição de Macabu, RJ',
   freteGratis: 299,
   pix: 0.05,
   // Sem juros (a loja assume, igual ao "parcelado vendedor" do Mercado Pago) e o máximo no cartão, com juros para a cliente acima disso
-  parcelas: 3,
+  parcelas: 2,
   parcelasMax: 6,
   // Pagamento no site pelo Mercado Pago: liga pelo painel (aba Loja). Desligado, a Paola manda o link no WhatsApp
-  pagarNoSite: false,
+  pagarNoSite: true,
   // Mostrar para a cliente quantas peças há no tamanho escolhido (liga no painel, em Produtos > Estoque)
   mostrarEstoque: false,
 };
@@ -50,9 +50,9 @@ const PRODUTOS = [
     selo: 'Mais firmeza',
     tamanhos: true,
     frase: 'Não dobra, não enrola, não machuca.',
-    desc: 'Feita para a maior reclamação de quem usa cinta: dobrar e enrolar. São 30 barbatanas na frente e nas laterais que seguram a cinta no lugar, mesmo quando você senta. Modela a cintura enquanto você usa. Tecido cetinete de 4 camadas, zíper na frente e 2 regulagens de colchete por dentro.',
-    pontos: ['30 barbatanas: não dobra, não enrola', 'Modela a cintura enquanto você usa', 'Tecido cetinete de 4 camadas', 'Zíper na frente e 2 regulagens por dentro'],
-    uso: 'Use no dia a dia e na atividade física. Comece pela regulagem mais folgada e passe para a mais justa quando o corpo acostumar. No pós-parto ou pós-operatório, confirme com seu médico antes de usar.',
+    desc: 'Fechou o zíper, a cintura aparece na hora. São 30 barbatanas na frente e nas laterais segurando a cinta no lugar o dia inteiro: você senta, se abaixa e treina, e ela não dobra nem enrola. Alta nas costas, com tecido cetinete de 4 camadas, zíper na frente e 2 regulagens de colchete por dentro.',
+    pontos: ['30 barbatanas: não dobra, não enrola', 'Afina a cintura na hora', 'Alta nas costas, com sensação de apoio', 'Tecido cetinete de 4 camadas', 'Zíper na frente e 2 regulagens por dentro'],
+    uso: 'Use no dia a dia e na atividade física. Comece pela regulagem mais folgada e passe para a mais justa quando o corpo acostumar. No pós-parto, use com a liberação do seu médico.',
   },
   {
     id: 'cinta-ziper-20',
@@ -70,10 +70,10 @@ const PRODUTOS = [
       { src: 'img/real-cinta-costas.webp', txt: 'Não dobra e não enrola' },
     ],
     tamanhos: true,
-    frase: 'A mesma cinta, com 20 barbatanas.',
-    desc: 'A mesma cinta da Paola, com 20 barbatanas e um preço menor. Mesma modelagem, mesmo tecido cetinete de 4 camadas, zíper na frente e 2 regulagens de colchete por dentro. A diferença está nas barbatanas: a de 30 tem mais firmeza na frente e nas laterais.',
-    pontos: ['20 barbatanas: não dobra, não enrola', 'Modela a cintura enquanto você usa', 'Tecido cetinete de 4 camadas', 'Zíper na frente e 2 regulagens por dentro'],
-    uso: 'Use no dia a dia e na atividade física. Comece pela regulagem mais folgada e passe para a mais justa quando o corpo acostumar. No pós-parto ou pós-operatório, confirme com seu médico antes de usar.',
+    frase: 'A mesma cinta, com 20 barbatanas: não dobra, não enrola.',
+    desc: 'Fechou o zíper, a cintura aparece na hora. É a mesma cinta da Paola, com 20 barbatanas segurando no lugar e um preço menor. Mesma modelagem, alta nas costas, tecido cetinete de 4 camadas, zíper na frente e 2 regulagens de colchete por dentro. Se quiser ainda mais firmeza na frente e nas laterais, tem a de 30.',
+    pontos: ['20 barbatanas: não dobra, não enrola', 'Afina a cintura na hora', 'Alta nas costas, com sensação de apoio', 'Tecido cetinete de 4 camadas', 'Zíper na frente e 2 regulagens por dentro'],
+    uso: 'Use no dia a dia e na atividade física. Comece pela regulagem mais folgada e passe para a mais justa quando o corpo acostumar. No pós-parto, use com a liberação do seu médico.',
   },
   {
     id: 'sutia-reforcado',
@@ -98,9 +98,9 @@ const PRODUTOS = [
     cat: 'tratamento',
     preco: null,
     img: 'img/produto-gel.webp',
-    frase: 'Gel de rápida absorção, para usar com a cinta.',
-    desc: 'Gel termoativo de pimenta negra da Néctar, de rápida absorção. Para usar junto com a cinta.',
-    pontos: ['Tubo de 200 g', 'Rápida absorção', 'Para usar com a cinta'],
+    frase: 'Esquenta na pele, absorve rápido e já pode vestir a cinta.',
+    desc: 'Gel termoativo de pimenta negra da Néctar: você sente esquentar na pele, ele absorve rápido e você já veste a cinta.',
+    pontos: ['Termoativo: esquenta na pele', 'Rápida absorção', 'Tubo de 200 g'],
     uso: 'Aplique na barriga e nas laterais, massageie até absorver e vista a cinta em seguida.',
   },
   {
@@ -110,9 +110,9 @@ const PRODUTOS = [
     cat: 'tratamento',
     preco: null,
     img: 'img/produto-creme.webp',
-    frase: 'A massagem modeladora em casa.',
+    frase: 'A massagem de uso profissional, agora em casa.',
     desc: 'Creme para massagem de pimenta negra da Rhenuks, de uso profissional. Vem no Kit Completo.',
-    pontos: ['Rhenuks, uso profissional', 'Massagem modeladora', 'Vem no Kit Completo'],
+    pontos: ['Rhenuks, uso profissional', 'Pimenta negra', 'Vem no Kit Completo'],
   },
 ];
 
@@ -129,8 +129,8 @@ const KITS = [
     itens: ['cinta-ziper-30', 'sutia-reforcado', 'sutia-reforcado', 'gel-pimenta', 'creme-pimenta'],
     de: 1089,
     preco: 479.99,
-    frase: 'O combo mais completo da Paola.',
-    desc: 'O combo mais completo: a cinta de 30 barbatanas, 2 sutiãs reforçados, o gel termoativo e o creme para massagem.',
+    frase: 'Cinta de 30, 2 sutiãs, gel e creme, com frete grátis.',
+    desc: 'Tudo para usar a cinta todo dia: a cinta de 30 barbatanas, 2 sutiãs reforçados (ninguém merece ter um sutiã só), o gel termoativo e o creme de massagem. E chega com frete grátis.',
   },
   {
     id: 'combo-duplo',
@@ -177,9 +177,6 @@ const PRAIA = [
 const FOCOS_PRAIA = [['todos', 'Todos'], ['barriga', 'Segura a barriga'], ['busto', 'Sustenta o busto'], ['bumbum', 'Valoriza o bumbum']];
 const TAMANHOS_PRAIA = TABELA.map((x) => x.t);
 
-// Avaliações de EXEMPLO: o espaço será preenchido com os antes e depois reais das clientes
-const AVALIACOES = [
-  { foto: 'img/cliente-1.webp', nome: 'Cliente de exemplo', cidade: 'Niterói, RJ', tam: 'G', calca: 44, produto: 'Cinta 30 Barbatanas', texto: 'Uso o dia todo e ninguém percebe. Não enrola quando eu sento, que era o que me incomodava nas outras.' },
-  { foto: 'img/cliente-2.webp', nome: 'Cliente de exemplo', cidade: 'São Paulo, SP', tam: 'M', calca: 40, produto: 'Kit Completo', texto: 'Escolhi pelo número da calça e a Paola confirmou comigo no WhatsApp. Veio certinho.' },
-  { foto: null, nome: 'Cliente de exemplo', cidade: 'Belo Horizonte, MG', tam: 'GG', calca: 46, produto: 'Combo Duplo', texto: 'Peguei com o gel por só R$ 30 a mais. A cinta não dobra nem quando pego meu filho no colo.' },
-];
+// Avaliações reais das clientes (com autorização). Vazio: o site mostra só o convite para ver as clientes no Instagram
+// Formato: { foto: 'img/...', nome, cidade, tam, calca, produto, texto }
+const AVALIACOES = [];

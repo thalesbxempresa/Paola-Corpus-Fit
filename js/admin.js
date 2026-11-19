@@ -199,6 +199,9 @@ const Nuvem = (() => {
     integrity: 'sha384-TcHRA3zBbn+Lexh5n+Oil4guNPOS3rjNDpGRAN46u/s/mB2IZ50ceC6TYDU2yvgK',
   };
   let sb = null;
+  // Retrato do catálogo no banco quando o painel o leu. Se outro aparelho (ou outra aba) mudar algo depois,
+  // o painel não grava a cópia velha por cima: avisa e recarrega
+  let impressao = null;
   const TRADUCOES = {
     'Invalid login credentials': 'E-mail ou senha incorretos.',
     'Signups not allowed for this instance': 'O cadastro de novas contas está desligado. Se você já tem conta, use Entrar.',
@@ -301,19 +304,30 @@ const Nuvem = (() => {
     // A cliente esqueceu a senha da conta dela na loja: o banco devolve o código do link de senha nova
     async linkSenhaCliente(email) { return checar(await sb.rpc('cliente_link_senha', { p_email: email })); },
     async eventos() { return checar(await sb.from('eventos_dia').select('*').limit(4000)); },
+    async lerBanco() {
+      const itens = checar(await sb.from('itens').select('*').order('id'));
+      const cfg = checar(await sb.from('loja_config').select('dados').eq('id', 1).maybeSingle());
+      return { impressao: JSON.stringify([itens, cfg?.dados ?? null]), dados: cfg?.dados || {}, temItens: itens.length > 0 };
+    },
     async catalogo() {
       const doc = checar(await sb.rpc('catalogo_publico'));
+      const banco = await this.lerBanco();
       if (Catalogo.valido(doc)) {
+        impressao = banco.impressao;
         // O endereço de quem envia é privado: não vem no catálogo público
-        const privado = checar(await sb.from('loja_config').select('dados').eq('id', 1).maybeSingle());
-        return { ...doc, loja: { ...Catalogo.doc().loja, ...doc.loja }, remetente: privado?.dados?.remetente || {}, pagamento: privado?.dados?.pagamento || {} };
+        return { ...doc, loja: { ...Catalogo.doc().loja, ...doc.loja }, remetente: banco.dados.remetente || {}, pagamento: banco.dados.pagamento || {} };
       }
-      // Banco recém-criado: leva o catálogo atual do site na primeira entrada
+      // Banco recém-criado: leva o catálogo atual do site na primeira entrada. Com produtos no banco, nunca grava por cima
+      if (banco.temItens) throw new Error('Não deu para ler o catálogo do banco. Recarregue a página.');
       const atual = Catalogo.doc();
+      impressao = null;
       await this.salvarCatalogo(atual);
       return atual;
     },
     async salvarCatalogo(doc) {
+      if (impressao !== null && (await this.lerBanco()).impressao !== impressao) {
+        throw new Error('o catálogo mudou em outro aparelho ou aba. A tela foi atualizada: faça a mudança de novo.');
+      }
       const linhas = [
         ...doc.produtos.map((x, i) => linha(x, 'produto', i)),
         ...doc.kits.map((x, i) => linha(x, 'kit', i)),
@@ -322,6 +336,7 @@ const Nuvem = (() => {
       checar(await sb.from('loja_config').upsert({ id: 1, dados: { loja: doc.loja, tabela: doc.tabela, remetente: doc.remetente || {}, pagamento: doc.pagamento || {} } }));
       checar(await sb.from('itens').upsert(linhas));
       checar(await sb.from('itens').delete().not('id', 'in', `(${linhas.map((l) => l.id).join(',')})`));
+      impressao = (await this.lerBanco()).impressao;
     },
     async subirFoto(blob) {
       const nome = `produtos/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.webp`;
@@ -340,7 +355,8 @@ function toast(msg) {
   t.textContent = msg;
   t.classList.add('ver');
   clearTimeout(tempoToast);
-  tempoToast = setTimeout(() => t.classList.remove('ver'), 2600);
+  // Aviso longo fica mais tempo na tela, para dar tempo de ler
+  tempoToast = setTimeout(() => t.classList.remove('ver'), Math.max(2600, msg.length * 55));
 }
 
 let tempoDica;
@@ -2193,7 +2209,8 @@ async function salvarCatalogo(msg) {
     toast(msg);
     return true;
   } catch (e) {
-    estado.catalogo = await Banco.catalogo();
+    // Volta a tela para o que está no banco, para a próxima mudança partir do catálogo certo
+    try { estado.catalogo = await Banco.catalogo(); } catch (ex) { /* sem internet: fica a cópia da tela */ }
     toast(`Não salvou: ${e.message}`);
     return false;
   }

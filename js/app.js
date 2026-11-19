@@ -1,6 +1,6 @@
 // =============================================================
-// Paola Corpus Fit — protótipo: topo, pedido, sacola e telas
-// Caminho de compra único: escolher o kit → número da calça → WhatsApp
+// Paola Corpus Fit — loja: topo, pedido, carrinho e telas
+// Caminho de compra: escolher o produto → número da calça → carrinho → pagamento no site
 // =============================================================
 const $ = (sel, raiz = document) => raiz.querySelector(sel);
 const $$ = (sel, raiz = document) => [...raiz.querySelectorAll(sel)];
@@ -169,7 +169,7 @@ const MENU = [
 function montarTopo() {
   const pagina = document.body.dataset.pagina;
   const kit = item('combo-5');
-  const avisos = [`${kit.sub || kit.nome} por ${brl(kit.preco)}`, pagaNoSite() ? 'Pague no Pix ou no cartão aqui no site' : 'Você só paga depois de falar com a Paola', `Frete grátis acima de ${brl(LOJA.freteGratis)}`];
+  const avisos = [`${kit.sub || kit.nome} por ${brl(kit.preco)}`, pagaNoSite() ? `${pctPix()} off no Pix ou ${LOJA.parcelas}x sem juros` : 'Você só paga depois de falar com a Paola', `Frete grátis acima de ${brlLimpo(LOJA.freteGratis)}`];
   $('#topo').innerHTML = `
   <div class="aviso" aria-live="off"><span>${avisos[0]}</span></div>
   <header class="cab">
@@ -231,7 +231,7 @@ function montarRodape() {
       <div class="rodape-grade">
         <div>
           <span class="logo"><b>Paola</b><small>Corpus Fit</small></span>
-          <p style="margin-top:14px;max-width:30ch">Cintas modeladoras e, em breve, moda praia. Do ${LOJA.cidade} para todo o Brasil.</p>
+          <p style="margin-top:14px;max-width:30ch">Cintas modeladoras e, em breve, moda praia. De ${esc(LOJA.cidade)} para todo o Brasil.</p>
         </div>
         <div><h4>Loja</h4><ul>${MENU.map(([nome, link]) => `<li><a href="${link}">${nome}</a></li>`).join('')}</ul></div>
         <div><h4>Ajuda</h4><ul>
@@ -251,7 +251,7 @@ function montarRodape() {
       </div>
       <div class="rodape-base">${LOJA.empresa && LOJA.documento && LOJA.enderecoLoja
         ? `© 2026 ${esc(LOJA.empresa)} · ${esc(documentoBonito(LOJA.documento))} ·${esc(LOJA.enderecoLoja)}${LOJA.email ? ` · ${esc(LOJA.email)}` : ''}${pagaNoSite() ? ' · Pagamentos pelo Mercado Pago' : ''}`
-        : '© 2026 Paola Corpus Fit · Protótipo visual de demonstração: nenhum pedido é cobrado.'}</div>
+        : `© 2026 Paola Corpus Fit · ${esc(LOJA.cidade)}`}</div>
     </div>
   </footer>`;
 }
@@ -272,10 +272,15 @@ function abrirModal(html) {
   document.body.classList.add('travado');
   return m;
 }
+// O que fazer quando a tela aberta for fechada (no X, no fundo ou no Esc). A tela da conta usa para seguir a compra sem conta.
+let aoFecharModal = null;
 function fecharTudo() {
   $$('.gaveta.aberta, .modal.aberta').forEach((g) => g.classList.remove('aberta'));
   $('.veu')?.classList.remove('aberto');
   document.body.classList.remove('travado');
+  const depois = aoFecharModal;
+  aoFecharModal = null;
+  depois?.();
 }
 
 let tempoToast;
@@ -378,10 +383,16 @@ async function sairDaConta() {
   gravarSacola([], { daConta: true });
   marcarConta();
 }
+const chaveSacola = (id, op = {}) => [id, op.calca || '', op.extra || ''].join('|');
+// "Comprar agora" leva ao carrinho para finalizar. Se o mesmo item (mesmo tamanho e escolha) já está lá, não soma outra unidade
+function comprarAgora(id, op = {}) {
+  if (lerSacola().some((x) => x.chave === chaveSacola(id, op))) return abrir('sacola');
+  adicionar(id, op);
+}
 function adicionar(id, op = {}, qtd = 1, s = lerSacola(), opcoes = {}) {
-  const chave = [id, op.calca || '', op.extra || ''].join('|');
+  const chave = chaveSacola(id, op);
   const achado = s.find((x) => x.chave === chave);
-  if (achado) achado.qtd += qtd;
+  if (achado) achado.qtd = Math.min(9, achado.qtd + qtd);
   else s.push({ chave, id, calca: op.calca || null, extra: op.extra || null, qtd });
   gravarSacola(s);
   Catalogo.evento('sacola');
@@ -567,6 +578,9 @@ function finalizar() {
   const CAMPOS = ['nome', 'telefone', 'cep', 'rua', 'num', 'complemento', 'bairro', 'cidade', 'uf'];
   CAMPOS.forEach((c) => { form[c].value = cliente[c] || ''; });
   form.telefone.addEventListener('input', () => { form.telefone.value = mascaraTelefone(form.telefone.value); });
+  // Rascunho: o que ela digita fica guardado neste aparelho, mesmo se fechar a tela antes de terminar
+  const guardarRascunho = () => gravarJSON('pcf-cliente', { ...lerJSON('pcf-cliente', {}), ...Object.fromEntries(CAMPOS.map((c) => [c, form[c].value.trim()])), pagamento });
+  form.addEventListener('input', guardarRascunho);
   // Pelo CEP, o endereço se preenche sozinho (ViaCEP, serviço público e gratuito); se falhar, ela digita
   const status = $('[data-status]', m);
   let ultimoCep = '';
@@ -617,6 +631,7 @@ function finalizar() {
       gravarSacola(lerSacola().filter((x) => !s.some((y) => y.chave === x.chave)));
       if (noSite) {
         if (botao) { botao.disabled = true; botao.textContent = 'Abrindo o pagamento…'; }
+        else toast('Abrindo o pagamento…');
         try {
           const destino = await Catalogo.pagar(pedido);
           // O pedido já está no banco: entra na conta antes de trocar de página, sem segurar a cliente se demorar
@@ -674,10 +689,10 @@ function montarConta(caixa, op) {
       ${campoSenhaHTML('ct-senha', criar ? 'Crie uma senha' : 'Sua senha', criar)}
       <p class="dica-tam erro" data-erro hidden></p>
       <button class="btn btn-preto btn-bloco" type="submit">${esc(criar ? op.acaoCriar : op.acaoEntrar)}</button>
+      ${op.pular ? `<button class="btn btn-claro btn-bloco" type="button" data-pular>${esc(op.pular)}</button>` : ''}
       <div class="conta-links">
         <button class="link-tam" type="button" data-modo="${criar ? 'entrar' : 'criar'}">${criar ? 'Já tenho conta: entrar' : 'Ainda não tenho conta: criar'}</button>
         ${criar ? '' : '<button class="link-tam" type="button" data-esqueci>Esqueci minha senha</button>'}
-        ${op.pular ? `<button class="link-tam conta-pular" type="button" data-pular>${esc(op.pular)}</button>` : ''}
       </div>
     </form>`;
     const form = $('#form-conta', caixa);
@@ -730,13 +745,16 @@ function montarConta(caixa, op) {
 // Dá para seguir sem conta: a venda vem antes do cadastro.
 function pedirConta(dados, noSite, seguir) {
   const m = abrirModal('<div data-conta></div>');
+  // Fechar esta tela é o mesmo que "Agora não": a compra segue sem conta, uma vez só
+  const seguirUmaVez = (botao) => { aoFecharModal = null; seguir(botao); };
+  aoFecharModal = () => seguir();
   montarConta($('[data-conta]', m), {
     modo: 'criar',
     nome: dados.nome,
     telefone: dados.telefone,
     acaoCriar: noSite ? 'Criar conta e ir para o pagamento' : 'Criar conta e continuar',
     acaoEntrar: noSite ? 'Entrar e ir para o pagamento' : 'Entrar e continuar',
-    pular: 'Continuar sem conta',
+    pular: noSite ? 'Agora não, ir para o pagamento' : 'Agora não, continuar',
     topo: (modo) => `
     <div class="modal-topo"><h2>${modo === 'criar' ? 'Crie sua conta' : 'Entre na sua conta'}</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
     <div class="aviso-real">
@@ -747,11 +765,11 @@ function pedirConta(dados, noSite, seguir) {
     </div>
     ${modo === 'criar' ? `<ul class="espera-lista aviso-lista">
       <li>Acompanhe cada etapa: pagamento, envio e rastreio</li>
-      <li>Veja suas compras e sua sacola em qualquer aparelho</li>
+      <li>Veja suas compras e seu carrinho em qualquer aparelho</li>
       <li>É rápido: não precisa confirmar o e-mail</li>
     </ul>` : ''}`,
-    aoEntrar: seguir,
-    aoPular: seguir,
+    aoEntrar: seguirUmaVez,
+    aoPular: seguirUmaVez,
   });
 }
 
@@ -984,7 +1002,7 @@ const tabelaHTML = () => `<table class="tabela-mini"><thead><tr><th>Tamanho</th>
   <tbody>${TABELA.map((x) => `<tr data-linha="${x.t}"><td>${x.t}</td><td>${faixaCalca(x)}</td></tr>`).join('')}</tbody></table>`;
 // Reduz o risco na hora do clique: nada é cobrado no site e o tamanho é conferido antes
 const notaPedido = () => `<p class="pedido-nota">${I.escudo}<span>${pagaNoSite()
-  ? 'Você paga no Pix ou no cartão aqui no site. A Paola confere seu tamanho antes de enviar.'
+  ? `Frete grátis acima de ${brlLimpo(LOJA.freteGratis)}. Pague no Pix ou no cartão aqui no site, e a Paola confere seu tamanho antes de enviar.`
   : 'Você só paga depois de falar com a Paola no WhatsApp. Ela confirma seu tamanho antes de enviar.'}</span></p>`;
 // O botão fala do que a cliente ganha, não do que ela precisa fazer
 const textoBotao = () => 'Comprar agora';
@@ -1139,7 +1157,7 @@ function montarPedido(raiz) {
         $(falta[0], raiz).scrollIntoView({ block: 'center', behavior: 'smooth' });
         return;
       }
-      adicionar(produto().id, { calca, extra: p.extra });
+      comprarAgora(produto().id, { calca, extra: p.extra });
     });
   };
   desenhar();
@@ -1154,11 +1172,16 @@ function ligarComparadores() {
 }
 
 // ---------------- Avaliações ----------------
+// Sem avaliação real cadastrada, a seção da página do produto fica escondida
+function mostrarAvaliacoes() {
+  $('#avaliacoes').innerHTML = avaliacoesHTML();
+  $$('[data-so-avaliacoes]').forEach((el) => { el.hidden = !AVALIACOES.length; });
+}
 function avaliacoesHTML() {
   return AVALIACOES.map((a) => `<article class="avaliacao">
     ${a.foto ? `<img src="${a.foto}" alt="Foto enviada pela cliente" loading="lazy">` : ''}
     <div class="av-corpo">
-      <div class="av-topo"><span class="estrelas" aria-label="5 de 5 estrelas">★★★★★</span><span class="av-exemplo">Exemplo</span></div>
+      <div class="av-topo"><span class="estrelas" aria-label="5 de 5 estrelas">★★★★★</span></div>
       <p>“${a.texto}”</p>
       <div class="av-quem"><b>${a.nome}</b> · ${a.cidade}</div>
       <div class="av-compra">Veste calça ${a.calca} · usa o ${a.tam} · comprou ${a.produto}</div>
@@ -1202,13 +1225,13 @@ function cardKit(k) {
 function telaInicio() {
   montarPedido($('#pedido'));
   $('#praia-pecas').innerHTML = PRAIA.filter(visivel).slice(0, 3).map((p) => `<span><img src="${p.img}" alt="${p.nome}" loading="lazy"></span>`).join('');
-  $('#avaliacoes').innerHTML = avaliacoesHTML();
+  mostrarAvaliacoes();
   ligarComparadores();
   barraInicio();
 }
 
 function telaLoja() {
-  const filtros = [['tudo', 'Tudo'], ['kits', 'Combos'], ['cintas', 'Cintas'], ['sutias', 'Sutiã'], ['tratamento', 'Tratamento']];
+  const filtros = [['tudo', 'Tudo'], ['kits', 'Combos'], ['cintas', 'Cintas'], ['sutias', 'Sutiã'], ['tratamento', 'Gel e creme']];
   const todos = [...KITS, ...PRODUTOS].filter(visivel);
   const valor = (x) => (temPreco(x) ? x.preco : Infinity);
   let ordem = 'vendidos';
@@ -1245,7 +1268,7 @@ function telaProduto() {
     ? [{ src: it.img }, ...pecas.map((i) => ({ src: item(i).img, txt: nomeCurto(item(i)) }))]
     : (it.galeria || [{ src: it.img }]);
   const galeria = fotos.map((f, i) => `<figure><img src="${f.src}" alt="${it.nome}"${i ? ' loading="lazy"' : ''}>${f.txt ? `<figcaption>${f.txt}</figcaption>` : ''}</figure>`).join('');
-  const cat = ({ cintas: 'Cintas', sutias: 'Sutiã', tratamento: 'Tratamento', kits: 'Combos' })[it.cat];
+  const cat = ({ cintas: 'Cintas', sutias: 'Sutiã', tratamento: 'Gel e creme', kits: 'Combos' })[it.cat];
 
   const versoes = it.cat === 'cintas' ? `<div class="grupo"><div class="grupo-titulo">Versão</div>
     <div class="versoes">${cintasAVenda().map((p) => `<a href="produto.html?id=${p.id}" aria-current="${p.id === it.id}"><b>${p.barbatanas} barbatanas</b><small>${tudoEsgotado(p) ? 'Esgotada' : `${p.selo ? `${p.selo} · ` : ''}${brl(p.preco)}`}</small></a>`).join('')}</div></div>` : '';
@@ -1302,16 +1325,16 @@ function telaProduto() {
         <div class="detalhes">
           <details open><summary>Descrição</summary><div class="conteudo">${it.desc}</div></details>
           ${it.uso ? `<details><summary>Como usar</summary><div class="conteudo">${it.uso}</div></details>` : ''}
-          ${usaTam ? `<details><summary>Dobra? Marca? Machuca?</summary><div class="conteudo"><p><b>Dobra ou enrola?</b> Não. As barbatanas mantêm a cinta no lugar, mesmo sentada ou treinando.</p><p style="margin-top:10px"><b>Quantas regulagens?</b> Duas regulagens de colchete por dentro e mais o zíper por fora, na frente.</p><p style="margin-top:10px"><b>Marca na roupa?</b> Não marca por baixo da roupa.</p><p style="margin-top:10px"><b>Machuca?</b> O tecido cetinete é pós-cirúrgico e antialérgico. Comece com poucas horas por dia e aumente aos poucos.</p></div></details>` : ''}
+          ${usaTam ? `<details><summary>Dobra? Marca? Machuca?</summary><div class="conteudo"><p><b>Dobra ou enrola?</b> Não. As barbatanas mantêm a cinta no lugar, mesmo sentada ou treinando.</p><p style="margin-top:10px"><b>Quantas regulagens?</b> Duas regulagens de colchete por dentro e mais o zíper por fora, na frente.</p><p style="margin-top:10px"><b>Marca na roupa?</b> Não marca por baixo da roupa.</p><p style="margin-top:10px"><b>Machuca?</b> Não, no tamanho certo. É cinta no tamanho errado que machuca, por isso a Paola confere o seu antes de enviar. Comece pela regulagem mais folgada, com poucas horas por dia, e aumente aos poucos.</p></div></details>` : ''}
           ${usaTam ? `<details><summary>Tabela de medidas</summary><div class="conteudo">${tabelaHTML()}<p style="margin-top:10px">A cinta estica, então o que vale é o número da calça ou short, não a medida em centímetros.</p></div></details>` : ''}
-          <details><summary>Entrega e pagamento</summary><div class="conteudo">Enviamos do ${LOJA.cidade} para todo o Brasil. Pix com ${pctPix()} de desconto ou ${textoCartao()}. O prazo de entrega a Paola confirma no WhatsApp.</div></details>
+          <details><summary>Entrega e pagamento</summary><div class="conteudo">Enviamos de ${esc(LOJA.cidade)} para todo o Brasil. Pix com ${pctPix()} de desconto ou ${textoCartao()}. O prazo de entrega a Paola confirma no WhatsApp.</div></details>
         </div>
       </div>
     </div>`;
 
   // Bloco "no dia a dia" só onde tem cinta
   $('#dia-a-dia').hidden = !usaTam;
-  $('#avaliacoes').innerHTML = avaliacoesHTML();
+  mostrarAvaliacoes();
   $('#relacionados').innerHTML = [...KITS, ...PRODUTOS].filter((x) => visivel(x) && x.id !== it.id).slice(0, 4).map(card).join('');
   if (!vende || acabou) return;
 
@@ -1334,7 +1357,9 @@ function telaProduto() {
       $(`#${falta[0]}`).scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;
     }
-    adicionar(it.id, { calca: usaTam ? calca : null, extra }, 1, lerSacola(), { abrir: abrirCarrinho });
+    const op = { calca: usaTam ? calca : null, extra };
+    if (abrirCarrinho) comprarAgora(it.id, op);
+    else adicionar(it.id, op, 1, lerSacola(), { abrir: false });
   };
   $('#adicionar').addEventListener('click', () => comprar(true));
   $('#adicionar-so').addEventListener('click', () => comprar(false));
@@ -1343,7 +1368,11 @@ function telaProduto() {
   const barra = $('#barra-prod');
   barra.innerHTML = `<div><small>${nomeCurto(it)}</small><b>${brl(it.preco)}</b></div><button class="btn btn-preto" type="button">Comprar agora</button>`;
   $('button', barra).addEventListener('click', () => comprar(true));
-  new IntersectionObserver(([e]) => barra.classList.toggle('visivel', !e.isIntersecting && e.boundingClientRect.top < 0)).observe($('#adicionar'));
+  // Aparece sempre que o botão principal não está na tela (antes ou depois dele). Enquanto ela aparece, some a barra do carrinho
+  new IntersectionObserver(([e]) => {
+    barra.classList.toggle('visivel', !e.isIntersecting);
+    document.body.classList.toggle('com-barra-prod', !e.isIntersecting);
+  }).observe($('#adicionar'));
 }
 
 function telaPraia() {
@@ -1703,14 +1732,20 @@ function preencherValores() {
   };
   $$('[data-v]').forEach((el) => { el.textContent = valores[el.dataset.v]; });
   $$('[data-so-de]').forEach((el) => { el.hidden = !kit.de; });
-  // Com o pagamento no site ligado, os textos fixos da página deixam de dizer que se paga pelo WhatsApp
-  if (pagaNoSite()) {
-    const textos = {
-      hero: 'Pague no Pix ou no cartão aqui no site. A Paola confere seu tamanho antes de enviar.',
-      faq: `<summary>Como é o pagamento?</summary><p>Você paga aqui no site, com a proteção do Mercado Pago: no Pix (com ${pctPix()} de desconto) ou no ${textoCartao()}. Depois, a Paola confere seu tamanho e envia do ${esc(LOJA.cidade.split(',')[0])} para todo o Brasil.</p>`,
-    };
-    $$('[data-texto-site]').forEach((el) => { el.innerHTML = textos[el.dataset.textoSite]; });
-  }
+  // Os textos fixos seguem o modo de pagamento: no site (o que vem escrito no HTML) ou pelo WhatsApp
+  const cidade = esc(LOJA.cidade.split(',')[0]);
+  const textos = pagaNoSite() ? {
+    hero: `${kit.preco >= LOJA.freteGratis ? 'Frete grátis no kit. ' : ''}Pague no Pix ou no cartão aqui no site, e a Paola confere seu tamanho antes de enviar.`,
+    passo2: `Paga aqui no site: Pix com ${pctPix()} de desconto ou ${textoCartao()}`,
+    passo3: 'A Paola confere seu tamanho antes de enviar. Se precisar, ela te chama no WhatsApp',
+    faq: `<summary>Como é o pagamento?</summary><p>Você paga aqui no site, com a proteção do Mercado Pago: no Pix (com ${pctPix()} de desconto) ou no ${textoCartao()}. Depois, a Paola confere seu tamanho e envia de ${cidade} para todo o Brasil.</p>`,
+  } : {
+    hero: 'Você só paga depois de falar com a Paola no WhatsApp. Ela confirma seu tamanho antes de enviar.',
+    passo2: 'Envia o pedido pelo WhatsApp. Nada é cobrado no site',
+    passo3: `A Paola confirma seu tamanho e você paga no Pix (${pctPix()} off) ou no cartão em até ${parcelasMax()}x`,
+    faq: `<summary>Preciso pagar no site?</summary><p>Não. Você envia o pedido pelo WhatsApp e só paga depois de falar com a Paola: no Pix (com ${pctPix()} de desconto) ou no ${textoCartao()}. Ela envia de ${cidade} para todo o Brasil.</p>`,
+  };
+  $$('[data-texto-site]').forEach((el) => { el.innerHTML = textos[el.dataset.textoSite]; });
 }
 
 // Depois de uma atualização automática do catálogo, a página volta ao topo (e não ao ponto onde o navegador a deixou)
