@@ -294,10 +294,88 @@ function lerSacola() {
   try { const v = localStorage.getItem('pcf-sacola-2'); if (v) s = JSON.parse(v); } catch (e) { /* sem armazenamento */ }
   return s.filter((x) => item(x.id) && temPreco(item(x.id)));
 }
-function gravarSacola(s) {
+// daConta: a mudança veio da conta (outro aparelho), então não precisa voltar para lá
+function gravarSacola(s, { daConta = false } = {}) {
   sacolaMemoria = s;
   try { localStorage.setItem('pcf-sacola-2', JSON.stringify(s)); } catch (e) { /* ok */ }
   desenharSacola();
+  if (!daConta) agendarSacolaNaConta();
+}
+
+// ---------------- Sacola salva na conta ----------------
+// Com a conta aberta, a sacola vai para o banco e aparece em qualquer aparelho em que ela entrar. Vale a última mudança.
+// pcf-sacola-sinc = { em: data da sacola da conta que este aparelho já tem, mudou: mudanças daqui ainda não enviadas }
+const SINC_SACOLA = 'pcf-sacola-sinc';
+let tempoSacolaConta;
+const contaAberta = () => temConta() && !!Catalogo.conta.atual();
+function agendarSacolaNaConta() {
+  if (!contaAberta()) return;
+  const sinc = lerJSON(SINC_SACOLA, {});
+  gravarJSON(SINC_SACOLA, { ...sinc, mudou: (Number(sinc.mudou) || 0) + 1 });
+  clearTimeout(tempoSacolaConta);
+  tempoSacolaConta = setTimeout(enviarSacolaParaConta, 700);
+}
+async function enviarSacolaParaConta(saindo = false) {
+  clearTimeout(tempoSacolaConta);
+  const sinc = lerJSON(SINC_SACOLA, {});
+  if (!sinc.mudou || !contaAberta()) return;
+  try {
+    const r = await Catalogo.conta.guardarSacola(lerSacola(), saindo);
+    if (!r.ok) return;
+    // Se ela mexeu de novo enquanto enviava, continua pendente: a próxima gravação leva
+    const agora = lerJSON(SINC_SACOLA, {});
+    gravarJSON(SINC_SACOLA, { em: r.em, mudou: agora.mudou === sinc.mudou ? 0 : agora.mudou });
+  } catch (e) { /* sem internet: fica pendente e vai na próxima visita */ }
+}
+addEventListener('pagehide', () => enviarSacolaParaConta(true));
+
+// Junta duas sacolas sem repetir linha; na mesma linha, fica a maior quantidade
+function juntarSacolas(a, b) {
+  const juntas = a.map((x) => ({ ...x }));
+  b.forEach((x) => {
+    const igual = juntas.find((y) => y.chave === x.chave);
+    if (igual) igual.qtd = Math.max(Number(igual.qtd) || 1, Number(x.qtd) || 1);
+    else juntas.push({ ...x });
+  });
+  return juntas;
+}
+
+// Ao abrir a página (e logo depois de entrar na conta): traz a sacola da conta para este aparelho
+async function sincronizarSacola() {
+  if (!contaAberta()) return;
+  const r = await Catalogo.conta.lerSacola().catch(() => null);
+  if (!r || !r.ok) return;
+  const daConta = Array.isArray(r.sacola) ? r.sacola : [];
+  const sinc = lerJSON(SINC_SACOLA, {});
+  const mudouLa = r.em !== sinc.em;
+  if (sinc.em && sinc.mudou && !mudouLa) {
+    // Só este aparelho mexeu (e não conseguiu enviar): vale a daqui
+    enviarSacolaParaConta();
+  } else if (!sinc.em || sinc.mudou) {
+    // Acabou de entrar neste aparelho, ou os dois lados mexeram: junta as duas e manda o resultado
+    const juntas = juntarSacolas(daConta, lerSacola());
+    gravarJSON(SINC_SACOLA, { em: r.em, mudou: 0 });
+    gravarSacola(juntas, { daConta: JSON.stringify(juntas) === JSON.stringify(daConta) });
+  } else if (mudouLa) {
+    // Mudou em outro aparelho depois da última vez: vale a da conta
+    gravarSacola(daConta, { daConta: true });
+    gravarJSON(SINC_SACOLA, { em: r.em, mudou: 0 });
+  }
+}
+
+// Entrou na conta neste aparelho: começa do zero a sincronia (a sacola daqui se junta à da conta)
+function entrouNaConta() {
+  try { localStorage.removeItem(SINC_SACOLA); } catch (e) { /* ok */ }
+  marcarConta();
+  return sincronizarSacola();
+}
+// Sair: a sacola fica guardada na conta e sai deste aparelho, para quem usar o aparelho depois não ver
+async function sairDaConta() {
+  await Promise.race([enviarSacolaParaConta(true), new Promise((ok) => { setTimeout(ok, 1500); })]);
+  Catalogo.conta.sair();
+  try { localStorage.removeItem(SINC_SACOLA); } catch (e) { /* ok */ }
+  gravarSacola([], { daConta: true });
+  marcarConta();
 }
 function adicionar(id, op = {}, qtd = 1, s = lerSacola()) {
   const chave = [id, op.calca || '', op.extra || ''].join('|');
@@ -518,7 +596,8 @@ function finalizar() {
       if (fechando) return;
       fechando = true;
       const pedido = registrarPedido(s, { ...d, pagamento });
-      gravarSacola([]);
+      // Sai da sacola só o que foi comprado: o que estava guardado na conta e não entrou neste pedido continua lá
+      gravarSacola(lerSacola().filter((x) => !s.some((y) => y.chave === x.chave)));
       if (noSite) {
         if (botao) { botao.disabled = true; botao.textContent = 'Abrindo o pagamento…'; }
         try {
@@ -609,7 +688,11 @@ function montarConta(caixa, op) {
       botao.textContent = criar ? 'Criando sua conta…' : 'Entrando…';
       try {
         const r = criar ? await Catalogo.conta.criar(email, senha, op.nome, op.telefone) : await Catalogo.conta.entrar(email, senha);
-        if (r.ok) { marcarConta(); return op.aoEntrar(botao); }
+        if (r.ok) {
+          // A sacola da conta chega antes de seguir, sem segurar a cliente se a internet demorar
+          await Promise.race([entrouNaConta(), new Promise((ok) => { setTimeout(ok, 2500); })]);
+          return op.aoEntrar(botao);
+        }
         if (r.erro === 'existe') { emailDigitado = email; modo = 'entrar'; return desenhar(ERROS_CONTA.existe); }
         mostrarErro(r.erro === 'bloqueada'
           ? `Muitas tentativas. Tente de novo em ${Number(r.minutos) || 15} min ou fale com a Paola.`
@@ -647,7 +730,7 @@ function pedirConta(dados, noSite, seguir) {
     </div>
     ${modo === 'criar' ? `<ul class="espera-lista aviso-lista">
       <li>Acompanhe cada etapa: pagamento, envio e rastreio</li>
-      <li>Veja suas compras sempre que quiser</li>
+      <li>Veja suas compras e sua sacola em qualquer aparelho</li>
       <li>É rápido: não precisa confirmar o e-mail</li>
     </ul>` : ''}`,
     aoEntrar: seguir,
@@ -721,9 +804,9 @@ function telaConta() {
       </details>
       <p class="conta-pe">Conta: <b>${esc(r.cliente?.email || '')}</b></p>
       <button class="link-tam envio-copiar" type="button" data-sair>Sair da conta neste aparelho</button>`;
-    $('[data-sair]', caixa).addEventListener('click', () => {
-      Catalogo.conta.sair();
-      marcarConta();
+    $('[data-sair]', caixa).addEventListener('click', async (e) => {
+      e.currentTarget.disabled = true;
+      await sairDaConta();
       mostrarEntrada();
     });
     const form = $('#form-achar', caixa);
@@ -765,8 +848,8 @@ function telaConta() {
       acaoCriar: 'Criar minha conta',
       acaoEntrar: 'Entrar',
       topo: (modo) => `<p>${modo === 'criar'
-        ? 'Crie sua conta com e-mail e senha para ver seus pedidos em qualquer celular ou computador. Não precisa confirmar o e-mail.'
-        : 'Entre com o e-mail e a senha da sua conta para ver seus pedidos.'}</p>`,
+        ? 'Crie sua conta com e-mail e senha para ver seus pedidos e guardar sua sacola em qualquer celular ou computador. Não precisa confirmar o e-mail.'
+        : 'Entre com o e-mail e a senha da sua conta para ver seus pedidos e a sua sacola.'}</p>`,
       aoEntrar: mostrarPedidos,
     });
   }
@@ -791,7 +874,11 @@ function telaConta() {
       botao.disabled = true;
       try {
         const r = await Catalogo.conta.novaSenha(codigo, form.senha.value);
-        if (r.ok) { toast('Senha trocada'); return mostrarPedidos(); }
+        if (r.ok) {
+          toast('Senha trocada');
+          await Promise.race([entrouNaConta(), new Promise((ok) => { setTimeout(ok, 2500); })]);
+          return mostrarPedidos();
+        }
         erro.textContent = ERROS_CONTA[r.erro] || ERROS_CONTA.codigo;
       } catch (ex) {
         erro.textContent = 'Não deu para trocar a senha agora. Confira a internet e tente de novo.';
@@ -971,6 +1058,19 @@ function montarPedido(raiz) {
     $('.pedido-resumo', raiz).innerHTML = resumo();
     $('[data-erro]', raiz).hidden = true;
   };
+  // Abaixo das 3 opções: a loja inteira, para ninguém achar que só existem essas
+  const todosHTML = () => {
+    const naLoja = [...PRODUTOS, ...KITS].filter((x) => visivel(x) && temPreco(x));
+    if (!naLoja.length) return '';
+    // Quatro fotos juntas, começando pelo que não está nas 3 opções: mostra de cara que há mais coisa
+    const dasOpcoes = (x) => ['combo-5', 'combo-duplo', ...cintasAVenda().map((c) => c.id)].includes(x.id);
+    const fotos = [...naLoja.filter((x) => !dasOpcoes(x)), ...naLoja.filter(dasOpcoes)].slice(0, 4);
+    return `<a class="kit-op kit-op-todos" href="loja.html">
+        <span class="kit-op-foto ${fotos.length === 4 ? 'kit-op-mosaico' : ''}">${(fotos.length === 4 ? fotos : fotos.slice(0, 1)).map((x) => `<img src="${x.img}" alt="" loading="lazy">`).join('')}</span>
+        <span class="kit-op-txt"><b>Ver todos os produtos</b><small>${naLoja.length >= 6 ? `São ${naLoja.length} produtos na loja.` : 'Cada produto da loja, separado.'} Veja com foto e preço.</small></span>
+        <span class="kit-op-seta" aria-hidden="true">${I.seta}</span>
+      </a>`;
+  };
   const subOpcao = (o) => {
     if (o.id === 'combo-duplo') return `<div class="kit-op-sub" id="pedido-escolha"><small>Qual você quer junto?</small>${escolhaHTML(item('combo-duplo'), p.extra)}</div>`;
     return `<div class="kit-op-sub"><div class="versoes">${cintasAVenda().map((x) => `<button type="button" data-versao="${x.id}" aria-pressed="${x.id === p.versao}"><b>${x.barbatanas} barbatanas</b><small>${tudoEsgotado(x) ? 'Esgotada' : `${x.selo ? `${x.selo} · ` : ''}${brl(x.preco)}`}</small></button>`).join('')}</div></div>`;
@@ -990,6 +1090,7 @@ function montarPedido(raiz) {
           <span class="kit-op-radio" aria-hidden="true"></span>
         </button>${marcado && o.id !== 'combo-5' ? subOpcao(o) : ''}`;
       }).join('')}</div>
+      ${todosHTML()}
       <div class="passo" id="passo-calca"><span class="passo-n">2</span><h3>Qual número de calça você usa?</h3></div>
       ${calcaHTML(lerCalca(), produto())}
       <div class="pedido-resumo">${resumo()}</div>
@@ -1603,6 +1704,8 @@ Catalogo.pronto.then(() => {
   if (!['acompanhar', 'pagamento', 'conta'].includes(document.body.dataset.pagina)) Catalogo.evento('visita');
   // Pedido feito neste aparelho que ainda não entrou na conta (a página de Minha conta já faz isso sozinha)
   if (document.body.dataset.pagina !== 'conta') ligarPedidosDaConta();
+  // Sacola de outro aparelho da mesma conta
+  sincronizarSacola();
 });
 
 document.addEventListener('click', (e) => {

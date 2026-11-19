@@ -961,3 +961,12 @@ section[id] { scroll-margin-top: 84px; }
   .conta-pedidos a > span { flex-basis: 100%; }
   .conta-pedidos a > svg { margin-left: auto; }
 }
+
+/* ---------- Monte seu pedido: ver a loja inteira ---------- */
+.kit-op-todos { margin-top: 10px; background: var(--areia-2); box-shadow: none; color: inherit; text-decoration: none; }
+.kit-op-todos:hover { box-shadow: inset 0 0 0 1.5px var(--tinta); }
+.kit-op-todos b { font-size: 16px; }
+.kit-op-seta { display: grid; place-items: center; width: 24px; height: 24px; color: var(--vinho); }
+.kit-op-seta svg { width: 22px; height: 22px; }
+.kit-op-mosaico { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; background: var(--branco); }
+.kit-op-mosaico img { min-height: 0; }

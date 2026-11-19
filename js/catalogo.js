@@ -153,16 +153,16 @@ const Catalogo = (() => {
       if (r && r.ok && r.sessao) gravar(CONTA, JSON.stringify({ sessao: r.sessao, email: r.cliente?.email || '', nome: r.cliente?.nome || '' }));
       return r;
     };
-    const chamar = async (nome, corpo) => {
-      const r = await rpc(nome, corpo);
+    const chamar = async (nome, corpo, extra) => {
+      const r = await rpc(nome, corpo, extra);
       if (!r.ok) throw new Error('Conta indisponível');
       return r.json();
     };
     // Com a sessão: se o banco disser que ela não vale mais, o aparelho sai da conta
-    const comSessao = async (nome, corpo) => {
+    const comSessao = async (nome, corpo, extra) => {
       const c = atual();
       if (!c) return { ok: false, erro: 'sessao' };
-      const r = await chamar(nome, { p_sessao: c.sessao, ...corpo });
+      const r = await chamar(nome, { p_sessao: c.sessao, ...corpo }, extra);
       if (r && r.erro === 'sessao') esquecer();
       return r;
     };
@@ -179,6 +179,9 @@ const Catalogo = (() => {
       },
       // Liga pedidos à conta: { p_id } pelo link do pedido ou { p_telefone, p_cep } da compra
       vincular: (filtro) => comSessao('cliente_vincular', filtro),
+      // Sacola salva na conta: { ok, sacola, em }. Ao sair da página, a gravação vai com keepalive
+      lerSacola: () => comSessao('cliente_sacola'),
+      guardarSacola: (itens, saindo = false) => comSessao('cliente_guardar_sacola', { p_sacola: itens }, saindo ? { keepalive: true } : undefined),
       sair() {
         const c = atual();
         esquecer();

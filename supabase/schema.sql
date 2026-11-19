@@ -746,15 +746,63 @@ begin
 end;
 $$;
 
+-- Sacola salva na conta: com a conta aberta, o que ela põe na sacola aparece em qualquer aparelho em que entrar.
+-- Vale a última mudança; sacola_em diz a cada aparelho se ele está em dia com a conta.
+alter table public.clientes add column if not exists sacola jsonb not null default '[]'::jsonb;
+alter table public.clientes add column if not exists sacola_em timestamptz;
+
+create or replace function public.cliente_sacola(p_sessao text) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  v_cliente uuid := public.cliente_da_sessao(p_sessao);
+begin
+  if v_cliente is null then
+    return jsonb_build_object('ok', false, 'erro', 'sessao');
+  end if;
+  return (select jsonb_build_object('ok', true, 'sacola', c.sacola, 'em', c.sacola_em) from public.clientes c where c.id = v_cliente);
+end;
+$$;
+
+-- Cada linha: { chave, id, calca, extra, qtd }, como a loja guarda. Até 30 linhas; o que vier torto fica de fora.
+create or replace function public.cliente_guardar_sacola(p_sessao text, p_sacola jsonb) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_cliente uuid := public.cliente_da_sessao(p_sessao);
+  v_limpa jsonb := '[]'::jsonb;
+  v_em timestamptz := clock_timestamp();
+  x jsonb;
+begin
+  if v_cliente is null then
+    return jsonb_build_object('ok', false, 'erro', 'sessao');
+  end if;
+  if jsonb_typeof(coalesce(p_sacola, 'null'::jsonb)) <> 'array' or jsonb_array_length(p_sacola) > 30 or pg_column_size(p_sacola) > 10000 then
+    return jsonb_build_object('ok', false, 'erro', 'sacola');
+  end if;
+  for x in select * from jsonb_array_elements(p_sacola) loop
+    continue when jsonb_typeof(x) <> 'object' or coalesce(x ->> 'id', '') = '';
+    v_limpa := v_limpa || jsonb_build_object(
+      'chave', left(coalesce(x ->> 'chave', ''), 200),
+      'id', left(x ->> 'id', 80),
+      'calca', case when x ->> 'calca' ~ '^\d{1,3}$' then to_jsonb((x ->> 'calca')::int) else 'null'::jsonb end,
+      'extra', nullif(left(coalesce(x ->> 'extra', ''), 80), ''),
+      'qtd', case when x ->> 'qtd' ~ '^\d{1,2}$' then greatest((x ->> 'qtd')::int, 1) else 1 end
+    );
+  end loop;
+  update public.clientes set sacola = v_limpa, sacola_em = v_em where id = v_cliente;
+  return jsonb_build_object('ok', true, 'em', v_em);
+end;
+$$;
+
 alter table public.clientes enable row level security;
 alter table public.clientes_sessoes enable row level security;
 revoke all on public.clientes, public.clientes_sessoes from anon, authenticated;
 revoke all on function public.cliente_digital(text), public.cliente_resumo(uuid), public.cliente_abrir_sessao(uuid), public.cliente_da_sessao(text),
   public.cliente_criar(text, text, text, text), public.cliente_entrar(text, text), public.cliente_sair(text), public.cliente_pedidos(text),
   public.cliente_vincular(text, uuid, text, text), public.cliente_codigo_senha(text), public.cliente_link_senha(text), public.cliente_nova_senha(text, text),
-  public.pedidos_do_contato(text, text), public.buscar_pedidos(text, text)
+  public.pedidos_do_contato(text, text), public.buscar_pedidos(text, text), public.cliente_sacola(text), public.cliente_guardar_sacola(text, jsonb)
   from public, anon, authenticated;
 grant execute on function public.cliente_criar(text, text, text, text), public.cliente_entrar(text, text), public.cliente_sair(text), public.cliente_pedidos(text),
-  public.cliente_vincular(text, uuid, text, text), public.cliente_nova_senha(text, text), public.buscar_pedidos(text, text) to anon, authenticated;
+  public.cliente_vincular(text, uuid, text, text), public.cliente_nova_senha(text, text), public.buscar_pedidos(text, text),
+  public.cliente_sacola(text), public.cliente_guardar_sacola(text, jsonb) to anon, authenticated;
 grant execute on function public.cliente_link_senha(text) to authenticated;
 grant execute on function public.cliente_codigo_senha(text) to service_role;
