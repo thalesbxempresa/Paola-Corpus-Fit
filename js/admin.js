@@ -2296,7 +2296,7 @@ function partesProduto(r) {
       ${area('Principais vantagens', 'pontos', (r.pontos || []).join('\n'), { linhas: 5, ajuda: 'Uma em cada linha. Aparecem em lista na página do produto.' })}
       ${area('Como usar', 'uso', r.uso, { linhas: 5, ajuda: 'Opcional.' })}
       ${campo('Frase curta abaixo do nome', 'frase', r.frase, { ajuda: 'Opcional.' })}
-      ${ETIQUETA(r, 'A melhor')}
+      ${ETIQUETA(r, 'Mais firmeza')}
     </section>`],
     ['fotos', 'Mais fotos', `<section class="pn-card">
       <h2>Fotos da página do produto</h2>
@@ -2348,7 +2348,7 @@ function partesKit(r) {
       </div>
     </section>`],
     ['mais', 'Mais opções', `<section class="pn-card pn-duas">
-      ${ETIQUETA(r, 'O que mais sai')}
+      ${ETIQUETA(r, 'Mais completo')}
       ${campo('Frase curta abaixo do nome', 'frase', r.frase, { ajuda: 'Opcional.' })}
       ${campo('Destaque na vitrine', 'gancho', r.gancho, { ajuda: 'Opcional. Vazio: mostra quanto a cliente economiza.' })}
       ${campo('Resumo do combo', 'sub', r.sub, { ajuda: 'Opcional. Ex.: Leve 5 produtos.' })}

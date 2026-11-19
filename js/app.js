@@ -122,14 +122,14 @@ function listaItens(k) {
 // As 3 opções do pedido; o kit completo vem marcado, como a Paola recomenda.
 // A cinta sozinha ao lado do Combo Duplo (+R$ 30) funciona como comparação de preço.
 const OPCOES = [
-  { id: 'combo-5', titulo: 'Kit Completo', selo: 'Mais escolhido', sub: 'Cinta de 30 barbatanas + 2 sutiãs + gel + creme', nota: () => { const k = item('combo-5'); return `${k.itens.length} produtos: sai ${brl(k.preco / k.itens.length)} cada`; } },
+  { id: 'combo-5', titulo: 'Kit Completo', selo: 'Mais completo', sub: 'Cinta de 30 barbatanas + 2 sutiãs + gel + creme', nota: () => { const k = item('combo-5'); return `${k.itens.length} produtos: sai ${brl(k.preco / k.itens.length)} cada`; } },
   { id: 'combo-duplo', titulo: 'Combo Duplo', sub: 'Cinta de 30 barbatanas + gel ou sutiã, você escolhe', nota: () => { const dif = item('combo-duplo').preco - item('cinta-ziper-30').preco; return dif > 0 ? `Só ${brlLimpo(dif)} a mais que a cinta sozinha` : ''; } },
   { id: 'cinta', titulo: 'Só a cinta', sub: 'Com 30 ou 20 barbatanas' },
 ];
 
 // Sempre um passo acima: cinta 20 → cinta 30 → combo duplo → combo de 5
 const SOBE = {
-  'cinta-ziper-20': ['cinta-ziper-30', 'Leve a de 30 barbatanas, a melhor'],
+  'cinta-ziper-20': ['cinta-ziper-30', 'Mesma cinta, com 10 barbatanas a mais', 'Mais firmeza'],
   'cinta-ziper-30': ['combo-duplo', 'Leve também o gel ou o sutiã'],
   'combo-duplo': ['combo-5', 'Leve o kit completo, com 5 produtos'],
 };
@@ -437,7 +437,7 @@ function desenharSacola() {
   const falta = Math.max(0, LOJA.freteGratis - sub);
   // Sugestão: subir um degrau (cinta 20 → 30 → combo duplo → combo de 5)
   const base = s.find((x) => SOBE[x.id] && item(SOBE[x.id][0]).preco > item(x.id).preco && !s.some((y) => y.id === SOBE[x.id][0]) && !calcaEsgotada(item(SOBE[x.id][0]), x.calca));
-  const [paraId, chamada] = base ? SOBE[base.id] : [];
+  const [paraId, chamada, rotulo] = base ? SOBE[base.id] : [];
   const para = paraId && item(paraId);
   const algumaEsgotada = s.some(linhaEsgotada);
 
@@ -454,7 +454,7 @@ function desenharSacola() {
         <span class="valor">${brl(it.preco * x.qtd)}</span>
       </div>`;
     }).join('')}
-    ${para ? `<div class="sugestao"><span class="mini">${midia(para)}</span><div><small>Vale a pena</small><b>${chamada}</b><span style="font-size:13px">por + ${brl(para.preco - item(base.id).preco)}</span></div><button type="button" data-trocar="${base.chave}" aria-label="Trocar por ${para.nome}">Trocar</button></div>` : ''}`;
+    ${para ? `<div class="sugestao"><span class="mini">${midia(para)}</span><div><small>${rotulo || 'Vale a pena'}</small><b>${chamada}</b><span style="font-size:13px">por + ${brl(para.preco - item(base.id).preco)}</span></div><button type="button" data-trocar="${base.chave}" aria-label="Trocar por ${para.nome}">Trocar</button></div>` : ''}`;
 
   pe.hidden = false;
   pe.innerHTML = `
