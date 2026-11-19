@@ -182,7 +182,7 @@ function montarTopo() {
       <div class="cab-dir">
         <a class="zap-topo" href="${LOJA.whatsapp}" target="_blank" rel="noopener">${I.whats}WhatsApp</a>
         ${temConta() ? `<a class="ico-btn conta-btn" href="conta.html" aria-label="Minha conta">${I.pessoa}</a>` : ''}
-        <button class="ico-btn" type="button" data-abrir="sacola" aria-label="Abrir seu pedido">${I.sacola}<span class="conta-sacola" hidden>0</span></button>
+        <button class="carrinho-btn" type="button" data-abrir="sacola" aria-label="Abrir o carrinho">${I.sacola}<span>Carrinho</span><span class="conta-sacola" hidden>0</span></button>
       </div>
     </div>
   </header>
@@ -199,13 +199,14 @@ function montarTopo() {
       </div>
     </div>
   </aside>
-  <aside class="gaveta dir" id="g-sacola" aria-label="Seu pedido">
-    <div class="gaveta-topo"><h2>Seu pedido</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
+  <aside class="gaveta dir" id="g-sacola" aria-label="Seu carrinho">
+    <div class="gaveta-topo"><h2>Seu carrinho</h2><button class="ico-btn" type="button" data-fechar aria-label="Fechar">${I.fechar}</button></div>
     <div class="gaveta-corpo"></div>
     <div class="gaveta-pe"></div>
   </aside>
   <div class="modal" id="modal" role="dialog" aria-modal="true"></div>
   <a class="zap-flutuante" href="${LOJA.whatsapp}" target="_blank" rel="noopener" aria-label="Tirar dúvidas no WhatsApp">${I.whats}<span>Dúvidas?</span></a>
+  <div class="barra-carrinho" id="barra-carrinho"><button type="button" data-abrir="sacola" aria-label="Ver o carrinho"><span class="bc-info"><b data-b-n>0 itens</b><span data-b-t>R$ 0,00</span></span><span class="bc-ver">Ver carrinho ${I.seta}</span></button></div>
   <div class="toast" role="status" aria-live="polite"></div>`;
 
   let i = 0;
@@ -377,13 +378,15 @@ async function sairDaConta() {
   gravarSacola([], { daConta: true });
   marcarConta();
 }
-function adicionar(id, op = {}, qtd = 1, s = lerSacola()) {
+function adicionar(id, op = {}, qtd = 1, s = lerSacola(), opcoes = {}) {
   const chave = [id, op.calca || '', op.extra || ''].join('|');
   const achado = s.find((x) => x.chave === chave);
   if (achado) achado.qtd += qtd;
   else s.push({ chave, id, calca: op.calca || null, extra: op.extra || null, qtd });
   gravarSacola(s);
   Catalogo.evento('sacola');
+  // Adicionar ao carrinho fica na página com um aviso; "Comprar agora" e os kits abrem o carrinho para finalizar
+  if (opcoes.abrir === false) return toast('Adicionado ao carrinho');
   abrir('sacola');
 }
 const subtotal = (s = lerSacola()) => s.reduce((t, x) => t + item(x.id).preco * x.qtd, 0);
@@ -398,18 +401,31 @@ const avisoLinha = (x) => {
   return x.qtd > q ? `Só tem ${q} em estoque. Diminua a quantidade.` : '';
 };
 
+// Barra do carrinho no pé da tela: aparece quando há algo no carrinho e leva até ele
+function desenharBarra() {
+  const barra = $('#barra-carrinho');
+  if (!barra) return;
+  const s = lerSacola();
+  const n = s.reduce((t, x) => t + x.qtd, 0);
+  barra.classList.toggle('visivel', n > 0);
+  $('[data-b-n]', barra).textContent = `${n} ${n === 1 ? 'item' : 'itens'}`;
+  $('[data-b-t]', barra).textContent = brl(subtotal(s));
+  document.body.classList.toggle('com-carrinho', n > 0);
+}
+
 function desenharSacola() {
   const s = lerSacola();
   const n = s.reduce((t, x) => t + x.qtd, 0);
   const conta = $('.conta-sacola');
   conta.textContent = n;
   conta.hidden = !n;
+  desenharBarra();
   const corpo = $('#g-sacola .gaveta-corpo');
   const pe = $('#g-sacola .gaveta-pe');
 
   if (!s.length) {
     const ultimo = lerPedidos()[0];
-    corpo.innerHTML = `<div class="sacola-vazia">${I.sacola}<b>Seu pedido está vazio</b><p style="color:var(--tinta-2)">Escolha o kit e o número da calça. Leva 1 minuto.</p><a class="btn btn-preto" href="index.html#comprar" data-fechar>Fazer meu pedido</a>
+    corpo.innerHTML = `<div class="sacola-vazia">${I.sacola}<b>Seu carrinho está vazio</b><p style="color:var(--tinta-2)">Escolha o kit e o número da calça. Leva 1 minuto.</p><a class="btn btn-preto" href="index.html#comprar" data-fechar>Fazer meu pedido</a>
       ${ultimo ? `<div class="ultimo-pedido"><small>Seu último pedido</small><b>${ultimo.numero} · ${brl(ultimo.total)}</b>${ultimo.id && Catalogo.ligado ? `<a class="link-tam" href="${esc(linkAcompanhar(ultimo.id))}">Acompanhar este pedido</a>` : ''}<button class="link-tam" type="button" data-reenviar>Enviar de novo para a Paola</button></div>` : ''}</div>`;
     $('[data-reenviar]', corpo)?.addEventListener('click', () => enviarWhatsApp(textoPedido(ultimo), 'A Paola confere seu tamanho e te envia o link de pagamento', ultimo.numero, ultimo.id));
     pe.innerHTML = '';
@@ -438,13 +454,14 @@ function desenharSacola() {
         <span class="valor">${brl(it.preco * x.qtd)}</span>
       </div>`;
     }).join('')}
-    ${para ? `<div class="sugestao"><span class="mini">${midia(para)}</span><div><small>Vale a pena</small><b>${chamada}</b><span style="font-size:13px">por + ${brl(para.preco - item(base.id).preco)}</span></div><button type="button" data-trocar="${base.chave}" aria-label="Trocar por ${para.nome}">${I.mais}</button></div>` : ''}`;
+    ${para ? `<div class="sugestao"><span class="mini">${midia(para)}</span><div><small>Vale a pena</small><b>${chamada}</b><span style="font-size:13px">por + ${brl(para.preco - item(base.id).preco)}</span></div><button type="button" data-trocar="${base.chave}" aria-label="Trocar por ${para.nome}">Trocar</button></div>` : ''}`;
 
   pe.hidden = false;
   pe.innerHTML = `
     <div class="total-linha"><span>Total</span><span>${brl(sub)}</span></div>
     <div class="total-pix">ou ${brl(pix(sub))} no Pix · ${LOJA.parcelas}x de ${brl(parcela(sub))}</div>
-    <button class="btn btn-preto btn-bloco" type="button" data-finalizar ${algumaEsgotada ? 'disabled' : ''}>${pagaNoSite() ? 'Finalizar o pedido' : `${I.whats}Enviar pedido pelo WhatsApp`}</button>
+    <button class="btn btn-preto btn-bloco" type="button" data-finalizar ${algumaEsgotada ? 'disabled' : ''}>${pagaNoSite() ? 'Finalizar compra' : `${I.whats}Enviar pedido pelo WhatsApp`}</button>
+    <button class="link-tam pe-continuar" type="button" data-fechar>Continuar escolhendo</button>
     <p class="pe-nota">${algumaEsgotada ? 'Ajuste o item marcado para enviar o pedido.' : pagaNoSite() ? 'Pague no Pix ou no cartão aqui no site. A Paola confere seu tamanho antes de enviar.' : 'A Paola confirma seu tamanho e o pagamento com você na conversa.'}</p>`;
 
   $$('.item-sacola', corpo).forEach((linha) => {
@@ -970,7 +987,7 @@ const notaPedido = () => `<p class="pedido-nota">${I.escudo}<span>${pagaNoSite()
   ? 'Você paga no Pix ou no cartão aqui no site. A Paola confere seu tamanho antes de enviar.'
   : 'Você só paga depois de falar com a Paola no WhatsApp. Ela confirma seu tamanho antes de enviar.'}</span></p>`;
 // O botão fala do que a cliente ganha, não do que ela precisa fazer
-const textoBotao = (it) => (it.itens ? 'Quero meu kit' : 'Quero minha cinta');
+const textoBotao = () => 'Comprar agora';
 
 function abrirTabela(aoEscolher) {
   let escolhido = null;
@@ -1024,7 +1041,7 @@ function abrirOpcoes(id, pre = {}) {
     ${it.escolha ? `<div class="grupo"><div class="grupo-titulo">Escolha o 2º produto</div>${escolhaHTML(it, sel.extra)}</div>` : ''}
     ${usaTam ? `<div class="grupo"><div class="grupo-titulo">Número da calça ou short</div>${calcaHTML(salva, it)}</div>` : ''}
     <p class="dica-tam erro" data-erro hidden></p>
-    <button class="btn btn-preto btn-bloco" type="button" data-confirmar style="margin-top:16px">Colocar no pedido</button>
+    <button class="btn btn-preto btn-bloco" type="button" data-confirmar style="margin-top:16px">Adicionar ao carrinho</button>
     ${usaTam ? notaPedido() : ''}`);
   if (it.escolha) ligarEscolha(m, (v) => { sel.extra = v; });
   if (usaTam) ligarCalca(m, (n) => { sel.calca = n; }, it);
@@ -1161,10 +1178,10 @@ function card(it) {
       <a class="img" href="produto.html?id=${it.id}" aria-label="${it.nome}">
         ${it.selo ? `<span class="selo ${it.itens ? 'rosa' : ''}">${it.selo}</span>` : ''}${midia(it)}
       </a>
-      ${temPreco(it) && !acabou ? `<button class="btn-add" type="button" data-add="${it.id}" aria-label="Colocar ${it.nome} no pedido">${I.mais}</button>` : ''}
     </div>
     <a href="produto.html?id=${it.id}"><h3>${it.nome}</h3></a>
     ${preco}
+    ${temPreco(it) && !acabou ? `<button class="btn-card" type="button" data-add="${it.id}">Adicionar ao carrinho</button>` : ''}
   </div>`;
 }
 
@@ -1176,7 +1193,7 @@ function cardKit(k) {
       <p class="itens">${listaItens(k).join(' + ')}</p>
       <div class="precos">${k.de ? `<span class="de">${brl(k.de)}</span>` : ''}<span class="por">${brl(k.preco)}</span></div>
       ${k.gancho || k.de ? `<span class="economia">${k.gancho || `Economize ${brl(k.de - k.preco)}`}</span><br>` : ''}
-      ${tudoEsgotado(k) ? '<span class="so-combo">Esgotado</span>' : `<button class="btn btn-preto" type="button" data-add="${k.id}">Quero este</button>`}
+      ${tudoEsgotado(k) ? '<span class="so-combo">Esgotado</span>' : `<button class="btn btn-preto" type="button" data-add="${k.id}">Adicionar ao carrinho</button>`}
     </div>
   </div>`;
 }
@@ -1277,6 +1294,7 @@ function telaProduto() {
         </div>` : ''}
         ${acabou ? esgotadoHTML : vende ? `<p class="dica-tam erro" id="erro-compra" hidden></p>
         <button class="btn btn-preto btn-bloco btn-pedir" type="button" id="adicionar">${textoBotao(it)}</button>
+        <button class="btn btn-claro btn-bloco" type="button" id="adicionar-so" style="margin-top:10px">Adicionar ao carrinho</button>
         ${usaTam ? notaPedido() : ''}` : `<div class="grupo"><div class="grupo-titulo">Leve nos combos</div><div class="kits">${kitsCom(it.id).map(cardKit).join('')}</div></div>
         <a class="btn btn-claro btn-bloco" href="${LOJA.whatsapp}" target="_blank" rel="noopener" style="margin-top:14px">${I.whats}Perguntar no WhatsApp</a>`}
         ${it.pontos ? `<ul class="pontos-prod">${it.pontos.map((p) => `<li>${p}</li>`).join('')}</ul>` : ''}
@@ -1307,7 +1325,7 @@ function telaProduto() {
     });
   }
   if (it.escolha) ligarEscolha($('#escolha'), (v) => { extra = v; erro.hidden = true; });
-  const comprar = () => {
+  const comprar = (abrirCarrinho = true) => {
     const falta = (it.escolha && !extra && ['escolha', 'Escolha o gel ou o sutiã para continuar.'])
       || (usaTam && !calca && ['tamanho', calcaEsgotada(it, lerCalca()) ? TAMANHO_ACABOU : 'Marque o número da sua calça para continuar.']);
     if (falta) {
@@ -1316,14 +1334,15 @@ function telaProduto() {
       $(`#${falta[0]}`).scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;
     }
-    adicionar(it.id, { calca: usaTam ? calca : null, extra });
+    adicionar(it.id, { calca: usaTam ? calca : null, extra }, 1, lerSacola(), { abrir: abrirCarrinho });
   };
-  $('#adicionar').addEventListener('click', comprar);
+  $('#adicionar').addEventListener('click', () => comprar(true));
+  $('#adicionar-so').addEventListener('click', () => comprar(false));
 
   // Barra fixa no celular quando o botão principal sai da tela
   const barra = $('#barra-prod');
-  barra.innerHTML = `<div><small>${nomeCurto(it)}</small><b>${brl(it.preco)}</b></div><button class="btn btn-preto" type="button">${it.itens ? 'Quero o meu' : 'Quero a minha'}</button>`;
-  $('button', barra).addEventListener('click', comprar);
+  barra.innerHTML = `<div><small>${nomeCurto(it)}</small><b>${brl(it.preco)}</b></div><button class="btn btn-preto" type="button">Comprar agora</button>`;
+  $('button', barra).addEventListener('click', () => comprar(true));
   new IntersectionObserver(([e]) => barra.classList.toggle('visivel', !e.isIntersecting && e.boundingClientRect.top < 0)).observe($('#adicionar'));
 }
 
@@ -1693,6 +1712,15 @@ function preencherValores() {
     $$('[data-texto-site]').forEach((el) => { el.innerHTML = textos[el.dataset.textoSite]; });
   }
 }
+
+// Depois de uma atualização automática do catálogo, a página volta ao topo (e não ao ponto onde o navegador a deixou)
+try {
+  if (sessionStorage.getItem('pcf-recarga')) {
+    sessionStorage.removeItem('pcf-recarga');
+    history.scrollRestoration = 'manual';
+    scrollTo(0, 0);
+  }
+} catch (e) { /* sem armazenamento: segue normal */ }
 
 // ---------------- Início ----------------
 Catalogo.pronto.then(() => {

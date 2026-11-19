@@ -73,7 +73,7 @@ const Catalogo = (() => {
       const guardou = gravar(CHAVE, txt);
       aplicar(d);
       // Preço mudou: atualiza a tela logo no início, nunca com a cliente já mexendo na página
-      if (temCache && guardou && Date.now() - inicio < 2500) location.reload();
+      if (temCache && guardou && Date.now() - inicio < 2500) { try { sessionStorage.setItem('pcf-recarga', '1'); } catch (e) { /* ok */ } location.reload(); }
     }).catch(() => {});
     return temCache ? Promise.resolve() : Promise.race([buscar, new Promise((ok) => { setTimeout(ok, 1500); })]);
   })();

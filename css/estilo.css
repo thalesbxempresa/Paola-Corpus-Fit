@@ -81,7 +81,7 @@ h1, h2, h3, p { margin: 0; }
 @keyframes sobe { from { opacity: 0; transform: translateY(10px); } }
 
 .cab { position: sticky; top: 0; z-index: 50; background: rgba(246, 240, 234, .94); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border-bottom: 1px solid var(--areia-3); }
-.cab-in { display: grid; grid-template-columns: 94px 1fr 94px; grid-template-areas: 'menu logo dir'; align-items: center; height: 64px; }
+.cab-in { display: grid; grid-template-columns: 44px 1fr auto; grid-template-areas: 'menu logo dir'; align-items: center; height: 64px; }
 .menu-btn { grid-area: menu; }
 .cab .logo { grid-area: logo; justify-self: center; }
 .cab .nav { grid-area: nav; display: none; }
@@ -970,3 +970,32 @@ section[id] { scroll-margin-top: 84px; }
 .kit-op-seta svg { width: 22px; height: 22px; }
 .kit-op-mosaico { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; background: var(--branco); }
 .kit-op-mosaico img { min-height: 0; }
+
+/* ---------- Carrinho: nome, contagem e barra no pé (celular) ---------- */
+.carrinho-btn { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 12px 0 10px; border: 0; border-radius: 999px; background: var(--branco); box-shadow: inset 0 0 0 1px var(--areia-3); font-size: 13px; font-weight: 800; white-space: nowrap; }
+.carrinho-btn:hover { background: var(--areia-2); }
+.carrinho-btn svg { width: 20px; height: 20px; }
+.carrinho-btn .conta-sacola { top: -6px; right: -6px; }
+.barra-carrinho { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 44; opacity: 0; transform: translateY(150%); visibility: hidden; transition: transform .3s ease, opacity .3s, visibility .3s; }
+.barra-carrinho.visivel { opacity: 1; transform: none; visibility: visible; }
+.barra-carrinho button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 58px; padding: 8px 8px 8px 18px; border: 0; border-radius: 999px; background: var(--tinta); color: var(--branco); box-shadow: var(--sombra); text-align: left; }
+.bc-info { display: grid; line-height: 1.25; }
+.bc-info b { font-size: 14px; font-weight: 900; }
+.bc-info span { font-size: 13px; opacity: .9; }
+.bc-ver { display: inline-flex; align-items: center; gap: 6px; height: 42px; padding: 0 16px; border-radius: 999px; background: var(--branco); color: var(--tinta); font-size: 13px; font-weight: 900; white-space: nowrap; }
+.bc-ver svg { width: 16px; height: 16px; }
+@media (min-width: 900px) { .barra-carrinho { left: 24px; right: auto; bottom: 24px; width: 380px; } }
+body.travado .barra-carrinho, body.com-barra .barra-carrinho { display: none; }
+@media (max-width: 899px) {
+  body[data-pagina="produto"] .barra-carrinho { display: none; }
+  body.com-carrinho .zap-flutuante { bottom: calc(86px + env(safe-area-inset-bottom)); }
+}
+
+/* ---------- Botão de adicionar nos cards (com texto, no lugar do +) ---------- */
+.card .parc { margin-bottom: 12px; }
+.btn-card { display: flex; align-items: center; justify-content: center; width: 100%; height: 46px; margin-top: auto; border: 0; border-radius: 999px; background: var(--tinta); color: var(--branco); font-size: 13px; font-weight: 800; letter-spacing: .02em; transition: background-color .2s; }
+.btn-card:hover { background: var(--vinho); }
+
+/* ---------- Ajustes pequenos ---------- */
+.pe-continuar { display: block; margin: 12px auto 0; }
+.sugestao button { width: auto; height: 38px; padding: 0 14px; border-radius: 999px; font-size: 13px; font-weight: 800; }
