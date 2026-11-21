@@ -663,6 +663,31 @@ body.travado .zap-flutuante { display: none; }
 .cupom b { font-size: 24px; font-weight: 900; letter-spacing: .06em; }
 .cupom small { font-size: 11px; color: var(--tinta-3); }
 
+/* Moda praia em breve: ainda não está à venda */
+.selo-breve { position: relative; display: inline-flex; align-items: center; gap: 6px; margin-bottom: 12px; padding: 6px 12px 6px 10px; border-radius: 999px; background: var(--tinta); color: var(--branco); font-size: 11px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
+.selo-breve svg { width: 14px; height: 14px; }
+.praia-banner .selo-breve + .sobre, .praia-hero .selo-breve + .sobre { display: block; }
+.praia-hero .selo-breve { margin-bottom: 14px; padding: 8px 15px 8px 12px; background: var(--sol); color: var(--tinta); font-size: 13px; box-shadow: 0 6px 20px -8px rgba(31, 26, 23, .5); }
+.praia-hero .selo-breve svg { width: 16px; height: 16px; }
+.aviso-breve { display: flex; align-items: center; gap: 12px; max-width: 440px; margin-top: 20px; padding: 12px 16px 12px 12px; border: 1px solid rgba(255, 255, 255, .28); border-radius: 18px; background: rgba(31, 26, 23, .5); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); font-size: 14px; font-weight: 600; line-height: 1.35; }
+.aviso-breve .ab-ico { flex: none; display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: var(--sol); color: var(--tinta); }
+.aviso-breve .ab-ico svg { width: 22px; height: 22px; }
+.aviso-breve b { display: block; font-size: 16px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
+.trava { position: absolute; top: 10px; left: 10px; z-index: 2; display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px 5px 7px; border-radius: 999px; background: rgba(31, 26, 23, .82); color: var(--branco); font-size: 10px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.trava svg { width: 12px; height: 12px; }
+.peca-praia .trava + .selo { top: 42px; }
+.monte-opcoes.trancado { position: relative; min-height: 360px; }
+.monte-previa { opacity: .3; filter: blur(1.5px); pointer-events: none; -webkit-user-select: none; user-select: none; }
+.monte-previa .chip { display: inline-grid; place-items: center; }
+.monte-previa .cor { display: block; }
+.monte-modelo { display: grid; gap: 4px; text-align: center; font-size: 11px; font-weight: 700; line-height: 1.15; }
+.monte-trava { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; padding: 20px; text-align: center; background: radial-gradient(ellipse 62% 58% at 50% 50%, rgba(255, 255, 255, .97) 45%, rgba(255, 255, 255, 0) 100%); }
+.monte-trava .trava-ico { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 50%; background: var(--tinta); color: var(--branco); }
+.monte-trava .trava-ico svg { width: 26px; height: 26px; }
+.monte-trava b { font-size: 24px; font-weight: 900; line-height: 1.1; }
+.monte-trava p { max-width: 32ch; color: var(--tinta-2); }
+.monte-trava .btn { margin-top: 6px; }
+
 /* ============ Dados reais da Paola (out/2026) ============ */
 
 /* Foto do combo no topo (quadrada: recorta bem no celular e no PC) */

@@ -147,6 +147,7 @@ const I = {
   escudo: svg('<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>'),
   ok: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 'stroke-width="3"'),
   pessoa: svg('<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/>'),
+  cadeado: svg('<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/>'),
   insta: svg('<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.4" cy="6.6" r="1" fill="currentColor"/>'),
   whats: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.5-.3z"/></svg>',
 };
@@ -177,7 +178,7 @@ function montarTopo() {
       <button class="ico-btn menu-btn" type="button" data-abrir="menu" aria-label="Abrir menu">${I.menu}</button>
       <a class="logo" href="index.html" aria-label="Paola Corpus Fit, página inicial"><b>Paola</b><small>Corpus Fit</small></a>
       <nav class="nav" aria-label="Menu principal">
-        ${MENU.map(([nome, link, novo]) => `<a href="${link}" ${novo && pagina === 'praia' ? 'aria-current="page"' : ''}>${nome}${novo ? '<span class="novo">Novo</span>' : ''}</a>`).join('')}
+        ${MENU.map(([nome, link, novo]) => `<a href="${link}" ${novo && pagina === 'praia' ? 'aria-current="page"' : ''}>${nome}${novo ? '<span class="novo">Em breve</span>' : ''}</a>`).join('')}
       </nav>
       <div class="cab-dir">
         <a class="zap-topo" href="${LOJA.whatsapp}" target="_blank" rel="noopener">${I.whats}WhatsApp</a>
@@ -192,7 +193,7 @@ function montarTopo() {
     <div class="gaveta-corpo">
       <a class="btn btn-preto btn-bloco" href="index.html#comprar" data-fechar>Fazer meu pedido</a>
       <nav class="menu-links" style="margin-top:14px">${[...MENU.slice(1, 4), ...(temConta() ? [['Minha conta', 'conta.html']] : []), ['Acompanhar meu pedido', 'acompanhar.html']].map(([nome, link]) => `<a href="${link}" data-fechar>${nome}${I.seta}</a>`).join('')}</nav>
-      <a class="menu-praia" href="moda-praia.html"><span>Lançamento</span><b>Moda Praia</b><span>Entre na lista de espera →</span></a>
+      <a class="menu-praia" href="moda-praia.html"><span>Em breve</span><b>Moda Praia</b><span>Ainda não está à venda. Seja avisada →</span></a>
       <div class="menu-contato">
         <a class="btn btn-claro" href="${LOJA.whatsapp}" target="_blank" rel="noopener">${I.whats}Falar com a Paola</a>
         <a class="btn btn-claro" href="${LOJA.instagram}" target="_blank" rel="noopener">${I.insta}${LOJA.arroba}</a>
@@ -1241,7 +1242,7 @@ function telaLoja() {
     let lista = cat === 'tudo' ? todos : todos.filter((x) => x.cat === cat);
     if (ordem === 'menor') lista = [...lista].sort((a, b) => valor(a) - valor(b));
     if (ordem === 'maior') lista = [...lista].sort((a, b) => (temPreco(b) ? b.preco : -1) - (temPreco(a) ? a.preco : -1));
-    $('#filtros').innerHTML = filtros.map(([id, nome]) => `<a class="filtro" href="#${id}" aria-pressed="${id === cat}">${nome}</a>`).join('') + '<a class="filtro filtro-praia" href="moda-praia.html">☀ Moda Praia</a>';
+    $('#filtros').innerHTML = filtros.map(([id, nome]) => `<a class="filtro" href="#${id}" aria-pressed="${id === cat}">${nome}</a>`).join('') + '<a class="filtro filtro-praia" href="moda-praia.html">☀ Moda Praia · em breve</a>';
     $('#total-itens').textContent = `${lista.length} ${lista.length === 1 ? 'produto' : 'produtos'}`;
     $('#grade-loja').innerHTML = lista.map(card).join('');
   };
@@ -1399,46 +1400,48 @@ function telaPraia() {
     atualizar();
   }
 
-  // Coleção com filtro pelo que a cliente quer valorizar
+  // Coleção com filtro pelo que a cliente quer valorizar.
+  // Ainda não está à venda: cada peça leva o cadeado "Em breve" e o botão só põe a peça na lista de espera
   let foco = 'todos';
   const desenharColecao = () => {
     $('#filtros-praia').innerHTML = FOCOS_PRAIA.map(([id, nome]) => `<button class="filtro" type="button" data-foco="${id}" aria-pressed="${id === foco}">${nome}</button>`).join('');
     $('#colecao').innerHTML = pecas.filter((p) => foco === 'todos' || p.foco.includes(foco)).map((p) => `
       <div class="peca-praia">
-        <div class="img">${p.selo ? `<span class="selo">${p.selo}</span>` : ''}<img src="${p.img}" alt="${p.nome}" loading="lazy"><a class="avise" href="${p.biquini ? '#monte' : '#espera'}" data-escolher="${p.biquini ? p.id : ''}">${p.biquini ? 'Montar o meu' : 'Avise-me'}</a></div>
+        <div class="img"><span class="trava">${I.cadeado}Em breve</span>${p.selo ? `<span class="selo">${p.selo}</span>` : ''}<img src="${p.img}" alt="${p.nome}" loading="lazy"><a class="avise" href="#espera" data-reserva="${esc(p.nome)}">Avise-me</a></div>
         <h3>${p.nome}</h3>
         <div class="linha-praia"><span class="em-breve">Em breve</span><span class="cores" aria-label="Cores previstas">${p.cores.map((c) => `<i style="background:${c}"></i>`).join('')}</span></div>
       </div>`).join('');
     $$('[data-foco]').forEach((b) => b.addEventListener('click', () => { foco = b.dataset.foco; desenharColecao(); }));
-    $$('[data-escolher]').forEach((a) => a.addEventListener('click', () => { if (a.dataset.escolher) montar.modelo = a.dataset.escolher; desenharMonte(); }));
   };
 
-  // Monte seu biquíni: top e calcinha em tamanhos diferentes
+  // Monte seu biquíni (top e calcinha em tamanhos diferentes): trancado até o lançamento.
+  // A prévia aparece apagada, sem clique, com o aviso por cima
   const biquinis = pecas.filter((p) => p.biquini);
-  const montar = { modelo: biquinis[0]?.id, cor: 0, top: null, baixo: null };
   if (!biquinis.length) $('#monte').hidden = true;
   const desenharMonte = () => {
     if (!biquinis.length) return;
-    const p = PRAIA.find((x) => x.id === montar.modelo);
-    const chips = (parte) => TAMANHOS_PRAIA.map((t) => `<button class="chip" type="button" data-parte="${parte}" data-t="${t}" aria-checked="${montar[parte] === t}">${t}</button>`).join('');
+    const p = biquinis[0];
+    const chips = TAMANHOS_PRAIA.map((t) => `<span class="chip">${t}</span>`).join('');
     $('#monte-caixa').innerHTML = `
-      <div class="monte-foto"><img src="${p.img}" alt="${p.nome}"><span class="selo">Prévia</span></div>
-      <div class="monte-opcoes">
-        <div class="grupo-titulo">1. Modelo</div>
-        <div class="monte-modelos">${biquinis.map((b) => `<button type="button" data-modelo="${b.id}" aria-pressed="${b.id === montar.modelo}"><img src="${b.img}" alt=""><span>${b.nome.replace('Biquíni ', '')}</span></button>`).join('')}</div>
-        <div class="grupo-titulo">2. Cor</div>
-        <div class="cores-escolha">${p.cores.map((c, i) => `<button class="cor" type="button" style="background:${c}" data-cor="${i}" aria-pressed="${i === montar.cor}" aria-label="Cor ${i + 1}"></button>`).join('')}</div>
-        <div class="grupo-titulo">3. Tamanho do top</div>
-        <div class="tamanhos">${chips('top')}</div>
-        <div class="grupo-titulo">4. Tamanho da calcinha</div>
-        <div class="tamanhos">${chips('baixo')}</div>
-        <p class="monte-resumo">${montar.top && montar.baixo ? `<b>${p.nome}</b>: top ${montar.top} + calcinha ${montar.baixo}` : 'Escolha o tamanho do top e da calcinha, podem ser diferentes.'}</p>
-        <button class="btn btn-preto btn-bloco" type="button" id="reservar" ${montar.top && montar.baixo ? '' : 'disabled'}>Quero esse no lançamento</button>
+      <div class="monte-foto"><img src="${p.img}" alt="${p.nome}"><span class="selo">Em breve</span></div>
+      <div class="monte-opcoes trancado">
+        <div class="monte-previa" inert>
+          <div class="grupo-titulo">1. Modelo</div>
+          <div class="monte-modelos">${biquinis.map((b) => `<span class="monte-modelo"><img src="${b.img}" alt=""><span>${b.nome.replace('Biquíni ', '')}</span></span>`).join('')}</div>
+          <div class="grupo-titulo">2. Cor</div>
+          <div class="cores-escolha">${p.cores.map((c) => `<span class="cor" style="background:${c}"></span>`).join('')}</div>
+          <div class="grupo-titulo">3. Tamanho do top</div>
+          <div class="tamanhos">${chips}</div>
+          <div class="grupo-titulo">4. Tamanho da calcinha</div>
+          <div class="tamanhos">${chips}</div>
+        </div>
+        <div class="monte-trava">
+          <span class="trava-ico">${I.cadeado}</span>
+          <b>Disponível no lançamento</b>
+          <p>A coleção ainda não está à venda. Quando chegar, você monta o seu aqui. Entre na lista e a Paola te avisa.</p>
+          <a class="btn btn-preto" href="#espera">Quero ser avisada</a>
+        </div>
       </div>`;
-    $$('[data-modelo]').forEach((b) => b.addEventListener('click', () => { montar.modelo = b.dataset.modelo; montar.cor = 0; desenharMonte(); }));
-    $$('[data-cor]').forEach((b) => b.addEventListener('click', () => { montar.cor = Number(b.dataset.cor); desenharMonte(); }));
-    $$('#monte-caixa [data-parte]').forEach((b) => b.addEventListener('click', () => { montar[b.dataset.parte] = b.dataset.t; desenharMonte(); }));
-    $('#reservar').addEventListener('click', () => marcarReserva(`${p.nome}, top ${montar.top} + calcinha ${montar.baixo}`, [montar.top, montar.baixo]));
   };
   desenharColecao();
   desenharMonte();
@@ -1456,7 +1459,13 @@ function telaPraia() {
     $('#espera').scrollIntoView({ behavior: 'smooth' });
     $('#nome').focus({ preventScroll: true });
   };
-  $$('[data-reserva]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); marcarReserva(a.dataset.reserva); }));
+  // Um ouvinte só: as peças da coleção são redesenhadas a cada filtro
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('[data-reserva]');
+    if (!a) return;
+    e.preventDefault();
+    marcarReserva(a.dataset.reserva);
+  });
 
   // Contagem só com data real de lançamento (urgência inventada não entra)
   const lancamento = LOJA.lancamentoPraia && new Date(LOJA.lancamentoPraia);
