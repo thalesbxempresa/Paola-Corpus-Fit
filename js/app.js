@@ -303,6 +303,8 @@ function montarRodape() {
           <li><a href="index.html#comprar">Descobrir meu tamanho</a></li>
           <li><a href="index.html#duvidas">Dúvidas frequentes</a></li>
           <li><a href="${LOJA.whatsapp}" target="_blank" rel="noopener">Atendimento no WhatsApp</a></li>
+          <li><a href="trocas.html">Trocas e devoluções</a></li>
+          <li><a href="privacidade.html">Privacidade</a></li>
         </ul></div>
         <div><h4>Siga</h4><ul>
           <li><a href="${LOJA.instagram}" target="_blank" rel="noopener">Instagram ${LOJA.arroba}</a></li>
@@ -664,6 +666,7 @@ function finalizar() {
       ${Catalogo.conta.atual() ? `<p class="dica-tam conta-nota">${I.pessoa}<span>Este pedido fica guardado na sua conta${Catalogo.conta.atual().email ? ` (${esc(Catalogo.conta.atual().email)})` : ''}.</span></p>` : ''}
       <p class="dica-tam erro" data-erro hidden></p>
       <button class="btn btn-preto btn-bloco btn-pedir" type="submit">${noSite ? 'Ir para o pagamento' : `${I.whats}Continuar no WhatsApp`}</button>
+      <p class="pe-nota ck-politicas">Você pode desistir em até 7 dias do recebimento. Veja <a href="trocas.html" target="_blank" rel="noopener">Trocas e devoluções</a> e <a href="privacidade.html" target="_blank" rel="noopener">Privacidade</a>.</p>
     </form>`);
   const form = $('#form-checkout', m);
   const CAMPOS = ['nome', 'telefone', 'cep', 'rua', 'num', 'complemento', 'bairro', 'cidade', 'uf'];
@@ -1444,7 +1447,7 @@ function telaProduto() {
           ${it.uso ? `<details><summary>Como usar</summary><div class="conteudo">${it.uso}</div></details>` : ''}
           ${usaTam ? `<details><summary>Dobra? Marca? Machuca?</summary><div class="conteudo"><p><b>Dobra ou enrola?</b> Não. As barbatanas mantêm a cinta no lugar, mesmo sentada ou treinando.</p><p style="margin-top:10px"><b>Quantas regulagens?</b> Duas regulagens de colchete por dentro e mais o zíper por fora, na frente.</p><p style="margin-top:10px"><b>Marca na roupa?</b> Não marca por baixo da roupa.</p><p style="margin-top:10px"><b>Machuca?</b> Não, no tamanho certo. É cinta no tamanho errado que machuca, por isso a Paola confere o seu antes de enviar. Comece pela regulagem mais folgada, com poucas horas por dia, e aumente aos poucos.</p></div></details>` : ''}
           ${usaTam ? `<details><summary>Tabela de medidas</summary><div class="conteudo">${tabelaHTML()}<p style="margin-top:10px">A cinta estica, então o que vale é o número da calça ou short, não a medida em centímetros.</p></div></details>` : ''}
-          <details><summary>Entrega e pagamento</summary><div class="conteudo">Enviamos de ${esc(LOJA.cidade)} para todo o Brasil. Pix com ${pctPix()} de desconto ou ${textoCartao()}. ${freteLigado() ? `O frete e o prazo saem pelo seu CEP, em "Frete e prazo".${Number.isFinite(LOJA.freteGratis) ? ` Frete grátis acima de ${brlLimpo(LOJA.freteGratis)}.` : ''}` : 'O prazo de entrega a Paola confirma no WhatsApp.'}</div></details>
+          <details><summary>Entrega e pagamento</summary><div class="conteudo">Enviamos de ${esc(LOJA.cidade)} para todo o Brasil. Pix com ${pctPix()} de desconto ou ${textoCartao()}. ${freteLigado() ? `O frete e o prazo saem pelo seu CEP, em "Frete e prazo".${Number.isFinite(LOJA.freteGratis) ? ` Frete grátis acima de ${brlLimpo(LOJA.freteGratis)}.` : ''}` : 'O prazo de entrega a Paola confirma no WhatsApp.'} Pode desistir em até 7 dias do recebimento: veja <a href="trocas.html">Trocas e devoluções</a>.</div></details>
         </div>
       </div>
     </div>`;
@@ -1626,6 +1629,20 @@ function telaPraia() {
     $('#espera-caixa').innerHTML = `<div class="espera-ok"><span class="check">${I.ok}</span><b>Pronto, <span data-nome></span>!</b><p style="color:var(--tinta-2)">Assim que sua mensagem chegar, a Paola te coloca na lista.</p><a class="btn btn-claro" href="index.html#comprar">Enquanto isso, ver a cinta</a></div>`;
     $('[data-nome]').textContent = nomeCompleto.split(' ')[0] || 'linda';
   });
+}
+
+// ---------------- Páginas de texto (trocas e privacidade) ----------------
+// Empresa, documento, endereço e contatos vêm dos dados da loja no painel: mudou lá, muda aqui
+function telaTexto() {
+  const empresa = LOJA.empresa && LOJA.documento
+    ? `${esc(LOJA.empresa)}, ${esc(documentoBonito(LOJA.documento))}${LOJA.enderecoLoja ? `, ${esc(LOJA.enderecoLoja)}` : ''}`
+    : '';
+  $$('[data-empresa-loja]').forEach((el) => { if (empresa) el.innerHTML = `${empresa}. É a responsável pelos dados das compras feitas aqui.`; });
+  const contatos = [
+    `WhatsApp: <a href="${esc(LOJA.whatsapp)}" target="_blank" rel="noopener">falar com a Paola</a>`,
+    LOJA.email ? `e-mail: <a href="mailto:${esc(LOJA.email)}">${esc(LOJA.email)}</a>` : '',
+  ].filter(Boolean).join(' · ');
+  $$('[data-contato-loja]').forEach((el) => { el.innerHTML = `${contatos}${empresa ? `<br>${empresa}` : ''}`; });
 }
 
 // ---------------- Acompanhar pedido ----------------
@@ -1901,7 +1918,7 @@ Catalogo.pronto.then(() => {
   montarTopo();
   montarRodape();
   preencherValores();
-  ({ inicio: telaInicio, loja: telaLoja, produto: telaProduto, praia: telaPraia, acompanhar: telaAcompanhar, conta: telaConta, pagamento: window.telaPagamento })[document.body.dataset.pagina]?.();
+  ({ inicio: telaInicio, loja: telaLoja, produto: telaProduto, praia: telaPraia, acompanhar: telaAcompanhar, conta: telaConta, pagamento: window.telaPagamento, texto: telaTexto })[document.body.dataset.pagina]?.();
   ligarMovimento();
   // Quem veio acompanhar ou pagar um pedido já comprou: não conta como visita no funil de vendas
   if (!['acompanhar', 'pagamento', 'conta'].includes(document.body.dataset.pagina)) Catalogo.evento('visita');
