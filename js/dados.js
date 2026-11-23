@@ -24,18 +24,19 @@ const LOJA = {
   pagarNoSite: true,
   // Mostrar para a cliente quantas peças há no tamanho escolhido (liga no painel, em Produtos > Estoque)
   mostrarEstoque: false,
-  // Frete pelo CEP (painel > Loja > Frete; regras em js/frete.js). Só liga com todas as faixas preenchidas.
-  // Mesmo estado: PAC de balcão dos Correios, 1 kg, caixa 30 x 25 x 8 cm, do CEP 28740-000 para o Rio (consulta de 23/11/2026)
+  // Frete pelo CEP (painel > Loja > Frete; regras em js/frete.js). O que vale é a tabela do banco; esta é só a de reserva.
+  // PAC de balcão dos Correios, 1 kg, caixa 30 x 25 x 8 cm, do CEP 28740-000, consultas de 23/11/2026.
+  // Em cada faixa, o maior valor e o maior prazo consultados (capitais: RJ; SP e SC; BA; PB; PA; AM e RR)
   frete: {
     ligado: false,
     cepOrigem: '28740000',
     faixas: [
       { valor: 29.8, dias: 6, ufs: ['RJ'] },
-      { valor: null, dias: null, ufs: ['MG', 'SP', 'ES', 'PR', 'SC'] },
-      { valor: null, dias: null, ufs: ['DF', 'GO', 'RS', 'BA', 'MS'] },
-      { valor: null, dias: null, ufs: ['SE', 'TO', 'MT', 'AL', 'PE', 'PB', 'PI'] },
-      { valor: null, dias: null, ufs: ['RN', 'CE', 'MA', 'PA'] },
-      { valor: null, dias: null, ufs: ['AP', 'RO', 'AM', 'AC', 'RR'] },
+      { valor: 43.4, dias: 8, ufs: ['MG', 'SP', 'ES', 'PR', 'SC'] },
+      { valor: 71, dias: 7, ufs: ['DF', 'GO', 'RS', 'BA', 'MS'] },
+      { valor: 97.2, dias: 8, ufs: ['SE', 'TO', 'MT', 'AL', 'PE', 'PB', 'PI'] },
+      { valor: 115.3, dias: 10, ufs: ['RN', 'CE', 'MA', 'PA'] },
+      { valor: 155.1, dias: 29, ufs: ['AP', 'RO', 'AM', 'AC', 'RR'] },
     ],
   },
 };

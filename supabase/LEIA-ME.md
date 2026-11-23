@@ -101,7 +101,19 @@ Não precisa de cadastro nos Correios nem em outra transportadora. A cliente dig
 
 - **Como calcula:** o CEP diz o estado, pelas faixas de CEP dos Correios. A distância entre a capital do estado de onde os pedidos saem e a capital do estado da cliente escolhe uma de 6 faixas: mesmo estado, até 800 km, até 1.300 km, até 2.000 km, até 2.500 km e acima disso. É o mesmo critério das tarifas nacionais dos Correios. As regras ficam em `js/frete.js`.
 - **Valores:** no painel, em Loja > Frete, cada faixa tem o frete e o prazo em dias úteis, e mostra os estados que cobre. A chave "Calcular o frete pelo CEP" só liga com todas as faixas preenchidas. Desligada, a loja segue sem cobrar frete.
-- **Como achar os valores:** no [simulador de preços e prazos dos Correios](https://www2.correios.com.br/sistemas/precosPrazos/), simule do CEP da loja para um CEP de cada faixa, com o peso e a caixa usados de verdade. Exemplo já consultado (23/11/2026): PAC de balcão, 1 kg, caixa 30 x 25 x 8 cm, de 28740-000 para o centro do Rio, R$ 29,80 em 6 dias úteis.
+- **Como achar os valores:** no [simulador de preços e prazos dos Correios](https://www2.correios.com.br/sistemas/precosPrazos/), simule do CEP da loja para um CEP de cada faixa, com o peso e a caixa usados de verdade. O simulador bloqueia por um tempo quem faz muitas consultas seguidas.
+- **Tabela ligada em 23/11/2026:** PAC de balcão, 1 kg, caixa 30 x 25 x 8 cm, saindo de 28740-000, para a capital de cada estado consultado. Em cada faixa, o maior valor e o maior prazo consultados:
+
+  | Faixa | Consultado | Na tabela |
+  |---|---|---|
+  | Mesmo estado (RJ) | Rio R$ 29,80 (6 dias) | R$ 29,80, 6 dias |
+  | Até 800 km | SP R$ 36,00 (7), SC R$ 43,40 (8) | R$ 43,40, 8 dias |
+  | Até 1.300 km | BA R$ 71,00 (7) | R$ 71,00, 7 dias |
+  | Até 2.000 km | PB R$ 97,20 (8) | R$ 97,20, 8 dias |
+  | Até 2.500 km | PA R$ 115,30 (10) | R$ 115,30, 10 dias |
+  | Acima de 2.500 km | AM R$ 115,30 (29), RR R$ 155,10 (24) | R$ 155,10, 29 dias |
+
+  Não consultados: MG, ES, PR, DF, GO, RS, MS, SE, TO, MT, AL, PE, PI, RN, CE, MA, AP, RO e AC, nem cidades do interior. Vale conferir alguns no simulador e ajustar no painel.
 - **Frete grátis:** com os produtos acima de "Frete grátis acima de", o frete é zero.
 - **Quem garante o valor:** o banco refaz a conta ao registrar o pedido (`uf_do_cep` e `frete_do_pedido`), pela mesma tabela. Se o site mandou outro total, por exemplo com uma página aberta antes de a tabela mudar, o pedido entra marcado para conferir e não é cobrado online. O frete de cada pedido fica na coluna `frete` e aparece no painel e no acompanhamento.
 - **Limites:** o valor é por faixa, não por peso nem por cidade. Um pedido com mais peças paga o mesmo frete, e o interior de um estado paga o mesmo que a capital. Revise a tabela quando os Correios reajustarem os preços, normalmente uma vez por ano. O prazo conta a partir da postagem.
