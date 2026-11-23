@@ -1358,7 +1358,7 @@ function cartaoPedido(p, aberto = false) {
       <div><h3>Itens</h3><ul class="pn-ped-itens">${(p.itens || []).map((x) => {
         const tam = tamanhoDoItem(x);
         return `<li><span>${x.qtd || 1}x ${esc(nomeDoItem(x))}${x.extra ? ` + ${esc(nomeDoItem({ id: x.extra }))}` : ''}${tam ? `<small>Tamanho ${esc(tam)}${x.calca ? ` · veste calça ${esc(x.calca)}` : ''}</small>` : ''}</span>${x.preco != null ? `<b>${brl(x.preco * (x.qtd || 1))}</b>` : ''}</li>`;
-      }).join('')}</ul></div>
+      }).join('')}${Number(p.frete) > 0 ? `<li><span>Frete${p.uf ? `<small>Para ${esc(p.uf)}, já somado no valor</small>` : ''}</span><b>${brl(Number(p.frete))}</b></li>` : ''}</ul></div>
       <div><h3>Entrega</h3><p class="pn-endereco">${esc(enderecoDe(p)) || 'Sem endereço no pedido'}</p>
         <div class="pn-acoes-linha">${enderecoDe(p) ? `<button class="pn-link" type="button" data-copiar>Copiar endereço</button>${semEtiqueta ? '' : `<button class="pn-link" type="button" data-imprimir>${I.imprimir}Imprimir etiqueta</button>`}` : ''}</div>
       </div>
@@ -1697,6 +1697,8 @@ function abrirNovoPedido(alvo, existente = null) {
   const calcaInicial = (x) => String(x.calca || estado.catalogo.tabela.find((t) => t.t === x.tam)?.calca[0] || '');
   // Pago pelo site: o valor cobrado não muda aqui, só o que vai na caixa
   const jaPago = !!existente && pagoOnline(existente);
+  // O frete que o pedido do site pagou continua no valor quando os itens mudam (venda manual: sem frete)
+  const freteDoPedido = Number(existente?.frete) || 0;
   const np = existente
     ? { itens: (existente.itens || []).map((x) => ({ id: x.id, calca: calcaInicial(x), extra: x.extra || '', qtd: x.qtd || 1, original: x })), pagamento: existente.pagamento || 'Pix', valorManual: true, mudou: false }
     : { itens: [{ id: vendaveis[0].id, calca: '', extra: '', qtd: 1 }], pagamento: 'Pix', valorManual: false, mudou: false };
@@ -1748,7 +1750,7 @@ function abrirNovoPedido(alvo, existente = null) {
           ? `<p class="pn-pago-online">${I.ok}<span>Pago pelo site: ${brl(valorDe(existente))}. O valor pago não muda aqui.</span></p>
              <p class="pn-nota" data-diferenca hidden></p>`
           : `${seletor('Forma de pagamento', 'pagamento', np.pagamento, [['Pix', 'Pix'], ['Cartão', 'Cartão'], ['Dinheiro', 'Dinheiro']])}
-             ${campo('Valor a cobrar', 'valor', existente ? precoTxt(valorDe(existente)) : '', { attrs: 'inputmode="decimal"', ajuda: existente ? 'Se trocar os itens, o valor é refeito pelos preços da loja. Pode mudar à vontade.' : 'Calculado pelos preços da loja. Pode mudar à vontade.' })}
+             ${campo('Valor a cobrar', 'valor', existente ? precoTxt(valorDe(existente)) : '', { attrs: 'inputmode="decimal"', ajuda: existente ? `Se trocar os itens, o valor é refeito pelos preços da loja${freteDoPedido ? `, com os ${brl(freteDoPedido)} de frete do pedido` : ''}. Pode mudar à vontade.` : 'Calculado pelos preços da loja. Pode mudar à vontade.' })}
              ${existente ? '' : chave('Já está pago', 'pago', false, { ajuda: 'Marque se ela já pagou. O pedido entra como confirmado.' })}`}
       </section>
       <section class="pn-card"><h2>Entrega</h2>
@@ -1767,10 +1769,11 @@ function abrirNovoPedido(alvo, existente = null) {
 
   const form = $('#form-novo', alvo);
   const caixaItens = $('#np-itens', form);
-  const somaItens = () => np.itens.reduce((t, x) => t + precoDe(x) * (Number(x.qtd) || 1), 0);
+  const somaItens =() => np.itens.reduce((t, x) => t + precoDe(x) * (Number(x.qtd) || 1), 0);
+  const comFrete = (soma) => Math.round((soma + freteDoPedido) * 100) / 100;
   const comPix = (soma, forma) => Math.round(soma * (1 - (forma === 'Pix' ? estado.catalogo.loja.pix : 0)) * 100) / 100;
   const sugerirValor = () => {
-    const soma = somaItens();
+    const soma = comFrete(somaItens());
     if (jaPago) {
       // Troca em pedido já pago: mostra a diferença para a loja acertar com a cliente
       const aviso = $('[data-diferenca]', form);
@@ -1879,7 +1882,7 @@ function abrirNovoPedido(alvo, existente = null) {
             return falhar('Esta cliente acabou de pagar o valor antigo. Volte para os pedidos e abra de novo antes de editar.');
           }
         }
-        await Banco.alterarPedido(existente.id, { ...dados, total: somaItens() || existente.total, ...(jaPago ? {} : { pagamento: el.pagamento.value, valor }) });
+        await Banco.alterarPedido(existente.id, { ...dados, total: somaItens() ? comFrete(somaItens()) : existente.total, ...(jaPago ? {} : { pagamento: el.pagamento.value, valor }) });
         estado.novoAberto = false;
         estado.abrirPedido = existente.id;
         await abaPedidos(alvo);
@@ -2646,6 +2649,68 @@ function ligarEditor(alvo) {
   });
 }
 
+// ---------------- Frete pelo CEP ----------------
+// Sem cadastro em transportadora: a cliente digita o CEP e o site mostra o valor e o prazo da faixa dela.
+// As faixas vão pela distância entre a capital do estado de onde os pedidos saem e a do estado da cliente (js/frete.js)
+const freteDaLoja = (l) => {
+  const f = l.frete || {};
+  const faixas = Frete.LIMITES.map((_, i) => ({ valor: null, dias: null, ...(f.faixas?.[i] || {}) }));
+  return { ligado: f.ligado === true, cepOrigem: f.cepOrigem || '', faixas };
+};
+const linhaFaixa = (fx, i, estados, origem) => `<div class="pn-frete-faixa" data-faixa="${i}">
+    <p class="pn-frete-nome"><b>${Frete.nomeFaixa(i, origem)}</b><small data-estados>${estados.length ? estados.join(', ') : 'Nenhum estado'}</small></p>
+    <div class="pn-2">
+      ${campo('Frete (R$)', `freteValor${i}`, precoTxt(fx.valor), { attrs: 'inputmode="decimal" autocomplete="off" placeholder="Ex.: 29,80"' })}
+      ${campo('Prazo (dias úteis)', `freteDias${i}`, fx.dias ?? '', { tipo: 'number', attrs: 'inputmode="numeric" min="1" max="60" placeholder="Ex.: 6"' })}
+    </div>
+  </div>`;
+function secaoFrete(l) {
+  const f = freteDaLoja(l);
+  const estados = Frete.estadosPorFaixa(f.cepOrigem);
+  const origem = Frete.uf(f.cepOrigem);
+  return `<section class="pn-card" id="secao-frete"><h2>Frete</h2>
+      <p class="pn-texto">A cliente digita o CEP no produto, no carrinho ou ao finalizar, e o site mostra o frete e o prazo. Não precisa de cadastro nos Correios: o valor sai desta tabela, pela distância entre o seu estado e o dela. O frete entra no total e é cobrado junto com o pedido. Acima de "Frete grátis acima de", ela não paga frete.</p>
+      ${chave('Calcular o frete pelo CEP', 'freteLigado', f.ligado, { ajuda: 'Só liga com todas as faixas preenchidas. Desligado, a loja segue como antes, sem cobrar frete.' })}
+      ${campo('CEP de onde os pedidos saem', 'freteCep', f.cepOrigem ? `${f.cepOrigem.slice(0, 5)}-${f.cepOrigem.slice(5)}` : '', { attrs: 'inputmode="numeric" placeholder="00000-000" maxlength="9"' })}
+      <p class="pn-nota">Como preencher: no <a href="https://www2.correios.com.br/sistemas/precosPrazos/" target="_blank" rel="noopener">simulador de preços e prazos dos Correios</a>, simule do seu CEP para um CEP de cada faixa, com o peso e a caixa que você usa. Use o valor e o prazo que aparecem. O prazo conta a partir da postagem.</p>
+      <div id="faixas-frete">${f.faixas.map((fx, i) => linhaFaixa(fx, i, estados[i], origem)).join('')}</div>
+    </section>`;
+}
+// Ao trocar o CEP de origem, cada faixa mostra na hora os estados que passa a cobrir
+function ligarSecaoFrete(form) {
+  const cep = form.elements.freteCep;
+  cep.addEventListener('input', () => {
+    const d = soNumeros(cep.value).slice(0, 8);
+    cep.value = d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
+    const estados = Frete.estadosPorFaixa(d);
+    const origem = Frete.uf(d);
+    $$('[data-faixa]', form).forEach((linha, i) => {
+      $('.pn-frete-nome b', linha).textContent = Frete.nomeFaixa(i, origem);
+      $('[data-estados]', linha).textContent = estados[i].length ? estados[i].join(', ') : 'Nenhum estado';
+    });
+  });
+}
+// Lê a seção. Devolve { frete } ou { erro }
+function lerSecaoFrete(form) {
+  const el = form.elements;
+  const ligado = el.freteLigado.checked;
+  const cepOrigem = soNumeros(el.freteCep.value);
+  const estados = Frete.estadosPorFaixa(cepOrigem);
+  const faixas = Frete.LIMITES.map((_, i) => {
+    const valor = lerPreco(el[`freteValor${i}`].value);
+    const dias = el[`freteDias${i}`].value.trim() === '' ? null : Number(el[`freteDias${i}`].value);
+    return { valor: valor === null || Number.isNaN(valor) ? null : valor, dias: Number.isInteger(dias) && dias > 0 ? dias : null, ufs: estados[i] };
+  });
+  if (cepOrigem && !Frete.uf(cepOrigem)) return { erro: 'Confira o CEP de onde os pedidos saem: são 8 números.' };
+  if (ligado) {
+    if (!Frete.uf(cepOrigem)) return { erro: 'Para calcular o frete, preencha o CEP de onde os pedidos saem.' };
+    const falta = faixas.findIndex((x, i) => estados[i].length && (x.valor === null || x.dias === null));
+    if (falta >= 0) return { erro: `Para calcular o frete, preencha o frete e o prazo da faixa "${Frete.nomeFaixa(falta, Frete.uf(cepOrigem))}".` };
+  }
+  // Faixa sem nenhum estado não é usada: fica com zero para a tabela valer inteira
+  return { frete: { ligado, cepOrigem, faixas: faixas.map((x) => (x.ufs.length ? x : { ...x, valor: x.valor ?? 0, dias: x.dias ?? 1 })) } };
+}
+
 // ---------------- Aba Loja ----------------
 function abaLoja(alvo) {
   const l = estado.catalogo.loja;
@@ -2677,6 +2742,7 @@ function abaLoja(alvo) {
         </div>
         ${campo('Lançamento da moda praia', 'lancamentoPraia', (l.lancamentoPraia || '').slice(0, 16), { tipo: 'datetime-local', ajuda: 'Vazio: a contagem regressiva não aparece. Só use data real.' })}
       </section>
+      ${secaoFrete(l)}
       ${local ? '' : `<section class="pn-card"><h2>Pagamento online (Mercado Pago)</h2>
         <p class="pn-texto" id="situacao-pagamento">Conferindo a ligação com o Mercado Pago…</p>
         ${seletor('Como a cliente paga', 'pgModo', pg.modo || 'desligado', [
@@ -2747,6 +2813,7 @@ function abaLoja(alvo) {
   mostrarSituacaoPagamento($('#situacao-pagamento', alvo));
   const form = $('#form-loja');
   const tabela = $('#tabela-tam', form);
+  ligarSecaoFrete(form);
   ligarBuscaCep(form.elements.remCep, form, { rua: 'remRua', bairro: 'remBairro', cidade: 'remCidade', uf: 'remUf', num: 'remNum' });
   form.elements.remTelefone.addEventListener('input', (e) => { e.target.value = mascaraTelefone(e.target.value); });
   $('[data-novo-tam]', form).addEventListener('click', () => tabela.insertAdjacentHTML('beforeend', linhaTamanho({ t: '', calca: [] })));
@@ -2764,6 +2831,8 @@ function abaLoja(alvo) {
     if (zap && zap.length < 12) return falhar('O WhatsApp precisa ter 55, DDD e número. Ex.: 5521999999999.');
     if (frete === null || Number.isNaN(frete)) return falhar('O frete grátis precisa ser um valor. Ex.: 299.');
     if (pixPct === null || Number.isNaN(pixPct) || pixPct > 50) return falhar('O desconto no Pix precisa ficar entre 0 e 50%.');
+    const lidoFrete = lerSecaoFrete(form);
+    if (lidoFrete.erro) return falhar(lidoFrete.erro);
     if (!Number.isInteger(parcelas) || parcelas < 1 || parcelas > 24) return falhar('As parcelas precisam ficar entre 1 e 24.');
     const parcelasMax = Number(el.parcelasMax.value);
     if (!Number.isInteger(parcelasMax) || parcelasMax < parcelas || parcelasMax > 24) return falhar('O máximo de parcelas precisa ser igual ou maior que as parcelas sem juros, até 24.');
@@ -2797,6 +2866,7 @@ function abaLoja(alvo) {
       antesDepois: el.antesDepois.value.trim(),
       cidade: el.cidade.value.trim(),
       freteGratis: frete,
+      frete: lidoFrete.frete,
       pix: pixPct / 100,
       parcelas,
       parcelasMax,

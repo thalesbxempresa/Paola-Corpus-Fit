@@ -290,8 +290,77 @@ language sql stable security definer set search_path = '' as $$
   );
 $$;
 
+-- ---------- Frete pelo CEP ----------
+-- Sem cadastro em transportadora: o CEP diz o estado, e a tabela da loja (painel > Loja > Frete, em loja.frete)
+-- diz o valor. O painel grava em cada faixa os estados que ela cobre (distância entre capitais, js/frete.js).
+-- frete: quanto o pedido pagou de frete (0 = grátis ou sem frete). Já vem somado em total e valor.
+alter table public.pedidos add column if not exists frete numeric(10, 2) not null default 0;
+
+-- Estado pelo CEP (faixas de CEP dos Correios; as mesmas de js/frete.js). Null: CEP incompleto ou fora das faixas
+create or replace function public.uf_do_cep(p_cep text) returns text
+language sql immutable set search_path = '' as $$
+  select case
+    when n between 1000 and 19999 then 'SP' when n between 20000 and 28999 then 'RJ'
+    when n between 29000 and 29999 then 'ES' when n between 30000 and 39999 then 'MG'
+    when n between 40000 and 48999 then 'BA' when n between 49000 and 49999 then 'SE'
+    when n between 50000 and 56999 then 'PE' when n between 57000 and 57999 then 'AL'
+    when n between 58000 and 58999 then 'PB' when n between 59000 and 59999 then 'RN'
+    when n between 60000 and 63999 then 'CE' when n between 64000 and 64999 then 'PI'
+    when n between 65000 and 65999 then 'MA' when n between 66000 and 68899 then 'PA'
+    when n between 68900 and 68999 then 'AP' when n between 69000 and 69299 then 'AM'
+    when n between 69300 and 69399 then 'RR' when n between 69400 and 69899 then 'AM'
+    when n between 69900 and 69999 then 'AC' when n between 70000 and 72799 then 'DF'
+    when n between 72800 and 72999 then 'GO' when n between 73000 and 73699 then 'DF'
+    when n between 73700 and 76799 then 'GO' when n between 76800 and 76999 then 'RO'
+    when n between 77000 and 77999 then 'TO' when n between 78000 and 78899 then 'MT'
+    when n between 79000 and 79999 then 'MS' when n between 80000 and 87999 then 'PR'
+    when n between 88000 and 89999 then 'SC' when n between 90000 and 99999 then 'RS'
+  end
+  from (select case when d ~ '^\d{8}$' then left(d, 5)::int end as n
+        from (select regexp_replace(coalesce(p_cep, ''), '\D', '', 'g') as d) x) y;
+$$;
+
+-- Frete do pedido pela tabela da loja (a mesma conta de Frete.calcular em js/frete.js).
+-- 0: frete desligado ou produtos acima do frete grátis. Null: frete ligado e CEP sem faixa (o pedido fica para conferir)
+create or replace function public.frete_do_pedido(p_cep text, p_produtos numeric) returns numeric
+language plpgsql stable set search_path = '' as $$
+declare
+  v_loja jsonb := (select c.dados -> 'loja' from public.loja_config c where c.id = 1);
+  v_faixas jsonb := v_loja -> 'frete' -> 'faixas';
+  v_uf text := public.uf_do_cep(p_cep);
+  v_valor numeric;
+begin
+  if coalesce(v_loja -> 'frete' ->> 'ligado', '') <> 'true' then
+    return 0;
+  end if;
+  -- Igual ao site (Frete.ligado): só vale com todas as faixas preenchidas
+  if jsonb_typeof(v_faixas) is distinct from 'array' or jsonb_array_length(v_faixas) = 0 or exists (
+    select 1 from jsonb_array_elements(v_faixas) f
+    where case
+      when jsonb_typeof(f -> 'valor') = 'number' and jsonb_typeof(f -> 'dias') = 'number' and jsonb_typeof(f -> 'ufs') = 'array'
+        then (f ->> 'valor')::numeric < 0 or (f ->> 'dias')::numeric < 1 or (f ->> 'dias')::numeric <> trunc((f ->> 'dias')::numeric)
+      else true
+    end
+  ) then
+    return 0;
+  end if;
+  if jsonb_typeof(v_loja -> 'freteGratis') = 'number' and p_produtos >= (v_loja ->> 'freteGratis')::numeric then
+    return 0;
+  end if;
+  if v_uf is null then
+    return null;
+  end if;
+  select (f ->> 'valor')::numeric into v_valor
+    from jsonb_array_elements(v_faixas) f
+    where jsonb_typeof(f -> 'valor') = 'number' and jsonb_typeof(f -> 'ufs') = 'array' and f -> 'ufs' ? v_uf
+    limit 1;
+  return case when v_valor >= 0 then round(v_valor, 2) end;
+end;
+$$;
+
 -- O total sai sempre dos preços do banco: quem mexer no navegador não muda o valor do pedido.
--- Item sem preço no banco ou valor diferente do site: o pedido entra marcado para conferir, nunca se perde.
+-- O frete também: sai da tabela da loja pelo CEP de entrega e entra somado no total.
+-- Item sem preço no banco, CEP sem faixa de frete ou valor diferente do site: o pedido entra marcado para conferir, nunca se perde.
 create or replace function public.registrar_pedido(p jsonb) returns void
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -301,6 +370,7 @@ declare
   v_preco numeric;
   v_qtd int;
   v_total numeric := 0;
+  v_frete numeric;
   v_informado numeric := coalesce((p ->> 'total')::numeric, 0);
   v_conferir boolean := false;
   v_pix numeric := coalesce((select (c.dados -> 'loja' ->> 'pix')::numeric from public.loja_config c where c.id = 1), 0);
@@ -331,13 +401,21 @@ begin
     );
   end loop;
 
+  v_frete := public.frete_do_pedido(p ->> 'cep', v_total);
+  if v_frete is null then
+    -- CEP sem faixa na tabela: entra o frete que o site mostrou e a loja confere antes de cobrar
+    v_conferir := true;
+    v_frete := case when p ->> 'frete' ~ '^\d{1,6}(\.\d{1,2})?$' then (p ->> 'frete')::numeric else 0 end;
+  end if;
+  v_total := v_total + v_frete;
+
   if v_conferir then
     v_total := greatest(v_informado, 0);
   elsif abs(v_total - v_informado) > 0.01 then
     v_conferir := true;
   end if;
 
-  insert into public.pedidos (id, numero, nome, telefone, cep, rua, num, complemento, bairro, cidade, uf, pagamento, itens, total, valor, conferir)
+  insert into public.pedidos (id, numero, nome, telefone, cep, rua, num, complemento, bairro, cidade, uf, pagamento, itens, frete, total, valor, conferir)
   values (
     (p ->> 'id')::uuid,
     left(p ->> 'numero', 30),
@@ -345,7 +423,7 @@ begin
     nullif(left(regexp_replace(coalesce(p ->> 'telefone', ''), '\D', '', 'g'), 15), ''),
     left(p ->> 'cep', 10), left(p ->> 'rua', 160), left(p ->> 'num', 20), left(p ->> 'complemento', 80),
     left(p ->> 'bairro', 80), left(p ->> 'cidade', 80), upper(left(p ->> 'uf', 2)), left(p ->> 'pagamento', 20),
-    v_limpos, v_total,
+    v_limpos, v_frete, v_total,
     case when p ->> 'pagamento' = 'Pix' then round(v_total * (1 - v_pix), 2) else v_total end,
     v_conferir
   )
@@ -380,6 +458,7 @@ language sql stable security definer set search_path = '' as $$
     'uf', p.uf,
     'itens', coalesce((select jsonb_agg(jsonb_build_object('nome', i ->> 'nome', 'tam', i ->> 'tam', 'qtd', i -> 'qtd')) from jsonb_array_elements(p.itens) i), '[]'::jsonb),
     'total', p.total,
+    'frete', p.frete,
     -- O que foi cobrado de fato (com o desconto do Pix) e o que aconteceu com o dinheiro
     'valor', p.valor,
     'pago', p.status in ('pago', 'preparando', 'enviado', 'entregue') or (p.mercadopago ->> 'pago_em') is not null,
@@ -445,6 +524,8 @@ create policy admin_eventos on public.eventos_dia for select to authenticated us
 revoke all on function public.eh_admin(), public.catalogo_publico(), public.registrar_pedido(jsonb), public.registrar_evento(text), public.acompanhar_pedido(uuid, text, text) from public, anon, authenticated;
 grant execute on function public.eh_admin() to authenticated;
 grant execute on function public.catalogo_publico(), public.registrar_pedido(jsonb), public.registrar_evento(text), public.acompanhar_pedido(uuid, text, text) to anon, authenticated;
+-- O frete só é calculado por dentro do registrar_pedido
+revoke all on function public.uf_do_cep(text), public.frete_do_pedido(text, numeric) from public, anon, authenticated;
 
 -- ---------- Fotos dos produtos ----------
 -- Qualquer pessoa vê (são as fotos da loja); só o administrador envia, troca ou apaga.

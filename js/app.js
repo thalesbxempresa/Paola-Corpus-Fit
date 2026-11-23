@@ -78,6 +78,67 @@ const mascaraTelefone = (v) => {
 };
 const mascaraCep = (v) => { const d = String(v || '').replace(/\D/g, '').slice(0, 8); return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d; };
 
+// ---------------- Frete ----------------
+// Valor e prazo saem da tabela da loja pelo CEP (js/frete.js); o banco refaz a mesma conta ao registrar o pedido.
+// O CEP que a cliente calculou fica neste aparelho e vale no produto, no carrinho e na finalização.
+const freteLigado = () => Frete.ligado(LOJA);
+const freteDe = (cep, produtos) => Frete.calcular(LOJA, cep, produtos);
+const CEP_FRETE = 'pcf-frete-cep';
+const lerCepFrete = () => lerJSON(CEP_FRETE, {});
+const somaCentavos = (a, b) => Math.round((a + b) * 100) / 100;
+const textoPrazo = (dias) => `chega em até ${dias} ${dias === 1 ? 'dia útil' : 'dias úteis'} depois da postagem`;
+const lugarCep = (c) => (c.cidade ? `${c.cidade}/${c.uf}` : c.uf || '');
+const avisarFrete = () => { desenharSacola(); document.dispatchEvent(new CustomEvent('pcf-frete')); };
+// A cidade (ViaCEP) serve só para mostrar e para avisar CEP que não existe. O preço sai da faixa do CEP
+function guardarCepFrete(cep) {
+  const d = String(cep || '').replace(/\D/g, '');
+  if (lerCepFrete().cep === d) return avisarFrete();
+  const novo = { cep: d, uf: Frete.uf(d) || '', cidade: '' };
+  gravarJSON(CEP_FRETE, novo);
+  avisarFrete();
+  fetch(`https://viacep.com.br/ws/${d}/json/`).then((x) => x.json()).then((r) => {
+    if (lerCepFrete().cep !== d) return;
+    gravarJSON(CEP_FRETE, r.erro ? { ...novo, invalido: true } : { ...novo, cidade: r.localidade || '' });
+    avisarFrete();
+  }).catch(() => { /* sem internet: segue com o estado */ });
+}
+// "R$ 29,80 de frete para Macaé/RJ · chega em até 6 dias úteis depois da postagem"
+function freteResultadoHTML(c, produtos) {
+  if (!c.cep) return '';
+  if (c.invalido) return '<span class="fc-erro">Não achamos esse CEP. Confira os números.</span>';
+  const fr = freteDe(c.cep, produtos);
+  if (!fr) return '';
+  if (fr.erro) return '<span class="fc-erro">Confira o CEP: são 8 números.</span>';
+  const lugar = lugarCep(c);
+  return `${fr.gratis ? '<b class="fc-gratis">Frete grátis</b>' : `<b>${brl(fr.valor)}</b> de frete`}${lugar ? ` para ${esc(lugar)}` : ''} · ${textoPrazo(fr.dias)}${fr.gratis || !Number.isFinite(LOJA.freteGratis) ? '' : `. Grátis acima de ${brlLimpo(LOJA.freteGratis)}`}`;
+}
+// Caixa "Frete e prazo" (produto e carrinho)
+const freteCaixaHTML = (id, cep = '') => `<form class="frete-calc" data-frete-form novalidate>
+    <label class="fc-rotulo" for="${id}">${I.caminhao}Frete e prazo</label>
+    <div class="fc-linha"><input id="${id}" name="cep" inputmode="numeric" autocomplete="postal-code" placeholder="Seu CEP" maxlength="9" value="${esc(mascaraCep(cep))}"><button class="btn btn-claro" type="submit">Calcular</button></div>
+    <p class="fc-res" data-frete-res aria-live="polite"></p>
+    <a class="link-tam fc-nao-sei" href="https://buscacepinter.correios.com.br/app/endereco/index.php" target="_blank" rel="noopener">Não sei meu CEP</a>
+  </form>`;
+// Calcula sozinho ao completar os 8 números ou no botão. aoCalcular: quem desenha o resultado
+function ligarFreteCaixa(form, aoCalcular) {
+  const inp = form.cep;
+  const calcular = () => {
+    const d = inp.value.replace(/\D/g, '');
+    if (d.length !== 8) {
+      $('[data-frete-res]', form).innerHTML = '<span class="fc-erro">Digite os 8 números do CEP.</span>';
+      inp.focus();
+      return;
+    }
+    guardarCepFrete(d);
+    aoCalcular?.();
+  };
+  inp.addEventListener('input', () => {
+    inp.value = mascaraCep(inp.value);
+    if (inp.value.replace(/\D/g, '').length === 8) calcular();
+  });
+  form.addEventListener('submit', (e) => { e.preventDefault(); calcular(); });
+}
+
 // Achar pedido sem o link nem o número: o WhatsApp e o CEP que ela usou na compra, que ela sabe de cor.
 // Neste aparelho, já vêm preenchidos com o que ela digitou na última compra.
 const contatoHTML = (prefixo) => `
@@ -148,6 +209,7 @@ const I = {
   ok: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 'stroke-width="3"'),
   pessoa: svg('<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/>'),
   cadeado: svg('<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/>'),
+  caminhao: svg('<path d="M2.5 6.5h11v9.5h-11zM13.5 9.5h4l3 3.2V16h-7"/><circle cx="6.5" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>'),
   insta: svg('<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.4" cy="6.6" r="1" fill="currentColor"/>'),
   whats: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.5-.3z"/></svg>',
 };
@@ -468,10 +530,20 @@ function desenharSacola() {
     }).join('')}
     ${para ? `<div class="sugestao"><span class="mini">${midia(para)}</span><div><small>${rotulo || 'Vale a pena'}</small><b>${chamada}</b><span style="font-size:13px">por + ${brl(para.preco - item(base.id).preco)}</span></div><button type="button" data-trocar="${base.chave}" aria-label="Trocar por ${para.nome}">Trocar</button></div>` : ''}`;
 
+  // Frete pelo CEP guardado neste aparelho. Sem CEP ainda, o total fica só com os produtos e a caixa pede o CEP
+  const cepFrete = lerCepFrete();
+  const fr = freteLigado() && cepFrete.cep && !cepFrete.invalido ? freteDe(cepFrete.cep, sub) : null;
+  const frete = fr && !fr.erro ? fr.valor : 0;
+  const total = somaCentavos(sub, frete);
+  const linhaFrete = !freteLigado() ? ''
+    : fr && !fr.erro && !trocandoCep
+      ? `<div class="frete-linha"><span>Frete<small>${esc(lugarCep(cepFrete))} · <button class="link-tam" type="button" data-trocar-cep>trocar CEP</button></small><small>${textoPrazo(fr.dias)}</small></span><b>${fr.gratis ? '<span class="fc-gratis">Grátis</span>' : brl(fr.valor)}</b></div>`
+      : freteCaixaHTML('fc-sacola', cepFrete.cep);
   pe.hidden = false;
   pe.innerHTML = `
-    <div class="total-linha"><span>Total</span><span>${brl(sub)}</span></div>
-    <div class="total-pix">ou ${brl(pix(sub))} no Pix · ${LOJA.parcelas}x de ${brl(parcela(sub))}</div>
+    ${linhaFrete}
+    <div class="total-linha"><span>Total</span><span>${brl(total)}</span></div>
+    <div class="total-pix">ou ${brl(pix(total))} no Pix · ${LOJA.parcelas}x de ${brl(parcela(total))}</div>
     <button class="btn btn-preto btn-bloco" type="button" data-finalizar ${algumaEsgotada ? 'disabled' : ''}>${pagaNoSite() ? 'Finalizar compra' : `${I.whats}Enviar pedido pelo WhatsApp`}</button>
     <button class="link-tam pe-continuar" type="button" data-fechar>Continuar escolhendo</button>
     <p class="pe-nota">${algumaEsgotada ? 'Ajuste o item marcado para enviar o pedido.' : pagaNoSite() ? 'Pague no Pix ou no cartão aqui no site. A Paola confere seu tamanho antes de enviar.' : 'A Paola confirma seu tamanho e o pagamento com você na conversa.'}</p>`;
@@ -489,7 +561,19 @@ function desenharSacola() {
     }));
     $('.remover', linha).addEventListener('click', () => gravarSacola(lerSacola().filter((y) => y.chave !== chave)));
   });
+
+  const caixaFrete = $('[data-frete-form]', pe);
+  if (caixaFrete) {
+    $('[data-frete-res]', caixaFrete).innerHTML = freteResultadoHTML(cepFrete, sub);
+    ligarFreteCaixa(caixaFrete, () => { trocandoCep = false; desenharSacola(); });
+  }
+  $('[data-trocar-cep]', pe)?.addEventListener('click', () => {
+    trocandoCep = true;
+    desenharSacola();
+    $('#fc-sacola')?.select();
+  });
 }
+let trocandoCep = false;
 
 // Troca a linha do pedido pelo degrau de cima, mantendo a calça
 function trocar(chave) {
@@ -511,7 +595,11 @@ function registrarPedido(s, dados) {
   const id = crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/x/g, () => Math.floor(Math.random() * 16).toString(16));
   // Nome, tamanho e preço ficam guardados como estavam: o pedido não muda se o produto mudar depois
   const itens = s.map((x) => ({ ...x, nome: nomeLinha(x), tam: tamanhoPorCalca(x.calca)?.t || null, preco: item(x.id).preco }));
-  const pedido = { ...dados, id, numero, data: agora.toISOString(), itens, total: subtotal(s) };
+  // O frete vai somado no total. O banco refaz a conta pela tabela dele e, se não bater, o pedido fica para conferir
+  const produtos = subtotal(s);
+  const fr = freteDe(dados.cep, produtos);
+  const frete = fr && !fr.erro ? fr.valor : 0;
+  const pedido = { ...dados, id, numero, data: agora.toISOString(), itens, frete, total: somaCentavos(produtos, frete) };
   gravarJSON('pcf-pedidos', [pedido, ...lerPedidos()].slice(0, 10));
   Catalogo.enviarPedido(pedido);
   return pedido;
@@ -520,7 +608,8 @@ function registrarPedido(s, dados) {
 // Mensagem no formato que a Paola lê de uma vez (negrito do WhatsApp com *)
 function textoPedido(p) {
   const itens = p.itens.map((x) => `• ${x.qtd}x ${x.nome || nomeLinha(x)}${x.calca ? `\n   Tamanho ${x.tam || tamanhoPorCalca(x.calca)?.t} (veste calça ${x.calca})` : ''}`).join('\n');
-  return `*Pedido ${p.numero}*\nOi, Paola! Quero finalizar este pedido:\n\n${itens}\n\n*Total:* ${brl(p.total)} (${brl(pix(p.total))} no Pix)\n\n*Meus dados*\nNome: ${p.nome}\nPagamento: ${p.pagamento}\n\n*Entrega*\n${p.rua ? `${p.rua}, ${p.num}${p.complemento ? ` - ${p.complemento}` : ''}\n${p.bairro} - ${p.cidade}/${p.uf}\n` : ''}CEP: ${p.cep}\n\nPode me mandar o link de pagamento? Se precisar, te mando uma foto de frente para confirmar o tamanho.${Catalogo.ligado && p.id ? `\n\nAcompanhar meu pedido: ${linkAcompanhar(p.id)}` : ''}`;
+  const frete = typeof p.frete === 'number' && (p.frete > 0 || freteLigado()) ? `\n*Frete:* ${p.frete > 0 ? brl(p.frete) : 'grátis'}` : '';
+  return `*Pedido ${p.numero}*\nOi, Paola! Quero finalizar este pedido:\n\n${itens}\n${frete}\n*Total:* ${brl(p.total)} (${brl(pix(p.total))} no Pix)\n\n*Meus dados*\nNome: ${p.nome}\nPagamento: ${p.pagamento}\n\n*Entrega*\n${p.rua ? `${p.rua}, ${p.num}${p.complemento ? ` - ${p.complemento}` : ''}\n${p.bairro} - ${p.cidade}/${p.uf}\n` : ''}CEP: ${p.cep}\n\nPode me mandar o link de pagamento? Se precisar, te mando uma foto de frente para confirmar o tamanho.${Catalogo.ligado && p.id ? `\n\nAcompanhar meu pedido: ${linkAcompanhar(p.id)}` : ''}`;
 }
 
 // Antes do WhatsApp: explica por que a compra fecha com uma pessoa e pede só o essencial
@@ -570,7 +659,8 @@ function finalizar() {
       <div class="campo"><span class="rotulo">Como prefere pagar?</span>
         <div class="tamanhos" role="radiogroup" aria-label="Forma de pagamento">${['Pix', 'Cartão'].map((f) => `<button class="chip" type="button" role="radio" data-pag="${f}" aria-checked="${f === pagamento}">${f === 'Pix' ? `Pix (${pctPix()} off)` : `Cartão em até ${parcelasMax()}x`}</button>`).join('')}</div>
       </div>
-      <div class="ck-total"><span>Total do pedido</span><b>${brl(subtotal(s))}</b></div>
+      <div class="ck-frete" data-ck-frete hidden></div>
+      <div class="ck-total"><span>Total do pedido</span><b data-ck-total>${brl(subtotal(s))}</b></div>
       ${Catalogo.conta.atual() ? `<p class="dica-tam conta-nota">${I.pessoa}<span>Este pedido fica guardado na sua conta${Catalogo.conta.atual().email ? ` (${esc(Catalogo.conta.atual().email)})` : ''}.</span></p>` : ''}
       <p class="dica-tam erro" data-erro hidden></p>
       <button class="btn btn-preto btn-bloco btn-pedir" type="submit">${noSite ? 'Ir para o pagamento' : `${I.whats}Continuar no WhatsApp`}</button>
@@ -578,6 +668,20 @@ function finalizar() {
   const form = $('#form-checkout', m);
   const CAMPOS = ['nome', 'telefone', 'cep', 'rua', 'num', 'complemento', 'bairro', 'cidade', 'uf'];
   CAMPOS.forEach((c) => { form[c].value = cliente[c] || ''; });
+  // Frete e total pelo CEP de entrega digitado aqui (é o mesmo que vai para o pedido)
+  const produtos = subtotal(s);
+  const atualizarTotal = () => {
+    const fr = freteDe(form.cep.value, produtos);
+    const caixa = $('[data-ck-frete]', m);
+    caixa.hidden = !fr;
+    if (fr) {
+      caixa.innerHTML = fr.erro
+        ? '<span>Frete</span><small>Digite o CEP para calcular</small>'
+        : `<span>Frete<small>${textoPrazo(fr.dias)}</small></span><b>${fr.gratis ? '<span class="fc-gratis">Grátis</span>' : brl(fr.valor)}</b>`;
+    }
+    $('[data-ck-total]', m).textContent = brl(somaCentavos(produtos, fr && !fr.erro ? fr.valor : 0));
+  };
+  form.cep.addEventListener('input', atualizarTotal);
   form.telefone.addEventListener('input', () => { form.telefone.value = mascaraTelefone(form.telefone.value); });
   // Rascunho: o que ela digita fica guardado neste aparelho, mesmo se fechar a tela antes de terminar
   const guardarRascunho = () => gravarJSON('pcf-cliente', { ...lerJSON('pcf-cliente', {}), ...Object.fromEntries(CAMPOS.map((c) => [c, form[c].value.trim()])), pagamento });
@@ -599,11 +703,21 @@ function finalizar() {
       form.cidade.value = r.localidade || '';
       form.uf.value = r.uf || '';
       status.textContent = '';
+      // O carrinho passa a mostrar o frete deste CEP
+      gravarJSON(CEP_FRETE, { cep: d, uf: Frete.uf(d) || r.uf || '', cidade: r.localidade || '' });
+      if (freteLigado()) avisarFrete();
       (r.logradouro ? form.num : form.rua).focus();
     } catch (e) {
       status.textContent = 'Não achamos esse CEP. Preencha o endereço abaixo.';
     }
   });
+  // Sem endereço guardado, vale o CEP que ela já calculou no produto ou no carrinho: o endereço se preenche sozinho
+  const cepCalculado = lerCepFrete();
+  if (!form.cep.value && cepCalculado.cep && !cepCalculado.invalido) {
+    form.cep.value = cepCalculado.cep;
+    form.cep.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  atualizarTotal();
   $$('[data-pag]', m).forEach((b) => b.addEventListener('click', () => {
     pagamento = b.dataset.pag;
     $$('[data-pag]', m).forEach((c) => c.setAttribute('aria-checked', c === b));
@@ -619,7 +733,8 @@ function finalizar() {
       || (!d.rua && ['rua', 'Escreva a rua.'])
       || (!d.num && ['num', 'Escreva o número da casa ou prédio.'])
       || (!d.bairro && ['bairro', 'Escreva o bairro.'])
-      || ((!d.cidade || d.uf.length !== 2) && ['cidade', 'Escreva a cidade e a UF (ex.: RJ).']);
+      || ((!d.cidade || d.uf.length !== 2) && ['cidade', 'Escreva a cidade e a UF (ex.: RJ).'])
+      || (freteDe(d.cep, produtos)?.erro && ['cep', 'Confira o CEP: com ele calculamos o frete.']);
     if (falta) { erro.hidden = false; erro.textContent = falta[1]; form[falta[0]].focus(); return; }
     gravarJSON('pcf-cliente', { ...d, pagamento });
     // O pedido só é registrado aqui, uma vez: depois da conta (criada, aberta ou pulada)
@@ -1319,7 +1434,8 @@ function telaProduto() {
         ${acabou ? esgotadoHTML : vende ? `<p class="dica-tam erro" id="erro-compra" hidden></p>
         <button class="btn btn-preto btn-bloco btn-pedir" type="button" id="adicionar">${textoBotao(it)}</button>
         <button class="btn btn-claro btn-bloco" type="button" id="adicionar-so" style="margin-top:10px">Adicionar ao carrinho</button>
-        ${usaTam ? notaPedido() : ''}` : `<div class="grupo"><div class="grupo-titulo">Leve nos combos</div><div class="kits">${kitsCom(it.id).map(cardKit).join('')}</div></div>
+        ${usaTam ? notaPedido() : ''}
+        ${freteLigado() ? freteCaixaHTML('fc-produto', lerCepFrete().cep) : ''}` :`<div class="grupo"><div class="grupo-titulo">Leve nos combos</div><div class="kits">${kitsCom(it.id).map(cardKit).join('')}</div></div>
         <a class="btn btn-claro btn-bloco" href="${LOJA.whatsapp}" target="_blank" rel="noopener" style="margin-top:14px">${I.whats}Perguntar no WhatsApp</a>`}
         ${it.pontos ? `<ul class="pontos-prod">${it.pontos.map((p) => `<li>${p}</li>`).join('')}</ul>` : ''}
         ${junto}
@@ -1328,7 +1444,7 @@ function telaProduto() {
           ${it.uso ? `<details><summary>Como usar</summary><div class="conteudo">${it.uso}</div></details>` : ''}
           ${usaTam ? `<details><summary>Dobra? Marca? Machuca?</summary><div class="conteudo"><p><b>Dobra ou enrola?</b> Não. As barbatanas mantêm a cinta no lugar, mesmo sentada ou treinando.</p><p style="margin-top:10px"><b>Quantas regulagens?</b> Duas regulagens de colchete por dentro e mais o zíper por fora, na frente.</p><p style="margin-top:10px"><b>Marca na roupa?</b> Não marca por baixo da roupa.</p><p style="margin-top:10px"><b>Machuca?</b> Não, no tamanho certo. É cinta no tamanho errado que machuca, por isso a Paola confere o seu antes de enviar. Comece pela regulagem mais folgada, com poucas horas por dia, e aumente aos poucos.</p></div></details>` : ''}
           ${usaTam ? `<details><summary>Tabela de medidas</summary><div class="conteudo">${tabelaHTML()}<p style="margin-top:10px">A cinta estica, então o que vale é o número da calça ou short, não a medida em centímetros.</p></div></details>` : ''}
-          <details><summary>Entrega e pagamento</summary><div class="conteudo">Enviamos de ${esc(LOJA.cidade)} para todo o Brasil. Pix com ${pctPix()} de desconto ou ${textoCartao()}. O prazo de entrega a Paola confirma no WhatsApp.</div></details>
+          <details><summary>Entrega e pagamento</summary><div class="conteudo">Enviamos de ${esc(LOJA.cidade)} para todo o Brasil. Pix com ${pctPix()} de desconto ou ${textoCartao()}. ${freteLigado() ? `O frete e o prazo saem pelo seu CEP, em "Frete e prazo".${Number.isFinite(LOJA.freteGratis) ? ` Frete grátis acima de ${brlLimpo(LOJA.freteGratis)}.` : ''}` : 'O prazo de entrega a Paola confirma no WhatsApp.'}</div></details>
         </div>
       </div>
     </div>`;
@@ -1338,6 +1454,19 @@ function telaProduto() {
   mostrarAvaliacoes();
   $('#relacionados').innerHTML = [...KITS, ...PRODUTOS].filter((x) => visivel(x) && x.id !== it.id).slice(0, 4).map(card).join('');
   if (!vende || acabou) return;
+
+  // Frete deste produto (uma unidade) pelo CEP guardado ou digitado aqui
+  const caixaFrete = $('#produto [data-frete-form]');
+  if (caixaFrete) {
+    const mostrarFrete = () => {
+      const c = lerCepFrete();
+      if (document.activeElement !== caixaFrete.cep && c.cep) caixaFrete.cep.value = mascaraCep(c.cep);
+      $('[data-frete-res]', caixaFrete).innerHTML = freteResultadoHTML(c, it.preco);
+    };
+    ligarFreteCaixa(caixaFrete, mostrarFrete);
+    document.addEventListener('pcf-frete', mostrarFrete);
+    mostrarFrete();
+  }
 
   const erro = $('#erro-compra');
   if (usaTam) {
@@ -1551,6 +1680,7 @@ function pedidoAcompanhadoHTML(p, volta = null) {
     <section class="acomp-resumo">
       <h2>Seu pedido</h2>
       <ul>${(p.itens || []).map((x) => `<li>${esc(x.qtd || 1)}x ${esc(x.nome)}${x.tam ? `<small>Tamanho ${esc(x.tam)}</small>` : ''}</li>`).join('')}</ul>
+      ${Number(p.frete) > 0 ? `<div class="acomp-frete"><span>Frete</span><span>${brl(Number(p.frete))}</span></div>` : ''}
       <div class="acomp-total"><span>${p.pago && p.valor != null ? 'Total pago' : 'Total'}</span><b>${brl(Number(p.pago && p.valor != null ? p.valor : p.total))}</b></div>
       ${p.cidade ? `<p class="dica-tam">Entrega em ${esc(p.cidade)}/${esc(p.uf)}</p>` : ''}
     </section>

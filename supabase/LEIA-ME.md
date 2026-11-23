@@ -95,6 +95,17 @@ Se o domínio mudar, atualize `SITE` e `ORIGENS` no começo da função e publiq
 
 Access Token e assinatura do webhook nunca entram no site nem no GitHub. A Public Key também fica no Supabase, para trocar de teste para produção sem publicar o site.
 
+## Frete pelo CEP
+
+Não precisa de cadastro nos Correios nem em outra transportadora. A cliente digita o CEP no produto, no carrinho ou ao finalizar, e o site mostra o frete e o prazo. O frete entra no total e é cobrado junto com o pedido. O desconto do Pix vale sobre o total, já com o frete.
+
+- **Como calcula:** o CEP diz o estado, pelas faixas de CEP dos Correios. A distância entre a capital do estado de onde os pedidos saem e a capital do estado da cliente escolhe uma de 6 faixas: mesmo estado, até 800 km, até 1.300 km, até 2.000 km, até 2.500 km e acima disso. É o mesmo critério das tarifas nacionais dos Correios. As regras ficam em `js/frete.js`.
+- **Valores:** no painel, em Loja > Frete, cada faixa tem o frete e o prazo em dias úteis, e mostra os estados que cobre. A chave "Calcular o frete pelo CEP" só liga com todas as faixas preenchidas. Desligada, a loja segue sem cobrar frete.
+- **Como achar os valores:** no [simulador de preços e prazos dos Correios](https://www2.correios.com.br/sistemas/precosPrazos/), simule do CEP da loja para um CEP de cada faixa, com o peso e a caixa usados de verdade. Exemplo já consultado (23/11/2026): PAC de balcão, 1 kg, caixa 30 x 25 x 8 cm, de 28740-000 para o centro do Rio, R$ 29,80 em 6 dias úteis.
+- **Frete grátis:** com os produtos acima de "Frete grátis acima de", o frete é zero.
+- **Quem garante o valor:** o banco refaz a conta ao registrar o pedido (`uf_do_cep` e `frete_do_pedido`), pela mesma tabela. Se o site mandou outro total, por exemplo com uma página aberta antes de a tabela mudar, o pedido entra marcado para conferir e não é cobrado online. O frete de cada pedido fica na coluna `frete` e aparece no painel e no acompanhamento.
+- **Limites:** o valor é por faixa, não por peso nem por cidade. Um pedido com mais peças paga o mesmo frete, e o interior de um estado paga o mesmo que a capital. Revise a tabela quando os Correios reajustarem os preços, normalmente uma vez por ano. O prazo conta a partir da postagem.
+
 ## Gestão do pedido no painel
 
 Cada pedido tem um próximo passo só (confirmar, preparar, enviar, entregar). O que foge disso aparece como pendência, numa fila própria em Início ("Precisam de atenção"), e o pedido com pendência fica fora de preparar, de enviar e do lote de etiquetas até alguém resolver.

@@ -517,3 +517,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .pn-link-senha { margin-top: 14px; }
 .pn-texto + .pn-form-mini { margin-top: 14px; }
+
+/* Frete pelo CEP: uma linha por faixa, com os estados que ela cobre */
+#faixas-frete { display: grid; gap: 12px; margin-top: 14px; }
+.pn-frete-faixa { display: grid; gap: 10px; padding: 14px; border-radius: 14px; background: var(--areia); }
+.pn-frete-nome b { display: block; font-size: 15px; }
+.pn-frete-nome small { display: block; margin-top: 2px; font-size: 13px; color: var(--tinta-2); }
+#secao-frete .pn-chave { margin: 14px 0; }
+.pn-frete-faixa .campo input { background: var(--branco); }

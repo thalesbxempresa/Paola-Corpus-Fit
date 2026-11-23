@@ -24,6 +24,20 @@ const LOJA = {
   pagarNoSite: true,
   // Mostrar para a cliente quantas peças há no tamanho escolhido (liga no painel, em Produtos > Estoque)
   mostrarEstoque: false,
+  // Frete pelo CEP (painel > Loja > Frete; regras em js/frete.js). Só liga com todas as faixas preenchidas.
+  // Mesmo estado: PAC de balcão dos Correios, 1 kg, caixa 30 x 25 x 8 cm, do CEP 28740-000 para o Rio (consulta de 23/11/2026)
+  frete: {
+    ligado: false,
+    cepOrigem: '28740000',
+    faixas: [
+      { valor: 29.8, dias: 6, ufs: ['RJ'] },
+      { valor: null, dias: null, ufs: ['MG', 'SP', 'ES', 'PR', 'SC'] },
+      { valor: null, dias: null, ufs: ['DF', 'GO', 'RS', 'BA', 'MS'] },
+      { valor: null, dias: null, ufs: ['SE', 'TO', 'MT', 'AL', 'PE', 'PB', 'PI'] },
+      { valor: null, dias: null, ufs: ['RN', 'CE', 'MA', 'PA'] },
+      { valor: null, dias: null, ufs: ['AP', 'RO', 'AM', 'AC', 'RR'] },
+    ],
+  },
 };
 
 // Estoque que o banco libera para a loja. Item que não está aqui não é contado e fica sempre à venda
