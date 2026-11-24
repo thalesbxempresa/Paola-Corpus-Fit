@@ -525,3 +525,19 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .pn-frete-nome small { display: block; margin-top: 2px; font-size: 13px; color: var(--tinta-2); }
 #secao-frete .pn-chave { margin: 14px 0; }
 .pn-frete-faixa .campo input { background: var(--branco); }
+
+/* Baixar o painel como app */
+.pn-acesso-instalar { margin-top: 6px; padding: 0 14px; font-size: 13px; letter-spacing: .03em; }
+.pn-acesso-instalar svg, .pn-instalar-faixa > svg { flex: none; width: 20px; height: 20px; }
+.pn-instalar-faixa { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; padding: 10px 6px 10px 14px; border-radius: 16px; background: var(--rosa-2); font-size: 13.5px; line-height: 1.35; }
+.pn-instalar-faixa span { flex: 1; min-width: 0; color: var(--tinta-2); }
+.pn-instalar-faixa b { display: block; font-size: 14.5px; color: var(--tinta); }
+.pn-instalar-faixa .btn { flex: none; min-height: 40px; padding: 0 16px; font-size: 12px; }
+.pn-instalar-faixa .pn-ico { flex: none; width: 36px; height: 36px; }
+.pn-dialogo { width: min(460px, calc(100% - 24px)); max-height: calc(100dvh - 24px); padding: 20px 18px 22px; border: 0; border-radius: 22px; background: var(--branco); color: var(--tinta); box-shadow: var(--sombra); }
+.pn-dialogo::backdrop { background: rgba(31, 26, 23, .45); }
+.pn-dialogo > * + * { margin-top: 12px; }
+.pn-dialogo-topo { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pn-dialogo-topo h2 { font-size: 19px; font-weight: 800; }
+.pn-dialogo .pn-passos { display: grid; gap: 10px; padding-left: 22px; font-size: 15px; line-height: 1.45; }
+.pn-dialogo .btn svg { width: 20px; height: 20px; }

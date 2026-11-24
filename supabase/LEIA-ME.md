@@ -41,6 +41,12 @@ insert into public.admins values (encode(sha256(convert_to(lower('email@dela.com
 
 Com o cadastro fechado, crie a conta dela em *Authentication > Users > Add user > Create new user*, com *Auto Confirm User*.
 
+O login do painel (Supabase Auth) é separado da conta de cliente da loja ("Minha conta", tabela `clientes`). Se a pessoa já criou a conta de cliente com o e-mail de administrador, dá para criar o login do painel com a mesma senha: as duas usam bcrypt, e a API de administração do Auth aceita a senha já embaralhada (`password_hash`). A senha não precisa ser conhecida. Foi assim com a conta da Paola, em 24/11/2026. Depois disso, trocar a senha em um lugar não troca no outro.
+
+**Atalho do painel na loja:** quem entrou no painel naquele aparelho, ou está na conta da loja com um e-mail de administrador (`cliente_resumo` devolve `admin`), vê o botão "Painel" no topo e a caixa "Administração" no menu e em Minha conta. É só um atalho: o painel continua pedindo o login dele.
+
+**Painel como app:** no painel há o botão "Baixar o painel como app", no login, no topo e no menu. No Android e no computador, o Chrome instala direto. No iPhone, o botão mostra o passo a passo: Compartilhar > Adicionar à Tela de Início. Instalado, o app abre nos pedidos (`painel.webmanifest`). O atalho da loja leva a `admin.html?instalar=1`, que já abre essas instruções.
+
 ## Acompanhamento do pedido
 
 A cliente acompanha em `acompanhar.html`, pelo link que vai na mensagem do pedido ou digitando o WhatsApp e o CEP de entrega que usou na compra (função `buscar_pedidos`; não precisa do número do pedido). O WhatsApp vale com ou sem o 55 e com ou sem o 9 da frente: o banco compara o DDD e os 8 últimos números. Com mais de um pedido, ela escolhe na lista. Ela vê etapas, datas, rastreio, itens, cidade e o primeiro nome. Endereço, sobrenome e anotações internas nunca aparecem. As datas de cada etapa são registradas pelo próprio banco.

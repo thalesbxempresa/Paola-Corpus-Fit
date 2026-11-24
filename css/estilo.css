@@ -1061,3 +1061,13 @@ body.travado .barra-carrinho, body.com-barra .barra-carrinho { display: none; }
 .texto-legal a { color: var(--vinho); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .tl-data { margin-top: 28px !important; font-size: 13px !important; color: var(--tinta-3) !important; }
 .ck-politicas a { color: var(--vinho); font-weight: 700; text-decoration: underline; }
+
+/* Atalho do painel: só para a administração da loja */
+.painel-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; width: 40px; height: 40px; border-radius: 999px; background: var(--tinta); color: var(--branco); }
+.painel-btn svg { width: 18px; height: 18px; }
+.painel-btn span { display: none; }
+@media (min-width: 900px) { .painel-btn { width: auto; padding: 0 14px 0 12px; font-size: 13px; font-weight: 800; } .painel-btn span { display: inline; } }
+.admin-atalhos { display: grid; gap: 8px; margin-top: 18px; padding: 14px; border-radius: 18px; background: var(--rosa-2); }
+.admin-atalhos .btn { min-height: 48px; padding: 0 16px; font-size: 13px; }
+.painel-btn[hidden], .admin-atalhos[hidden] { display: none; }
+.conta-admin { margin: 0; }

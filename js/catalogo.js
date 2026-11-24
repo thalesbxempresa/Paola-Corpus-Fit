@@ -150,7 +150,8 @@ const Catalogo = (() => {
     };
     const esquecer = () => { try { localStorage.removeItem(CONTA); } catch (e) { /* ok */ } };
     const guardar = (r) => {
-      if (r && r.ok && r.sessao) gravar(CONTA, JSON.stringify({ sessao: r.sessao, email: r.cliente?.email || '', nome: r.cliente?.nome || '' }));
+      // admin: o e-mail desta conta é da administração da loja (só mostra o atalho do painel)
+      if (r && r.ok && r.sessao) gravar(CONTA, JSON.stringify({ sessao: r.sessao, email: r.cliente?.email || '', nome: r.cliente?.nome || '', admin: r.cliente?.admin === true }));
       return r;
     };
     const chamar = async (nome, corpo, extra) => {
@@ -174,7 +175,7 @@ const Catalogo = (() => {
       async pedidos() {
         const r = await comSessao('cliente_pedidos');
         const c = atual();
-        if (r.ok && c && r.cliente) gravar(CONTA, JSON.stringify({ ...c, email: r.cliente.email || c.email, nome: r.cliente.nome || c.nome }));
+        if (r.ok && c && r.cliente) gravar(CONTA, JSON.stringify({ ...c, email: r.cliente.email || c.email, nome: r.cliente.nome || c.nome, admin: r.cliente.admin === true }));
         return r;
       },
       // Liga pedidos à conta: { p_id } pelo link do pedido ou { p_telefone, p_cep } da compra

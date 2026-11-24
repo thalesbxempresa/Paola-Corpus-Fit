@@ -580,9 +580,16 @@ language sql immutable set search_path = '' as $$
   select encode(sha256(convert_to(coalesce(p_texto, ''), 'UTF8')), 'hex');
 $$;
 
+-- admin: o e-mail da conta está na tabela admins. Serve só para a loja mostrar o atalho do painel,
+-- que continua pedindo o login de administrador. A cliente só recebe o resumo da própria conta
 create or replace function public.cliente_resumo(p_cliente uuid) returns jsonb
 language sql stable security definer set search_path = '' as $$
-  select jsonb_build_object('email', c.email, 'nome', c.nome) from public.clientes c where c.id = p_cliente;
+  select jsonb_build_object(
+    'email', c.email,
+    'nome', c.nome,
+    'admin', exists (select 1 from public.admins a where a.email_sha256 = encode(sha256(convert_to(lower(c.email), 'UTF8')), 'hex'))
+  )
+  from public.clientes c where c.id = p_cliente;
 $$;
 
 -- Abre uma sessão e devolve o código dela. O código só existe nesta resposta: o banco guarda a impressão digital.

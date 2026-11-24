@@ -34,6 +34,7 @@ const I = {
   caixa: svg('<path d="M3.5 7.5L12 3l8.5 4.5v9L12 21l-8.5-4.5zM3.5 7.5L12 12l8.5-4.5M12 12v9"/>'),
   casa: svg('<path d="M3.5 11L12 4l8.5 7M5.5 9.5V20h13V9.5M10 20v-5.5h4V20"/>'),
   x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+  baixar: svg('<path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/>'),
   imprimir: svg('<path d="M7 8V3.5h10V8M7 17H4.5v-7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v7H17"/><path d="M7 14h10v6.5H7z"/>'),
   sino: svg('<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15zM10 21a2.2 2.2 0 0 0 4 0"/>'),
   whats: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.5-.3z"/></svg>',
@@ -423,6 +424,7 @@ function telaAcesso(modo, aviso = '') {
         ${!local && modo === 'entrar' ? '<button class="btn btn-claro btn-bloco" type="button" data-ir="criar" hidden>Primeiro acesso? Criar conta</button>' : ''}
         ${!local && modo === 'criar' ? '<button class="pn-link" type="button" data-ir="entrar">Já tenho conta</button>' : ''}
         ${local && modo === 'criar' ? '<p class="pn-nota">Sem o banco conectado, a conta vale só neste navegador e a senha fica guardada aqui de forma embaralhada, nunca em texto. A proteção de verdade entra com o Supabase.</p>' : ''}
+        ${modo === 'nova-senha' || instalado() ? '' : `<button class="btn btn-claro btn-bloco pn-acesso-instalar" type="button" data-instalar>${I.baixar}Baixar o painel como app</button>`}
       </form>
     </main>`;
   const form = $('#form-acesso');
@@ -496,20 +498,22 @@ function montarPainel() {
     <div class="pn-app">
       <header class="pn-topo">
         <span class="logo"><b>Paola</b><small>Corpus Fit</small></span>
-        <div class="pn-topo-dir"><a class="pn-link" href="index.html" target="_blank" rel="noopener">Ver a loja</a><button class="pn-ico" type="button" data-sair aria-label="Sair">${I.sair}</button></div>
+        <div class="pn-topo-dir"><a class="pn-link" href="index.html" target="_blank" rel="noopener">Ver a loja</a>${instalado() ? '' : `<button class="pn-ico" type="button" data-instalar aria-label="Baixar o painel como app">${I.baixar}</button>`}<button class="pn-ico" type="button" data-sair aria-label="Sair">${I.sair}</button></div>
       </header>
       <nav class="pn-nav" aria-label="Seções do painel">
         <span class="logo pn-nav-logo"><b>Paola</b><small>Corpus Fit</small></span>
         ${Object.entries(ABAS).map(([id, a]) => `<a href="#${id}">${a.ico}<span>${a.nome}</span></a>`).join('')}
-        <div class="pn-nav-pe"><a href="index.html" target="_blank" rel="noopener">Ver a loja</a><button type="button" data-sair>${I.sair}Sair</button></div>
+        <div class="pn-nav-pe">${instalado() ? '' : `<button type="button" data-instalar>${I.baixar}Baixar como app</button>`}<a href="index.html" target="_blank" rel="noopener">Ver a loja</a><button type="button" data-sair>${I.sair}Sair</button></div>
       </nav>
       <main class="pn-main">
         ${Banco.modo === 'local' ? '<p class="pn-modo"><b>Modo neste navegador.</b> Só você vê estas alterações. As clientes continuam vendo os dados atuais do site até o Supabase ser conectado. <a href="#loja">Como conectar</a></p>' : ''}
         <div class="pn-faixa" id="faixa-pedido" role="status" aria-live="polite" hidden></div>
+        ${faixaInstalar()}
         <div id="aba"></div>
       </main>
     </div>`;
   $$('[data-sair]').forEach((b) => b.addEventListener('click', async () => {
+    marcarAdminNaLoja(false);
     await Banco.sair();
     location.hash = '';
     telaAcesso('entrar');
@@ -550,9 +554,11 @@ async function abrirPainel() {
   const usuario = await Banco.sessao();
   if (!usuario) return telaAcesso(Banco.temConta() ? 'entrar' : 'criar');
   if (!(await Banco.ehAdmin())) {
+    marcarAdminNaLoja(false);
     await Banco.sair();
     return telaAcesso('entrar', 'Esta conta não é de administrador da loja.');
   }
+  marcarAdminNaLoja(true);
   estado.catalogo = await Banco.catalogo();
   estado.estoque = await Banco.lerEstoque().catch(() => ({}));
   montarPainel();
@@ -687,6 +693,86 @@ const instalado = () => matchMedia('(display-mode: standalone)').matches || navi
 const recebeAviso = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 const nomeDoAparelho = () => (ehIphone() ? 'iPhone' : /android/i.test(navigator.userAgent) ? 'Android' : 'Computador');
 const chaveEmBytes = (t) => Uint8Array.from(atob(t.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(t.length / 4) * 4, '=')), (c) => c.charCodeAt(0));
+
+// ---------------- Baixar o painel como app ----------------
+// Android e computador (Chrome, Edge): o navegador oferece instalar. iPhone: só pelo Compartilhar > Adicionar à Tela de Início.
+// Instalado, o painel ganha ícone próprio e abre direto nos pedidos, sem a barra do navegador (painel.webmanifest)
+let pedidoInstalar = null;
+const ehCelular = () => ehIphone() || /android/i.test(navigator.userAgent);
+addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  pedidoInstalar = e;
+  $$('[data-instalar-agora]').forEach((b) => { b.hidden = false; });
+});
+addEventListener('appinstalled', () => {
+  pedidoInstalar = null;
+  $('.pn-dialogo')?.close();
+  $$('[data-instalar], .pn-instalar-faixa').forEach((el) => el.remove());
+  toast('Painel instalado. Abra pelo ícone Painel Paola.');
+});
+// O navegador só deixa pedir a instalação uma vez por aviso
+async function instalarAgora() {
+  const p = pedidoInstalar;
+  pedidoInstalar = null;
+  await p.prompt();
+  return (await p.userChoice.catch(() => null))?.outcome === 'accepted';
+}
+function comoInstalar() {
+  const android = /android/i.test(navigator.userAgent);
+  const passos = ehIphone()
+    ? [
+      'Abra este painel no Safari (no Chrome do iPhone também funciona).',
+      'Toque em Compartilhar, o quadrado com a seta para cima. No Safari fica na barra de baixo; no Chrome, no alto da tela.',
+      'Role a lista e toque em <b>Adicionar à Tela de Início</b>.',
+      'Toque em <b>Adicionar</b>. O ícone Painel Paola aparece junto com os seus apps.',
+    ]
+    : android
+      ? [
+        'Abra este painel no Chrome.',
+        'Toque nos três pontinhos, no alto à direita.',
+        'Toque em <b>Instalar app</b> (ou <b>Adicionar à tela inicial</b>) e confirme.',
+        'O ícone Painel Paola aparece junto com os seus apps.',
+      ]
+      : [
+        'No Chrome ou no Edge, clique no ícone de instalar, no canto direito da barra de endereço.',
+        'Se não aparecer, abra o menu de três pontinhos e procure <b>Instalar</b> (no Chrome, em Transmitir, salvar e compartilhar).',
+        'Para o celular, abra paolacorpusfit.com.br/admin.html nele e toque em Baixar o painel como app.',
+      ];
+  $('.pn-dialogo')?.close();
+  const d = document.createElement('dialog');
+  d.className = 'pn-dialogo';
+  d.innerHTML = `<div class="pn-dialogo-topo"><h2>Baixar o painel como app</h2><button class="pn-ico" type="button" data-fechar-dialogo aria-label="Fechar">${I.x}</button></div>
+    <p class="pn-texto">Fica um ícone no celular, como um app: abre direto nos pedidos, sem a barra do navegador.</p>
+    <button class="btn btn-preto btn-bloco" type="button" data-instalar-agora ${pedidoInstalar ? '' : 'hidden'}>${I.baixar}Instalar agora</button>
+    <ol class="pn-passos">${passos.map((p) => `<li>${p}</li>`).join('')}</ol>
+    <p class="pn-nota">Depois, abra pelo ícone e entre uma vez com o seu e-mail e senha. Lá dentro, em Início, ligue o aviso de pedido novo.</p>`;
+  document.body.append(d);
+  d.addEventListener('close', () => d.remove());
+  $('[data-fechar-dialogo]', d).addEventListener('click', () => d.close());
+  $('[data-instalar-agora]', d).addEventListener('click', async (e) => {
+    e.currentTarget.hidden = true;
+    if (pedidoInstalar && (await instalarAgora())) d.close();
+  });
+  d.showModal();
+}
+// Com o aviso do navegador pronto (Android, computador), instala direto; sem ele, mostra o passo a passo
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-dispensar-instalar]')) {
+    try { localStorage.setItem('pcf-painel-sem-app', '1'); } catch (ex) { /* ok */ }
+    $('.pn-instalar-faixa')?.remove();
+    return;
+  }
+  if (!e.target.closest('[data-instalar]')) return;
+  if (pedidoInstalar) instalarAgora().catch(comoInstalar);
+  else comoInstalar();
+});
+const faixaInstalar = () => {
+  let dispensou = false;
+  try { dispensou = localStorage.getItem('pcf-painel-sem-app') === '1'; } catch (e) { /* ok */ }
+  return instalado() || dispensou || !ehCelular() ? '' : `<div class="pn-instalar-faixa">${I.baixar}<span><b>Use o painel como app</b>Ícone no celular, abre direto nos pedidos.</span><button class="btn btn-preto" type="button" data-instalar>Baixar</button><button class="pn-ico" type="button" data-dispensar-instalar aria-label="Agora não">${I.x}</button></div>`;
+};
+// Marca neste aparelho que é da administração: a loja mostra o atalho do painel (js/app.js, ehAdminLoja)
+const marcarAdminNaLoja = (sim) => { try { if (sim) localStorage.setItem('pcf-painel', '1'); else localStorage.removeItem('pcf-painel'); } catch (e) { /* ok */ } };
 
 async function assinaturaAtual() {
   const reg = await navigator.serviceWorker.getRegistration();
@@ -2967,7 +3053,14 @@ const linhaTamanho = (x) => `<div class="pn-tam"><input data-t value="${esc(x.t)
   try {
     if (!crypto?.subtle) throw new Error('Abra o painel por um endereço seguro (https).');
     await Banco.iniciar();
+    // O mesmo arquivo do aviso de pedido novo: com ele registrado, o Chrome oferece instalar o painel como app
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('aviso-sw.js', { scope: './admin' }).catch(() => {});
     await abrirPainel();
+    // Vindo do atalho da loja "Baixar o painel como app"
+    if (new URLSearchParams(location.search).get('instalar') === '1') {
+      history.replaceState(null, '', `admin.html${location.hash}`);
+      if (!instalado()) comoInstalar();
+    }
   } catch (e) {
     $('#painel').innerHTML = `<main class="pn-acesso"><div class="pn-acesso-caixa"><span class="logo"><b>Paola</b><small>Corpus Fit</small></span><h1>Não deu para abrir o painel</h1><p>${esc(e.message)}</p><button class="btn btn-preto btn-bloco" type="button" data-recarregar>Tentar de novo</button></div></main>`;
     $('[data-recarregar]').addEventListener('click', () => location.reload());

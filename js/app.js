@@ -210,6 +210,8 @@ const I = {
   pessoa: svg('<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/>'),
   cadeado: svg('<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/>'),
   caminhao: svg('<path d="M2.5 6.5h11v9.5h-11zM13.5 9.5h4l3 3.2V16h-7"/><circle cx="6.5" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>'),
+  painel: svg('<rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/>'),
+  baixar: svg('<path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/>'),
   insta: svg('<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.4" cy="6.6" r="1" fill="currentColor"/>'),
   whats: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.5-.3z"/></svg>',
 };
@@ -244,6 +246,7 @@ function montarTopo() {
       </nav>
       <div class="cab-dir">
         <a class="zap-topo" href="${LOJA.whatsapp}" target="_blank" rel="noopener">${I.whats}WhatsApp</a>
+        <a class="painel-btn" href="admin.html" aria-label="Painel da loja" hidden>${I.painel}<span>Painel</span></a>
         ${temConta() ? `<a class="ico-btn conta-btn" href="conta.html" aria-label="Minha conta">${I.pessoa}</a>` : ''}
         <button class="carrinho-btn" type="button" data-abrir="sacola" aria-label="Abrir o carrinho">${I.sacola}<span>Carrinho</span><span class="conta-sacola" hidden>0</span></button>
       </div>
@@ -255,6 +258,7 @@ function montarTopo() {
     <div class="gaveta-corpo">
       <a class="btn btn-preto btn-bloco" href="index.html#comprar" data-fechar>Fazer meu pedido</a>
       <nav class="menu-links" style="margin-top:14px">${[...MENU.slice(1, 4), ...(temConta() ? [['Minha conta', 'conta.html']] : []), ['Acompanhar meu pedido', 'acompanhar.html']].map(([nome, link]) => `<a href="${link}" data-fechar>${nome}${I.seta}</a>`).join('')}</nav>
+      ${adminHTML('menu-admin')}
       <a class="menu-praia" href="moda-praia.html"><span>Em breve</span><b>Moda Praia</b><span>Ainda não está à venda. Seja avisada →</span></a>
       <div class="menu-contato">
         <a class="btn btn-claro" href="${LOJA.whatsapp}" target="_blank" rel="noopener">${I.whats}Falar com a Paola</a>
@@ -278,8 +282,23 @@ function montarTopo() {
   marcarConta();
 }
 
+// Atalhos do painel: só aparecem para quem é da administração da loja. Vale quem entrou no painel neste
+// aparelho ou quem está na conta da loja com o e-mail de administrador (o banco diz, em cliente.admin).
+// É só um atalho: o painel continua pedindo o login dele
+const ehAdminLoja = () => {
+  try { if (localStorage.getItem('pcf-painel') === '1') return true; } catch (e) { /* sem armazenamento */ }
+  return Catalogo.conta.atual()?.admin === true;
+};
+const adminHTML = (classe) => `<div class="${classe} admin-atalhos" hidden>
+    <span class="sobre">Administração</span>
+    <a class="btn btn-preto btn-bloco" href="admin.html">${I.painel}Abrir o painel da loja</a>
+    <a class="btn btn-claro btn-bloco" href="admin.html?instalar=1">${I.baixar}Baixar o painel como app</a>
+  </div>`;
+
 // O ícone da conta ganha um ponto verde quando a cliente está dentro
 function marcarConta() {
+  const admin = ehAdminLoja();
+  $$('.painel-btn, .admin-atalhos').forEach((el) => { el.hidden = !admin; });
   const b = $('.conta-btn');
   if (!b) return;
   const dentro = !!Catalogo.conta.atual();
@@ -944,6 +963,7 @@ function telaConta() {
     const nome = (r.cliente?.nome || '').split(' ')[0];
     caixa.innerHTML = `<span class="sobre">Minha conta</span>
       <h1 class="titulo">${nome ? `Oi, ${esc(nome)}!` : 'Seus pedidos'}</h1>
+      ${adminHTML('conta-admin')}
       <section class="acomp-meus conta-pedidos"><h2>${nome ? 'Seus pedidos' : 'Tudo o que você comprou'}</h2>
         ${r.pedidos.length ? r.pedidos.map(linhaPedidoHTML).join('') : '<p class="conta-vazio">Você ainda não tem pedidos nesta conta. Quando comprar, o pedido aparece aqui.</p>'}
       </section>
@@ -958,6 +978,7 @@ function telaConta() {
       </details>
       <p class="conta-pe">Conta: <b>${esc(r.cliente?.email || '')}</b></p>
       <button class="link-tam envio-copiar" type="button" data-sair>Sair da conta neste aparelho</button>`;
+    marcarConta();
     $('[data-sair]', caixa).addEventListener('click', async (e) => {
       e.currentTarget.disabled = true;
       await sairDaConta();
@@ -1926,6 +1947,10 @@ Catalogo.pronto.then(() => {
   if (document.body.dataset.pagina !== 'conta') ligarPedidosDaConta();
   // Sacola de outro aparelho da mesma conta
   sincronizarSacola();
+  // Conta aberta antes de existir o aviso de administração: pergunta uma vez ao banco (Minha conta já pergunta)
+  if (Catalogo.conta.atual() && Catalogo.conta.atual().admin === undefined && document.body.dataset.pagina !== 'conta') {
+    Catalogo.conta.pedidos().then(marcarConta).catch(() => {});
+  }
 });
 
 document.addEventListener('click', (e) => {
