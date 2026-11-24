@@ -86,7 +86,15 @@ const freteDe = (cep, produtos) => Frete.calcular(LOJA, cep, produtos);
 const CEP_FRETE = 'pcf-frete-cep';
 const lerCepFrete = () => lerJSON(CEP_FRETE, {});
 const somaCentavos = (a, b) => Math.round((a + b) * 100) / 100;
-const textoPrazo = (dias) => `chega em até ${dias} ${dias === 1 ? 'dia útil' : 'dias úteis'} depois da postagem`;
+// Com o prazo de postagem da loja (painel > Loja > Frete), o prazo vira o total desde o pagamento
+const prazoPostagem = () => (Number.isInteger(LOJA.prazoPostagem) && LOJA.prazoPostagem >= 0 ? LOJA.prazoPostagem : null);
+const diasUteis = (n) => `${n} ${n === 1 ? 'dia útil' : 'dias úteis'}`;
+const textoPrazo = (dias) => (prazoPostagem() === null
+  ? `chega em até ${diasUteis(dias)} depois da postagem`
+  : `chega em até ${diasUteis(dias + prazoPostagem())} depois do pagamento`);
+const textoPostagem = () => (prazoPostagem() === null ? '' : prazoPostagem() === 0
+  ? 'A Paola posta no mesmo dia útil do pagamento.'
+  : `A Paola posta em até ${diasUteis(prazoPostagem())} depois do pagamento.`);
 const lugarCep = (c) => (c.cidade ? `${c.cidade}/${c.uf}` : c.uf || '');
 const avisarFrete = () => { desenharSacola(); document.dispatchEvent(new CustomEvent('pcf-frete')); };
 // A cidade (ViaCEP) serve só para mostrar e para avisar CEP que não existe. O preço sai da faixa do CEP
@@ -1468,7 +1476,7 @@ function telaProduto() {
           ${it.uso ? `<details><summary>Como usar</summary><div class="conteudo">${it.uso}</div></details>` : ''}
           ${usaTam ? `<details><summary>Dobra? Marca? Machuca?</summary><div class="conteudo"><p><b>Dobra ou enrola?</b> Não. As barbatanas mantêm a cinta no lugar, mesmo sentada ou treinando.</p><p style="margin-top:10px"><b>Quantas regulagens?</b> Duas regulagens de colchete por dentro e mais o zíper por fora, na frente.</p><p style="margin-top:10px"><b>Marca na roupa?</b> Não marca por baixo da roupa.</p><p style="margin-top:10px"><b>Machuca?</b> Não, no tamanho certo. É cinta no tamanho errado que machuca, por isso a Paola confere o seu antes de enviar. Comece pela regulagem mais folgada, com poucas horas por dia, e aumente aos poucos.</p></div></details>` : ''}
           ${usaTam ? `<details><summary>Tabela de medidas</summary><div class="conteudo">${tabelaHTML()}<p style="margin-top:10px">A cinta estica, então o que vale é o número da calça ou short, não a medida em centímetros.</p></div></details>` : ''}
-          <details><summary>Entrega e pagamento</summary><div class="conteudo">Enviamos de ${esc(LOJA.cidade)} para todo o Brasil. Pix com ${pctPix()} de desconto ou ${textoCartao()}. ${freteLigado() ? `O frete e o prazo saem pelo seu CEP, em "Frete e prazo".${Number.isFinite(LOJA.freteGratis) ? ` Frete grátis acima de ${brlLimpo(LOJA.freteGratis)}.` : ''}` : 'O prazo de entrega a Paola confirma no WhatsApp.'} Pode desistir em até 7 dias do recebimento: veja <a href="trocas.html">Trocas e devoluções</a>.</div></details>
+          <details><summary>Entrega e pagamento</summary><div class="conteudo">Enviamos de ${esc(LOJA.cidade)} para todo o Brasil. Pix com ${pctPix()} de desconto ou ${textoCartao()}. ${textoPostagem() ? `${textoPostagem()} ` : ''}${freteLigado() ? `O frete e o prazo saem pelo seu CEP, em "Frete e prazo".${Number.isFinite(LOJA.freteGratis) ? ` Frete grátis acima de ${brlLimpo(LOJA.freteGratis)}.` : ''}` : 'O prazo de entrega a Paola confirma no WhatsApp.'} Pode desistir em até 7 dias do recebimento: veja <a href="trocas.html">Trocas e devoluções</a>.</div></details>
         </div>
       </div>
     </div>`;

@@ -2759,6 +2759,7 @@ function secaoFrete(l) {
       <p class="pn-texto">A cliente digita o CEP no produto, no carrinho ou ao finalizar, e o site mostra o frete e o prazo. Não precisa de cadastro nos Correios: o valor sai desta tabela, pela distância entre o seu estado e o dela. O frete entra no total e é cobrado junto com o pedido. Acima de "Frete grátis acima de", ela não paga frete.</p>
       ${chave('Calcular o frete pelo CEP', 'freteLigado', f.ligado, { ajuda: 'Só liga com todas as faixas preenchidas. Desligado, a loja segue como antes, sem cobrar frete.' })}
       ${campo('CEP de onde os pedidos saem', 'freteCep', f.cepOrigem ? `${f.cepOrigem.slice(0, 5)}-${f.cepOrigem.slice(5)}` : '', { attrs: 'inputmode="numeric" placeholder="00000-000" maxlength="9"' })}
+      ${campo('Prazo para postar (dias úteis depois do pagamento)', 'prazoPostagem', Number.isInteger(l.prazoPostagem) ? l.prazoPostagem : '', { tipo: 'number', attrs: 'inputmode="numeric" min="0" max="15" placeholder="Ex.: 2"', ajuda: 'Aparece para a cliente e soma no prazo de entrega: "chega em até X dias úteis depois do pagamento". Vazio: o site mostra o prazo só depois da postagem.' })}
       <p class="pn-nota">Como preencher: no <a href="https://www2.correios.com.br/sistemas/precosPrazos/" target="_blank" rel="noopener">simulador de preços e prazos dos Correios</a>, simule do seu CEP para um CEP de cada faixa, com o peso e a caixa que você usa. Use o valor e o prazo que aparecem. O prazo conta a partir da postagem.</p>
       <div id="faixas-frete">${f.faixas.map((fx, i) => linhaFaixa(fx, i, estados[i], origem)).join('')}</div>
     </section>`;
@@ -2920,6 +2921,9 @@ function abaLoja(alvo) {
     if (pixPct === null || Number.isNaN(pixPct) || pixPct > 50) return falhar('O desconto no Pix precisa ficar entre 0 e 50%.');
     const lidoFrete = lerSecaoFrete(form);
     if (lidoFrete.erro) return falhar(lidoFrete.erro);
+    const postagemTxt = el.prazoPostagem.value.trim();
+    const prazoPostagem = postagemTxt === '' ? null : Number(postagemTxt);
+    if (prazoPostagem !== null && (!Number.isInteger(prazoPostagem) || prazoPostagem < 0 || prazoPostagem > 15)) return falhar('O prazo para postar precisa ser um número de dias úteis, de 0 a 15.');
     if (!Number.isInteger(parcelas) || parcelas < 1 || parcelas > 24) return falhar('As parcelas precisam ficar entre 1 e 24.');
     const parcelasMax = Number(el.parcelasMax.value);
     if (!Number.isInteger(parcelasMax) || parcelasMax < parcelas || parcelasMax > 24) return falhar('O máximo de parcelas precisa ser igual ou maior que as parcelas sem juros, até 24.');
@@ -2954,6 +2958,7 @@ function abaLoja(alvo) {
       cidade: el.cidade.value.trim(),
       freteGratis: frete,
       frete: lidoFrete.frete,
+      prazoPostagem,
       pix: pixPct / 100,
       parcelas,
       parcelasMax,
