@@ -225,7 +225,8 @@ const Nuvem = (() => {
     s.onerror = () => erro(new Error('Não deu para carregar a conexão com o banco. Confira a internet.'));
     document.head.append(s);
   });
-  const paginaAtual = () => location.origin + location.pathname;
+  // Sempre admin.html, mesmo aberto por /admin ou /painel: é o endereço liberado no Supabase para os links de e-mail
+  const paginaAtual = () => new URL('admin.html', location.href).href;
   const linha = (x, tipo, ordem) => ({ id: x.id, tipo, preco: x.preco ?? null, ativo: x.ativo !== false, ordem, dados: x });
 
   return {
@@ -736,7 +737,7 @@ function comoInstalar() {
       : [
         'No Chrome ou no Edge, clique no ícone de instalar, no canto direito da barra de endereço.',
         'Se não aparecer, abra o menu de três pontinhos e procure <b>Instalar</b> (no Chrome, em Transmitir, salvar e compartilhar).',
-        'Para o celular, abra paolacorpusfit.com.br/admin.html nele e toque em Baixar o painel como app.',
+        'Para o celular, abra paolacorpusfit.com.br/admin nele e toque em Baixar o painel como app.',
       ];
   $('.pn-dialogo')?.close();
   const d = document.createElement('dialog');

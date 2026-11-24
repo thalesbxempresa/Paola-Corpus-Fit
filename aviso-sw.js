@@ -4,7 +4,7 @@ self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 
 const paineisAbertos = async () => (await self.clients.matchAll({ type: 'window', includeUncontrolled: true }))
-  .filter((c) => new URL(c.url).pathname.endsWith('/admin.html'));
+  .filter((c) => /\/(admin(\.html)?|painel)$/.test(new URL(c.url).pathname));
 
 self.addEventListener('push', (e) => {
   e.waitUntil((async () => {
