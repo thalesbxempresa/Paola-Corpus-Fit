@@ -147,6 +147,20 @@ const KITS = [
     frase: 'Cinta de 30, 2 sutiãs, gel e creme, com frete grátis.',
     desc: 'Tudo para usar a cinta todo dia: a cinta de 30 barbatanas, 2 sutiãs reforçados (ninguém merece ter um sutiã só), o gel termoativo e o creme de massagem. E chega com frete grátis.',
   },
+  // Lançado em 27/11/2026 (arte "Combão dos Sonhos" da Paola)
+  {
+    id: 'combo-4',
+    nome: 'Combão dos Sonhos',
+    sub: 'Leve 4 produtos',
+    cat: 'kits',
+    selo: 'Lançamento',
+    img: 'img/combao-sonhos.webp',
+    itens: ['cinta-ziper-30', 'sutia-reforcado', 'gel-pimenta', 'creme-pimenta'],
+    de: 989.99,
+    preco: 449.99,
+    frase: 'Cinta de 30, sutiã, gel e creme, com frete grátis.',
+    desc: '4 produtos para realçar sua beleza e confiança: a cinta de zíper com 30 barbatanas, o sutiã reforçado, o gel termoativo e o creme para massagem. E chega com frete grátis.',
+  },
   {
     id: 'combo-duplo',
     nome: 'Combo Duplo',

@@ -201,6 +201,7 @@ const SOBE = {
   'cinta-ziper-20': ['cinta-ziper-30', 'Mesma cinta, com 10 barbatanas a mais', 'Mais firmeza'],
   'cinta-ziper-30': ['combo-duplo', 'Leve também o gel ou o sutiã'],
   'combo-duplo': ['combo-5', 'Leve o kit completo, com 5 produtos'],
+  'combo-4': ['combo-5', 'Leve o kit completo, com 2 sutiãs'],
 };
 
 // ---------------- Ícones ----------------
