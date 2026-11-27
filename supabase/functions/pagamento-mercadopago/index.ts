@@ -85,8 +85,11 @@ function cobranca(p: Record<string, any>, cfg: Config) {
   const total = Number(p.total);
   const valor = Number(p.valor ?? p.total);
   const comPix = arredondar(total * (1 - cfg.pix));
-  const padrao = valor === total || (p.pagamento === 'Pix' && Math.abs(valor - comPix) < 0.01);
-  return padrao ? { cartao: total, pix: comPix } : { cartao: valor, pix: valor };
+  // O banco arredonda o Pix em centavos exatos (meio centavo sobe); aqui a conta é com número quebrado e pode dar 1 centavo a menos.
+  // Até 1 centavo de diferença ainda é o valor de sempre: o Pix sai pelo valor do banco e o cartão, pelo total
+  const pixDoBanco = p.pagamento === 'Pix' && Math.abs(valor - comPix) < 0.015;
+  const padrao = valor === total || pixDoBanco;
+  return padrao ? { cartao: total, pix: pixDoBanco ? valor : comPix } : { cartao: valor, pix: valor };
 }
 const resumoItens = (p: Record<string, any>) => (p.itens ?? [])
   .map((x: any) => `${x.qtd || 1}x ${x.nome}${x.tam ? ` (${x.tam})` : ''}`).join(', ');
