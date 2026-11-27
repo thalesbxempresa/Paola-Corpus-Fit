@@ -110,6 +110,58 @@ function guardarCepFrete(cep) {
     avisarFrete();
   }).catch(() => { /* sem internet: segue com o estado */ });
 }
+// ---------------- Cupom de parceira ----------------
+// Vem do link da parceira (?cupom=NOME) ou é digitado no carrinho. Fica guardado neste aparelho por 30 dias.
+// O desconto é a mesma conta do banco (registrar_pedido): % sobre os produtos, sem o frete, arredondado em centavos
+const CUPOM = 'pcf-cupom';
+const cupomAtual = () => {
+  const c = lerJSON(CUPOM, null);
+  if (!Catalogo.ligado || !c || !c.cupom || !Number.isInteger(c.desconto) || Date.now() - (c.em || 0) > 30 * 864e5) return null;
+  return c;
+};
+const descontoCupom = (produtos, c = cupomAtual()) => (c && c.desconto > 0 ? Math.round((Math.round(produtos * 100) * c.desconto) / 100) / 100 : 0);
+async function aplicarCupom(codigo, silencioso = false) {
+  const r = await Catalogo.validarCupom(codigo);
+  if (!r.ok) {
+    if (!silencioso) toast('Esse cupom não existe ou não está ativo.');
+    return false;
+  }
+  gravarJSON(CUPOM, { cupom: r.cupom, desconto: r.desconto, parceira: r.parceira, em: Date.now() });
+  desenharSacola();
+  if (!silencioso) toast(r.desconto > 0 ? `Cupom ${r.cupom} aplicado: ${r.desconto}% de desconto no carrinho` : `Cupom ${r.cupom} aplicado`);
+  return true;
+}
+function tirarCupom() {
+  try { localStorage.removeItem(CUPOM); } catch (e) { /* ok */ }
+  desenharSacola();
+}
+// Link de divulgação (paolacorpusfit.com.br/?cupom=NOME). Sem link: confere uma vez por visita se o cupom guardado ainda vale
+async function cupomDoLink() {
+  if (!Catalogo.ligado) return;
+  const busca = new URLSearchParams(location.search);
+  const codigo = busca.get('cupom');
+  if (codigo) {
+    busca.delete('cupom');
+    history.replaceState(null, '', `${location.pathname}${busca.toString() ? `?${busca}` : ''}${location.hash}`);
+    await aplicarCupom(codigo).catch(() => {});
+    return;
+  }
+  const c = cupomAtual();
+  try {
+    if (!c || sessionStorage.getItem('pcf-cupom-ok')) return;
+    sessionStorage.setItem('pcf-cupom-ok', '1');
+  } catch (e) { /* ok */ }
+  const r = await Catalogo.validarCupom(c.cupom).catch(() => null);
+  if (!r) return;
+  if (!r.ok) {
+    tirarCupom();
+    toast(`O cupom ${c.cupom} não está mais ativo.`);
+  } else if (r.desconto !== c.desconto) {
+    gravarJSON(CUPOM, { ...c, desconto: r.desconto });
+    desenharSacola();
+  }
+}
+
 // "R$ 29,80 de frete para Macaé/RJ · chega em até 6 dias úteis depois da postagem"
 function freteResultadoHTML(c, produtos) {
   if (!c.cep) return '';
@@ -538,7 +590,11 @@ function desenharSacola() {
   }
 
   const sub = subtotal(s);
-  const falta = Math.max(0, LOJA.freteGratis - sub);
+  // Cupom de parceira: desconto nos produtos; o frete grátis e o frete contam com os produtos já com desconto
+  const cupom = cupomAtual();
+  const desconto = descontoCupom(sub, cupom);
+  const produtos = somaCentavos(sub, -desconto);
+  const falta = Math.max(0, LOJA.freteGratis - produtos);
   // Sugestão: subir um degrau (cinta 20 → 30 → combo duplo → combo de 5)
   const base = s.find((x) => SOBE[x.id] && item(SOBE[x.id][0]).preco > item(x.id).preco && !s.some((y) => y.id === SOBE[x.id][0]) && !calcaEsgotada(item(SOBE[x.id][0]), x.calca));
   const [paraId, chamada, rotulo] = base ? SOBE[base.id] : [];
@@ -546,7 +602,7 @@ function desenharSacola() {
   const algumaEsgotada = s.some(linhaEsgotada);
 
   corpo.innerHTML = `
-    <div class="frete">${falta > 0 ? `Faltam <b>${brl(falta)}</b> para o frete grátis` : '🎉 Você ganhou frete grátis'}<div class="trilho"><i style="width:${Math.min(100, (sub / LOJA.freteGratis) * 100)}%"></i></div></div>
+    <div class="frete">${falta > 0 ? `Faltam <b>${brl(falta)}</b> para o frete grátis` : '🎉 Você ganhou frete grátis'}<div class="trilho"><i style="width:${Math.min(100, (produtos / LOJA.freteGratis) * 100)}%"></i></div></div>
     ${s.map((x) => {
       const it = item(x.id);
       return `<div class="item-sacola" data-chave="${x.chave}">
@@ -562,15 +618,22 @@ function desenharSacola() {
 
   // Frete pelo CEP guardado neste aparelho. Sem CEP ainda, o total fica só com os produtos e a caixa pede o CEP
   const cepFrete = lerCepFrete();
-  const fr = freteLigado() && cepFrete.cep && !cepFrete.invalido ? freteDe(cepFrete.cep, sub) : null;
+  const fr = freteLigado() && cepFrete.cep && !cepFrete.invalido ? freteDe(cepFrete.cep, produtos) : null;
   const frete = fr && !fr.erro ? fr.valor : 0;
-  const total = somaCentavos(sub, frete);
+  const total = somaCentavos(produtos, frete);
+  const linhaCupom = !temConta() ? ''
+    : cupom
+      ? `<div class="cupom-linha"><span>Cupom ${esc(cupom.cupom)}<small>${cupom.desconto}% de desconto · <button class="link-tam" type="button" data-tirar-cupom>remover</button></small></span><b>${desconto > 0 ? `−${brl(desconto)}` : ''}</b></div>`
+      : `<details class="cupom-abrir"><summary>Tem cupom de desconto?</summary><form class="cupom-form" data-cupom-form novalidate>
+          <input name="cupom" placeholder="Digite o cupom" maxlength="20" autocapitalize="characters" autocomplete="off" spellcheck="false" aria-label="Cupom de desconto">
+          <button class="btn btn-claro" type="submit">Aplicar</button></form></details>`;
   const linhaFrete = !freteLigado() ? ''
     : fr && !fr.erro && !trocandoCep
       ? `<div class="frete-linha"><span>Frete<small>${esc(lugarCep(cepFrete))} · <button class="link-tam" type="button" data-trocar-cep>trocar CEP</button></small><small>${textoPrazo(fr.dias)}</small></span><b>${fr.gratis ? '<span class="fc-gratis">Grátis</span>' : brl(fr.valor)}</b></div>`
       : freteCaixaHTML('fc-sacola', cepFrete.cep);
   pe.hidden = false;
   pe.innerHTML = `
+    ${linhaCupom}
     ${linhaFrete}
     <div class="total-linha"><span>Total</span><span>${brl(total)}</span></div>
     <div class="total-pix">ou ${brl(pix(total))} no Pix · ${LOJA.parcelas}x de ${brl(parcela(total))}</div>
@@ -594,13 +657,24 @@ function desenharSacola() {
 
   const caixaFrete = $('[data-frete-form]', pe);
   if (caixaFrete) {
-    $('[data-frete-res]', caixaFrete).innerHTML = freteResultadoHTML(cepFrete, sub);
+    $('[data-frete-res]', caixaFrete).innerHTML = freteResultadoHTML(cepFrete, produtos);
     ligarFreteCaixa(caixaFrete, () => { trocandoCep = false; desenharSacola(); });
   }
   $('[data-trocar-cep]', pe)?.addEventListener('click', () => {
     trocandoCep = true;
     desenharSacola();
     $('#fc-sacola')?.select();
+  });
+  $('[data-tirar-cupom]', pe)?.addEventListener('click', tirarCupom);
+  $('[data-cupom-form]', pe)?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const campo = e.currentTarget.cupom;
+    const codigo = campo.value.trim();
+    if (!codigo) return campo.focus();
+    const botao = $('button', e.currentTarget);
+    botao.disabled = true;
+    const ok = await aplicarCupom(codigo).catch(() => { toast('Não deu para conferir o cupom agora. Tente de novo.'); return null; });
+    if (!ok) { botao.disabled = false; campo.select(); }
   });
 }
 let trocandoCep = false;
@@ -626,10 +700,13 @@ function registrarPedido(s, dados) {
   // Nome, tamanho e preço ficam guardados como estavam: o pedido não muda se o produto mudar depois
   const itens = s.map((x) => ({ ...x, nome: nomeLinha(x), tam: tamanhoPorCalca(x.calca)?.t || null, preco: item(x.id).preco }));
   // O frete vai somado no total. O banco refaz a conta pela tabela dele e, se não bater, o pedido fica para conferir
-  const produtos = subtotal(s);
+  const bruto = subtotal(s);
+  const cupom = cupomAtual();
+  const desconto = descontoCupom(bruto, cupom);
+  const produtos = somaCentavos(bruto, -desconto);
   const fr = freteDe(dados.cep, produtos);
   const frete = fr && !fr.erro ? fr.valor : 0;
-  const pedido = { ...dados, id, numero, data: agora.toISOString(), itens, frete, total: somaCentavos(produtos, frete) };
+  const pedido = { ...dados, id, numero, data: agora.toISOString(), itens, cupom: cupom ? cupom.cupom : null, desconto, frete, total: somaCentavos(produtos, frete) };
   gravarJSON('pcf-pedidos', [pedido, ...lerPedidos()].slice(0, 10));
   Catalogo.enviarPedido(pedido);
   return pedido;
@@ -638,7 +715,7 @@ function registrarPedido(s, dados) {
 // Mensagem no formato que a Paola lê de uma vez (negrito do WhatsApp com *)
 function textoPedido(p) {
   const itens = p.itens.map((x) => `• ${x.qtd}x ${x.nome || nomeLinha(x)}${x.calca ? `\n   Tamanho ${x.tam || tamanhoPorCalca(x.calca)?.t} (veste calça ${x.calca})` : ''}`).join('\n');
-  const frete = typeof p.frete === 'number' && (p.frete > 0 || freteLigado()) ? `\n*Frete:* ${p.frete > 0 ? brl(p.frete) : 'grátis'}` : '';
+  const frete = `${p.cupom && p.desconto > 0 ? `\n*Cupom ${p.cupom}:* −${brl(p.desconto)}` : ''}${typeof p.frete === 'number' && (p.frete > 0 || freteLigado()) ? `\n*Frete:* ${p.frete > 0 ? brl(p.frete) : 'grátis'}` : ''}`;
   return `*Pedido ${p.numero}*\nOi, Paola! Quero finalizar este pedido:\n\n${itens}\n${frete}\n*Total:* ${brl(p.total)} (${brl(pix(p.total))} no Pix)\n\n*Meus dados*\nNome: ${p.nome}\nPagamento: ${p.pagamento}\n\n*Entrega*\n${p.rua ? `${p.rua}, ${p.num}${p.complemento ? ` - ${p.complemento}` : ''}\n${p.bairro} - ${p.cidade}/${p.uf}\n` : ''}CEP: ${p.cep}\n\nPode me mandar o link de pagamento? Se precisar, te mando uma foto de frente para confirmar o tamanho.${Catalogo.ligado && p.id ? `\n\nAcompanhar meu pedido: ${linkAcompanhar(p.id)}` : ''}`;
 }
 
@@ -689,6 +766,7 @@ function finalizar() {
       <div class="campo"><span class="rotulo">Como prefere pagar?</span>
         <div class="tamanhos" role="radiogroup" aria-label="Forma de pagamento">${['Pix', 'Cartão'].map((f) => `<button class="chip" type="button" role="radio" data-pag="${f}" aria-checked="${f === pagamento}">${f === 'Pix' ? `Pix (${pctPix()} off)` : `Cartão em até ${parcelasMax()}x`}</button>`).join('')}</div>
       </div>
+      ${cupomAtual() && descontoCupom(subtotal(s)) > 0 ? `<div class="ck-frete ck-cupom"><span>Cupom ${esc(cupomAtual().cupom)}<small>${cupomAtual().desconto}% de desconto nos produtos</small></span><b>−${brl(descontoCupom(subtotal(s)))}</b></div>` : ''}
       <div class="ck-frete" data-ck-frete hidden></div>
       <div class="ck-total"><span>Total do pedido</span><b data-ck-total>${brl(subtotal(s))}</b></div>
       ${Catalogo.conta.atual() ? `<p class="dica-tam conta-nota">${I.pessoa}<span>Este pedido fica guardado na sua conta${Catalogo.conta.atual().email ? ` (${esc(Catalogo.conta.atual().email)})` : ''}.</span></p>` : ''}
@@ -700,7 +778,7 @@ function finalizar() {
   const CAMPOS = ['nome', 'telefone', 'cep', 'rua', 'num', 'complemento', 'bairro', 'cidade', 'uf'];
   CAMPOS.forEach((c) => { form[c].value = cliente[c] || ''; });
   // Frete e total pelo CEP de entrega digitado aqui (é o mesmo que vai para o pedido)
-  const produtos = subtotal(s);
+  const produtos = somaCentavos(subtotal(s), -descontoCupom(subtotal(s)));
   const atualizarTotal = () => {
     const fr = freteDe(form.cep.value, produtos);
     const caixa = $('[data-ck-frete]', m);
@@ -1727,6 +1805,7 @@ function pedidoAcompanhadoHTML(p, volta = null) {
     <section class="acomp-resumo">
       <h2>Seu pedido</h2>
       <ul>${(p.itens || []).map((x) => `<li>${esc(x.qtd || 1)}x ${esc(x.nome)}${x.tam ? `<small>Tamanho ${esc(x.tam)}</small>` : ''}</li>`).join('')}</ul>
+      ${Number(p.desconto_cupom) > 0 ? `<div class="acomp-frete"><span>Desconto do cupom${p.cupom ? ` ${esc(p.cupom)}` : ''}</span><span>−${brl(Number(p.desconto_cupom))}</span></div>` : ''}
       ${Number(p.frete) > 0 ? `<div class="acomp-frete"><span>Frete</span><span>${brl(Number(p.frete))}</span></div>` : ''}
       <div class="acomp-total"><span>${p.pago && p.valor != null ? 'Total pago' : 'Total'}</span><b>${brl(Number(p.pago && p.valor != null ? p.valor : p.total))}</b></div>
       ${p.cidade ? `<p class="dica-tam">Entrega em ${esc(p.cidade)}/${esc(p.uf)}</p>` : ''}
@@ -1948,10 +2027,11 @@ Catalogo.pronto.then(() => {
   montarTopo();
   montarRodape();
   preencherValores();
-  ({ inicio: telaInicio, loja: telaLoja, produto: telaProduto, praia: telaPraia, acompanhar: telaAcompanhar, conta: telaConta, pagamento: window.telaPagamento, texto: telaTexto })[document.body.dataset.pagina]?.();
+  ({ inicio: telaInicio, loja: telaLoja, produto: telaProduto, praia: telaPraia, acompanhar: telaAcompanhar, conta: telaConta, pagamento: window.telaPagamento, texto: telaTexto, parceira: window.telaParceira })[document.body.dataset.pagina]?.();
   ligarMovimento();
   // Quem veio acompanhar ou pagar um pedido já comprou: não conta como visita no funil de vendas
-  if (!['acompanhar', 'pagamento', 'conta'].includes(document.body.dataset.pagina)) Catalogo.evento('visita');
+  if (!['acompanhar', 'pagamento', 'conta', 'parceira'].includes(document.body.dataset.pagina)) Catalogo.evento('visita');
+  if (document.body.dataset.pagina !== 'parceira') cupomDoLink();
   // Pedido feito neste aparelho que ainda não entrou na conta (a página de Minha conta já faz isso sozinha)
   if (document.body.dataset.pagina !== 'conta') ligarPedidosDaConta();
   // Sacola de outro aparelho da mesma conta

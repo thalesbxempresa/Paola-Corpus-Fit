@@ -23,6 +23,8 @@ const I = {
   produtos: svg('<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="8" cy="8" r="1.4"/>'),
   loja: svg('<path d="M4 10v10h16V10M3 10l2-6h14l2 6M3 10a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0M10 20v-5h4v5"/>'),
   sair: svg('<path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 8l-4 4 4 4M6 12h10"/>'),
+  parceiras: svg('<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19.5a5.5 5.5 0 0 1 11 0"/><circle cx="17" cy="9" r="2.4"/><path d="M15.5 14.2a4.5 4.5 0 0 1 5 4.3"/>'),
+  copiar: svg('<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5.5A1.5 1.5 0 0 0 14.5 4h-9A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8"/>'),
   voltar: svg('<path d="M19 12H5M11 6l-6 6 6 6"/>'),
   cima: svg('<path d="M12 19V5M6 11l6-6 6 6"/>'),
   baixo: svg('<path d="M12 5v14M6 13l6 6 6-6"/>'),
@@ -162,6 +164,13 @@ const Local = {
   async criarLinkPagamento() { throw new Error('conecte o Supabase primeiro'); },
   async cancelarCobranca() { return { cancelada: false }; },
   async linkSenhaCliente() { throw new Error('conecte o Supabase primeiro'); },
+  async parceiras() { throw new Error('o programa de parceiras precisa do banco conectado'); },
+  async parceiraVendas() { return []; },
+  async salvarParceira() { throw new Error('conecte o Supabase primeiro'); },
+  async linkParceira() { throw new Error('conecte o Supabase primeiro'); },
+  async pagarParceira() { throw new Error('conecte o Supabase primeiro'); },
+  async desfazerPagamentoParceira() { throw new Error('conecte o Supabase primeiro'); },
+  async excluirParceira() { throw new Error('conecte o Supabase primeiro'); },
   // Sem banco, o estoque fica no catálogo salvo neste navegador
   async lerEstoque() { return JSON.parse(JSON.stringify(estado.catalogo?.estoque?.itens || {})); },
   async salvarEstoque(id, tam, qtd) {
@@ -305,6 +314,14 @@ const Nuvem = (() => {
     },
     // A cliente esqueceu a senha da conta dela na loja: o banco devolve o código do link de senha nova
     async linkSenhaCliente(email) { return checar(await sb.rpc('cliente_link_senha', { p_email: email })); },
+    // Programa de parceiras: tudo passa por funções do banco que conferem se é administrador
+    async parceiras() { return checar(await sb.rpc('admin_parceiras')); },
+    async parceiraVendas(id) { return checar(await sb.rpc('admin_parceira_vendas', { p_parceira: id })); },
+    async salvarParceira(dados) { return checar(await sb.rpc('admin_parceira_salvar', { p: dados })); },
+    async linkParceira(id) { return checar(await sb.rpc('admin_parceira_link', { p_parceira: id })); },
+    async pagarParceira(id, referencia, observacao) { return checar(await sb.rpc('admin_parceira_pagar', { p_parceira: id, p_referencia: referencia, p_observacao: observacao })); },
+    async desfazerPagamentoParceira(id) { return checar(await sb.rpc('admin_parceira_desfazer', { p_pagamento: id })); },
+    async excluirParceira(id) { return checar(await sb.rpc('admin_parceira_excluir', { p_parceira: id })); },
     async eventos() { return checar(await sb.from('eventos_dia').select('*').limit(4000)); },
     async lerBanco() {
       const itens = checar(await sb.from('itens').select('*').order('id'));
@@ -491,6 +508,7 @@ const ABAS = {
   resumo: { nome: 'Início', ico: I.resumo, abrir: abaResumo },
   pedidos: { nome: 'Pedidos', ico: I.pedidos, abrir: abaPedidos },
   produtos: { nome: 'Produtos', ico: I.produtos, abrir: abaProdutos },
+  parceiras: { nome: 'Parceiras', ico: I.parceiras, abrir: abaParceiras },
   loja: { nome: 'Loja', ico: I.loja, abrir: abaLoja },
 };
 
@@ -521,7 +539,9 @@ function montarPainel() {
   }));
   // Evita perder o que foi digitado no produto ao trocar de aba
   $('.pn-nav').addEventListener('click', (e) => {
-    if (e.target.closest('a[href^="#"]') && estado.editor?.sujo && !confirm('Sair sem salvar as alterações deste produto?')) e.preventDefault();
+    const link = e.target.closest('a[href^="#"]');
+    if (link && estado.editor?.sujo && !confirm('Sair sem salvar as alterações deste produto?')) { e.preventDefault(); return; }
+    if (link && link.getAttribute('href') === '#parceiras' && location.hash === '#parceiras') { estado.parceiraAberta = null; abrirAba(); }
   });
   abrirAba();
   iniciarVigiaDePedidos();
@@ -532,6 +552,7 @@ function abrirAba() {
   if (!$('#aba')) return;
   const pedido = location.hash.slice(1);
   const id = ABAS[pedido] ? pedido : 'resumo';
+  if (id !== 'parceiras') estado.parceiraAberta = null;
   estado.editor = null;
   estado.novoAberto = false;
   $$('.pn-nav a[href^="#"]').forEach((a) => {
@@ -1420,7 +1441,7 @@ function cartaoPedido(p, aberto = false) {
       <div class="pn-ped-l1"><b>${esc(p.numero)}</b>${etiquetaStatus(p.status)}${selo ? `<span class="pn-st pn-st-${selo[1]}">${selo[1] === 'alerta' ? I.alerta : ''}${selo[0]}</span>` : ''}</div>
       <div class="pn-ped-l2"><span>${esc(p.nome)}</span><b>${brl(valorDe(p))}</b></div>
       <div class="pn-ped-itens-resumo">${(p.itens || []).map((x) => `<span>${esc(itemCurto(x))}</span>`).join('')}</div>
-      <div class="pn-ped-l3">${dataHora(p.data)}${p.origem === 'manual' ? ' · Venda fora do site' : ''}${tempoNaEtapa(p)}</div>
+      <div class="pn-ped-l3">${dataHora(p.data)}${p.origem === 'manual' ? ' · Venda fora do site' : ''}${p.cupom ? ` · Cupom ${esc(p.cupom)}` : ''}${tempoNaEtapa(p)}</div>
     </summary>
     <div class="pn-ped-corpo">
       ${pendenciaHTML(p)}
@@ -1445,7 +1466,7 @@ function cartaoPedido(p, aberto = false) {
       <div><h3>Itens</h3><ul class="pn-ped-itens">${(p.itens || []).map((x) => {
         const tam = tamanhoDoItem(x);
         return `<li><span>${x.qtd || 1}x ${esc(nomeDoItem(x))}${x.extra ? ` + ${esc(nomeDoItem({ id: x.extra }))}` : ''}${tam ? `<small>Tamanho ${esc(tam)}${x.calca ? ` · veste calça ${esc(x.calca)}` : ''}</small>` : ''}</span>${x.preco != null ? `<b>${brl(x.preco * (x.qtd || 1))}</b>` : ''}</li>`;
-      }).join('')}${Number(p.frete) > 0 ? `<li><span>Frete${p.uf ? `<small>Para ${esc(p.uf)}, já somado no valor</small>` : ''}</span><b>${brl(Number(p.frete))}</b></li>` : ''}</ul></div>
+      }).join('')}${p.cupom ? `<li><span>Cupom ${esc(p.cupom)}<small>${num(p.cupom_pct)}% de desconto · comissão da parceira: ${brl(p.comissao)}</small></span><b>−${brl(p.desconto_cupom)}</b></li>` : ''}${Number(p.frete) > 0 ? `<li><span>Frete${p.uf ? `<small>Para ${esc(p.uf)}, já somado no valor</small>` : ''}</span><b>${brl(Number(p.frete))}</b></li>` : ''}</ul></div>
       <div><h3>Entrega</h3><p class="pn-endereco">${esc(enderecoDe(p)) || 'Sem endereço no pedido'}</p>
         <div class="pn-acoes-linha">${enderecoDe(p) ? `<button class="pn-link" type="button" data-copiar>Copiar endereço</button>${semEtiqueta ? '' : `<button class="pn-link" type="button" data-imprimir>${I.imprimir}Imprimir etiqueta</button>`}` : ''}</div>
       </div>
@@ -1837,7 +1858,7 @@ function abrirNovoPedido(alvo, existente = null) {
           ? `<p class="pn-pago-online">${I.ok}<span>Pago pelo site: ${brl(valorDe(existente))}. O valor pago não muda aqui.</span></p>
              <p class="pn-nota" data-diferenca hidden></p>`
           : `${seletor('Forma de pagamento', 'pagamento', np.pagamento, [['Pix', 'Pix'], ['Cartão', 'Cartão'], ['Dinheiro', 'Dinheiro']])}
-             ${campo('Valor a cobrar', 'valor', existente ? precoTxt(valorDe(existente)) : '', { attrs: 'inputmode="decimal"', ajuda: existente ? `Se trocar os itens, o valor é refeito pelos preços da loja${freteDoPedido ? `, com os ${brl(freteDoPedido)} de frete do pedido` : ''}. Pode mudar à vontade.` : 'Calculado pelos preços da loja. Pode mudar à vontade.' })}
+             ${campo('Valor a cobrar', 'valor', existente ? precoTxt(valorDe(existente)) : '', { attrs: 'inputmode="decimal"', ajuda: existente ? `Se trocar os itens, o valor é refeito pelos preços da loja${freteDoPedido ? `, com os ${brl(freteDoPedido)} de frete do pedido` : ''}${existente?.cupom && Number(existente.cupom_pct) ? ` e o desconto de ${num(existente.cupom_pct)}% do cupom ${esc(existente.cupom)}` : ''}. Pode mudar à vontade.` : 'Calculado pelos preços da loja. Pode mudar à vontade.' })}
              ${existente ? '' : chave('Já está pago', 'pago', false, { ajuda: 'Marque se ela já pagou. O pedido entra como confirmado.' })}`}
       </section>
       <section class="pn-card"><h2>Entrega</h2>
@@ -1857,7 +1878,10 @@ function abrirNovoPedido(alvo, existente = null) {
   const form = $('#form-novo', alvo);
   const caixaItens = $('#np-itens', form);
   const somaItens =() => np.itens.reduce((t, x) => t + precoDe(x) * (Number(x.qtd) || 1), 0);
-  const comFrete = (soma) => Math.round((soma + freteDoPedido) * 100) / 100;
+  // Pedido com cupom de parceira: o desconto (mesma conta do banco) continua valendo quando as peças mudam
+  const cupomPct = existente?.cupom ? Number(existente.cupom_pct) || 0 : 0;
+  const descontoDoCupom = (soma) => (cupomPct > 0 ? Math.round((Math.round(soma * 100) * cupomPct) / 100) / 100 : 0);
+  const comFrete = (soma) => Math.round((soma - descontoDoCupom(soma) + freteDoPedido) * 100) / 100;
   const comPix = (soma, forma) => Math.round(soma * (1 - (forma === 'Pix' ? estado.catalogo.loja.pix : 0)) * 100) / 100;
   const sugerirValor = () => {
     const soma = comFrete(somaItens());
@@ -1969,7 +1993,7 @@ function abrirNovoPedido(alvo, existente = null) {
             return falhar('Esta cliente acabou de pagar o valor antigo. Volte para os pedidos e abra de novo antes de editar.');
           }
         }
-        await Banco.alterarPedido(existente.id, { ...dados, total: somaItens() ? comFrete(somaItens()) : existente.total, ...(jaPago ? {} : { pagamento: el.pagamento.value, valor }) });
+        await Banco.alterarPedido(existente.id, { ...dados, total: somaItens() ? comFrete(somaItens()) : existente.total, ...(cupomPct && somaItens() ? { desconto_cupom: descontoDoCupom(somaItens()) } : {}), ...(jaPago ? {} : { pagamento: el.pagamento.value, valor }) });
         estado.novoAberto = false;
         estado.abrirPedido = existente.id;
         await abaPedidos(alvo);
@@ -2734,6 +2758,346 @@ function ligarEditor(alvo) {
       botao.disabled = false;
     }
   });
+}
+
+// ---------------- Parceiras (cupons de influenciadoras) ----------------
+// A cliente ganha desconto com o cupom e a parceira ganha comissão. A conta (desconto, comissão, quando libera,
+// pagamento do mês) é toda do banco (seção Parcerias em schema.sql); aqui a Paola vê, aprova, edita e registra os pagamentos.
+const STATUS_PARCEIRA = { pendente: ['Para aprovar', 'novo'], ativa: ['Ativa', 'pago'], pausada: ['Pausada', 'info'], recusada: ['Recusada', 'cancelado'] };
+const etiquetaParceira = (s) => `<span class="pn-st pn-st-${(STATUS_PARCEIRA[s] || [])[1] || 'info'}">${esc((STATUS_PARCEIRA[s] || [s])[0])}</span>`;
+const SITUACAO_COMISSAO = {
+  aguardando: ['Aguardando pagamento', 'novo'], a_liberar: ['A liberar', 'enviado'], liberada: ['Liberada', 'pago'], paga: ['Paga', 'info'],
+  cancelada: ['Cancelada', 'cancelado'], estornar: ['Descontar', 'alerta'], estornada: ['Descontada', 'info'],
+};
+const etiquetaComissao = (s) => `<span class="pn-st pn-st-${(SITUACAO_COMISSAO[s] || [])[1] || 'info'}">${esc((SITUACAO_COMISSAO[s] || [s])[0])}</span>`;
+const ERROS_PARCEIRA = {
+  nome: 'Escreva o nome.', email: 'Confira o e-mail.', cupom: 'O cupom pode ter só letras e números, de 3 a 20, sem espaço.',
+  cupom_existe: 'Esse cupom já é de outra parceira.', existe: 'Esse e-mail já é de outra parceira.', sem_cupom: 'Para ativar, defina o cupom dela.',
+  pct: 'Desconto e comissão vão de 0 a 50%.', status: 'Situação inválida.', nao_achou: 'Parceira não encontrada.',
+};
+const urlSite = (caminho) => new URL(caminho, location.origin).href;
+const linkCadastroParceiras = () => urlSite('/parceira?cadastro=1');
+const linkCupomParceira = (cupom) => urlSite(`/?cupom=${encodeURIComponent(cupom || '')}`);
+const zapParaNumero = (tel, texto) => { const d = soNumeros(tel); return `https://wa.me/${d.length <= 11 ? `55${d}` : d}?text=${encodeURIComponent(texto)}`; };
+const zapCompartilhar = (texto) => `https://wa.me/?text=${encodeURIComponent(texto)}`;
+const diaDaData = (d) => new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+const mesReferencia = () => { const t = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }); return t.charAt(0).toUpperCase() + t.slice(1); };
+async function copiarTexto(texto, aviso) {
+  try { await navigator.clipboard.writeText(texto); toast(aviso); } catch (e) { toast('Não deu para copiar. Tente de novo.'); }
+}
+const brlSinal = (v) => (Number(v) < 0 ? `−${brl(-Number(v))}` : brl(v));
+
+async function abaParceiras(alvo) {
+  alvo.innerHTML = '<p class="pn-texto">Carregando as parceiras…</p>';
+  let dados;
+  try {
+    dados = await Banco.parceiras();
+  } catch (e) {
+    alvo.innerHTML = `<div class="pn-cab"><h1 class="pn-h1">Parceiras</h1></div><section class="pn-card"><p class="pn-texto">Não deu para carregar: ${esc(e.message)}</p><button class="btn btn-claro pn-btn-p" type="button" data-de-novo>Tentar de novo</button></section>`;
+    $('[data-de-novo]', alvo)?.addEventListener('click', () => abaParceiras(alvo));
+    return;
+  }
+  estado.parceirasDados = dados;
+  if (estado.parceiraAberta === 'nova') return editorParceira(alvo, null);
+  const aberta = estado.parceiraAberta && dados.parceiras.find((x) => x.id === estado.parceiraAberta);
+  if (aberta) return detalheParceira(alvo, aberta);
+  estado.parceiraAberta = null;
+  listaParceiras(alvo, dados);
+}
+const abrirParceira = (alvo, id) => { estado.parceiraAberta = id; scrollTo(0, 0); abaParceiras(alvo); };
+
+function listaParceiras(alvo, dados) {
+  const lista = dados.parceiras || [];
+  const cfg = dados.config || {};
+  const soma = (f) => lista.reduce((t, x) => t + Number(x.resumo?.[f] || 0), 0);
+  const aPagar = lista.reduce((t, x) => t + Math.max(0, Number(x.resumo?.comissao_disponivel || 0)), 0);
+  const quemAPagar = lista.filter((x) => Number(x.resumo?.comissao_disponivel || 0) > 0).length;
+  const pendentes = lista.filter((x) => x.status === 'pendente');
+  const outras = lista.filter((x) => x.status !== 'pendente');
+  const ativas = lista.filter((x) => x.status === 'ativa').length;
+  const prox = dados.proximo_pagamento ? diaDaData(dados.proximo_pagamento) : '—';
+  const textoConvite = `Oi! Quer ser parceira da Paola Corpus Fit? Você ganha um cupom de desconto para as suas seguidoras e comissão em cada venda. Faça seu cadastro aqui: ${linkCadastroParceiras()}`;
+
+  alvo.innerHTML = `
+    <div class="pn-cab"><h1 class="pn-h1">Parceiras</h1><button class="btn btn-preto pn-btn-p" type="button" data-nova-parceira>${I.mais}Adicionar parceira</button></div>
+    <p class="pn-nota pn-dica-lista">Cada parceira tem um cupom: a cliente ganha desconto e a parceira ganha comissão. Ela acompanha as vendas dela em ${esc(urlSite('/parceira').replace(/^https?:\/\//, ''))}.</p>
+    <div class="pn-kpis">
+      <div class="pn-card pn-kpi"><span class="pn-rotulo">Vendas com cupom</span><strong>${num(soma('vendas'))}</strong><small>${num(soma('vendas_mes'))} neste mês · ${num(soma('aguardando'))} aguardando pagamento</small></div>
+      <div class="pn-card pn-kpi"><span class="pn-rotulo">Vendido pelas parceiras</span><strong>${brl(soma('vendido'))}</strong><small>produtos com desconto, sem frete</small></div>
+      <div class="pn-card pn-kpi pn-kpi-pagar"><span class="pn-rotulo">A pagar agora</span><strong>${brl(aPagar)}</strong><small>${quemAPagar ? `${num(quemAPagar)} parceira${quemAPagar === 1 ? '' : 's'} · pagamento dia ${prox}` : `nada liberado · próximo dia ${prox}`}</small></div>
+      <div class="pn-card pn-kpi"><span class="pn-rotulo">A liberar</span><strong>${brl(soma('comissao_a_liberar'))}</strong><small>${num(cfg.diasLiberacao ?? 30)} dias depois do pagamento</small></div>
+      <div class="pn-card pn-kpi"><span class="pn-rotulo">Já pago às parceiras</span><strong>${brl(soma('comissao_recebida'))}</strong><small>${num((dados.pagamentos || []).length)} pagamento${(dados.pagamentos || []).length === 1 ? '' : 's'}</small></div>
+      <div class="pn-card pn-kpi"><span class="pn-rotulo">Parceiras ativas</span><strong>${num(ativas)}</strong><small>${pendentes.length ? `${num(pendentes.length)} para aprovar` : 'nenhum cadastro esperando'}</small></div>
+    </div>
+
+    ${pendentes.length ? `<section class="pn-card pn-pc-pendentes"><h2>Cadastros para aprovar</h2>
+      ${pendentes.map((x) => `<button class="pn-pc-linha" type="button" data-abrir-parceira="${esc(x.id)}">
+        <span><b>${esc(x.nome)}</b><small>${esc(x.redes || '')}${x.telefone ? ` · ${esc(telefoneBonito(x.telefone))}` : ''}</small><small>Cadastro em ${dataCurta(x.criado_em)}${x.cupom ? ` · quer o cupom ${esc(x.cupom)}` : ''}</small></span>
+        <span class="pn-pc-num">${etiquetaParceira(x.status)}<small>Ver e aprovar</small></span>
+      </button>`).join('')}
+    </section>` : ''}
+
+    <section class="pn-card"><h2>Todas as parceiras</h2>
+      ${outras.length ? outras.map((x) => {
+        const r = x.resumo || {};
+        const disp = Number(r.comissao_disponivel || 0);
+        return `<button class="pn-pc-linha" type="button" data-abrir-parceira="${esc(x.id)}">
+          <span><b>${esc(x.nome)} ${etiquetaParceira(x.status)}</b><small>Cupom ${esc(x.cupom || '—')} · ${x.desconto}% de desconto · ${x.comissao}% de comissão</small>
+            <small>${num(r.vendas)} venda${Number(r.vendas) === 1 ? '' : 's'} · ${brl(r.vendido)} vendido${Number(r.aguardando) ? ` · ${num(r.aguardando)} aguardando` : ''}</small></span>
+          <span class="pn-pc-num"><b class="${disp > 0 ? 'pn-pc-pagar' : ''}">${brlSinal(disp)}</b><small>a pagar · ${brl(r.comissao_a_liberar)} a liberar</small></span>
+        </button>`;
+      }).join('') : '<p class="pn-texto">Nenhuma parceira ainda. Adicione uma ou mande o link de cadastro.</p>'}
+    </section>
+
+    <section class="pn-card"><h2>Link de cadastro</h2>
+      <p class="pn-texto">Mande para quem você quer convidar. Ela preenche os dados, cria a senha e o cadastro aparece aqui para você aprovar.</p>
+      <p class="pn-pc-url">${esc(linkCadastroParceiras())}</p>
+      <div class="pn-acoes">
+        <button class="btn btn-claro pn-btn-p" type="button" data-copiar-cadastro>${I.copiar}Copiar link</button>
+        <a class="btn btn-claro pn-btn-p" href="${esc(zapCompartilhar(textoConvite))}" target="_blank" rel="noopener">${I.whats}Enviar no WhatsApp</a>
+      </div>
+      ${cfg.cadastroAberto === false ? '<p class="pn-nota">O cadastro pelo link está <b>fechado</b>. Abra nas regras, logo abaixo.</p>' : ''}
+    </section>
+
+    <section class="pn-card"><h2>Pagamentos registrados</h2>
+      ${(dados.pagamentos || []).length ? `<div class="pn-pc-pags">${dados.pagamentos.slice(0, 30).map((g) => `<div class="pn-pc-pag">
+          <span><b>${esc(g.nome)}</b><small>${dataHora(g.pago_em)}${g.referencia ? ` · ${esc(g.referencia)}` : ''} · ${num(g.pedidos)} venda${g.pedidos === 1 ? '' : 's'}</small></span>
+          <span class="pn-pc-num"><b>${brl(g.valor)}</b><button class="pn-link" type="button" data-desfazer="${esc(g.id)}" data-valor="${esc(g.valor)}" data-nome="${esc(g.nome)}">Desfazer</button></span>
+        </div>`).join('')}</div>` : '<p class="pn-texto">Nenhum pagamento registrado ainda.</p>'}
+    </section>
+
+    <form class="pn-card pn-form" id="form-regras-parceiras" novalidate><h2>Regras do programa</h2>
+      ${chave('Cadastro pelo link aberto', 'cadastroAberto', cfg.cadastroAberto !== false, { ajuda: 'Fechado, o link mostra que o cadastro está fechado. Você ainda pode adicionar parceiras aqui.' })}
+      <div class="pn-2">
+        ${campo('Comissão liberada depois de (dias)', 'diasLiberacao', cfg.diasLiberacao ?? 30, { tipo: 'number', attrs: 'inputmode="numeric" min="0" max="90"', ajuda: 'Conta do dia em que a cliente paga. Cubra o prazo de entrega e os 7 dias de arrependimento.' })}
+        ${campo('Dia do pagamento no mês', 'diaPagamento', cfg.diaPagamento ?? 10, { tipo: 'number', attrs: 'inputmode="numeric" min="1" max="28"', ajuda: 'De 1 a 28. Aparece para as parceiras.' })}
+      </div>
+      <div class="pn-2">
+        ${campo('Desconto padrão do cupom (%)', 'descontoPadrao', cfg.descontoPadrao ?? 10, { tipo: 'number', attrs: 'inputmode="numeric" min="0" max="50"', ajuda: 'Vale para quem se cadastra pelo link. Você muda para cada parceira.' })}
+        ${campo('Comissão padrão (%)', 'comissaoPadrao', cfg.comissaoPadrao ?? 10, { tipo: 'number', attrs: 'inputmode="numeric" min="0" max="50"', ajuda: 'Sobre os produtos com desconto, sem o frete.' })}
+      </div>
+      <p class="dica-tam erro" data-erro hidden></p>
+      <button class="btn btn-preto pn-btn-p" type="submit">Salvar regras</button>
+    </form>`;
+
+  $('[data-nova-parceira]', alvo).addEventListener('click', () => abrirParceira(alvo, 'nova'));
+  $$('[data-abrir-parceira]', alvo).forEach((b) => b.addEventListener('click', () => abrirParceira(alvo, b.dataset.abrirParceira)));
+  $('[data-copiar-cadastro]', alvo).addEventListener('click', () => copiarTexto(linkCadastroParceiras(), 'Link de cadastro copiado'));
+  $$('[data-desfazer]', alvo).forEach((b) => b.addEventListener('click', () => desfazerPagamento(alvo, b)));
+  const form = $('#form-regras-parceiras', alvo);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const el = form.elements;
+    const erro = $('[data-erro]', form);
+    const inteiro = (v, min, max) => { const n = Number(v); return Number.isInteger(n) && n >= min && n <= max ? n : null; };
+    const regras = {
+      cadastroAberto: el.cadastroAberto.checked,
+      diasLiberacao: inteiro(el.diasLiberacao.value, 0, 90),
+      diaPagamento: inteiro(el.diaPagamento.value, 1, 28),
+      descontoPadrao: inteiro(el.descontoPadrao.value, 0, 50),
+      comissaoPadrao: inteiro(el.comissaoPadrao.value, 0, 50),
+    };
+    const falta = Object.entries(regras).find(([, v]) => v === null);
+    if (falta) { erro.hidden = false; erro.textContent = 'Dias de 0 a 90, dia do pagamento de 1 a 28 e porcentagens de 0 a 50.'; return; }
+    erro.hidden = true;
+    estado.catalogo.loja = { ...estado.catalogo.loja, parcerias: regras };
+    if (await salvarCatalogo('Regras das parceiras salvas')) abaParceiras(alvo);
+  });
+}
+
+async function desfazerPagamento(alvo, botao) {
+  if (!confirm(`Desfazer o pagamento de ${brl(botao.dataset.valor)} para ${botao.dataset.nome}? As vendas voltam para "liberada". Use só se registrou por engano.`)) return;
+  botao.disabled = true;
+  try {
+    const r = await Banco.desfazerPagamentoParceira(botao.dataset.desfazer);
+    toast(r.ok ? 'Pagamento desfeito' : 'Esse pagamento não existe mais');
+    abaParceiras(alvo);
+  } catch (e) {
+    botao.disabled = false;
+    toast(`Não desfez: ${e.message}`);
+  }
+}
+
+function formParceiraHTML(x, cfg) {
+  const novo = !x;
+  const p = x || { status: 'ativa', desconto: cfg.descontoPadrao ?? 10, comissao: cfg.comissaoPadrao ?? 10 };
+  const status = p.status === 'pendente' ? 'ativa' : p.status;
+  return `<form class="pn-card pn-form" id="form-parceira" novalidate><h2>${novo ? 'Dados da parceira' : 'Dados e cupom'}</h2>
+    <div class="pn-2">${campo('Nome', 'nome', p.nome || '', { attrs: 'autocomplete="off" maxlength="120" required' })}${campo('E-mail', 'email', p.email || '', { tipo: 'email', attrs: 'autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="120" required', ajuda: novo ? 'É o login dela na área da parceira.' : '' })}</div>
+    <div class="pn-2">${campo('WhatsApp', 'telefone', p.telefone ? telefoneBonito(p.telefone) : '', { tipo: 'tel', attrs: 'inputmode="tel" placeholder="(21) 99999-9999" autocomplete="off"' })}${campo('Instagram ou TikTok', 'redes', p.redes || '', { attrs: 'placeholder="@perfil" maxlength="200" autocomplete="off"' })}</div>
+    ${campo('Chave Pix (para pagar as comissões)', 'pix', p.pix || '', { attrs: 'maxlength="140" autocomplete="off"' })}
+    <div class="pn-3">
+      ${campo('Cupom', 'cupom', p.cupom || '', { attrs: 'maxlength="20" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="MARIA10"', ajuda: 'Só letras e números.' })}
+      ${campo('Desconto da cliente (%)', 'desconto', p.desconto, { tipo: 'number', attrs: 'inputmode="numeric" min="0" max="50"' })}
+      ${campo('Comissão dela (%)', 'comissao', p.comissao, { tipo: 'number', attrs: 'inputmode="numeric" min="0" max="50"', ajuda: 'Sobre os produtos com desconto, sem frete.' })}
+    </div>
+    ${seletor('Situação', 'status', status, [['ativa', 'Ativa: o cupom dá desconto'], ['pausada', 'Pausada: o cupom não dá desconto'], ['pendente', 'Para aprovar'], ['recusada', 'Recusada']], { ajuda: 'Mudar desconto ou comissão vale para as próximas vendas. As vendas já feitas ficam como foram.' })}
+    ${area('Anotação (só aparece aqui)', 'observacao', p.observacao || '', { linhas: 2 })}
+    <p class="dica-tam erro" data-erro hidden></p>
+    <div class="pn-acoes"><button class="btn btn-preto pn-btn-p" type="submit">${novo ? 'Adicionar parceira' : x.status === 'pendente' ? 'Aprovar com estes dados' : 'Salvar'}</button>
+      ${x && x.status === 'pendente' ? '<button class="pn-link pn-perigo" type="button" data-recusar>Recusar cadastro</button>' : ''}</div>
+  </form>`;
+}
+
+function ligarFormParceira(alvo, x) {
+  const form = $('#form-parceira', alvo);
+  const el = form.elements;
+  el.telefone.addEventListener('input', () => { el.telefone.value = mascaraTelefone(el.telefone.value); });
+  el.cupom.addEventListener('input', () => { el.cupom.value = el.cupom.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
+  const salvar = async (status, botao) => {
+    const erro = $('[data-erro]', form);
+    const dados = {
+      id: x?.id || null,
+      nome: el.nome.value.trim(), email: el.email.value.trim(), telefone: soNumeros(el.telefone.value), redes: el.redes.value.trim(),
+      pix: el.pix.value.trim(), cupom: el.cupom.value.trim(), desconto: Number(el.desconto.value), comissao: Number(el.comissao.value),
+      status, observacao: el.observacao.value.trim(),
+    };
+    if (!Number.isInteger(dados.desconto) || !Number.isInteger(dados.comissao)) { erro.hidden = false; erro.textContent = ERROS_PARCEIRA.pct; return; }
+    botao.disabled = true;
+    try {
+      const r = await Banco.salvarParceira(dados);
+      if (!r.ok) { erro.hidden = false; erro.textContent = ERROS_PARCEIRA[r.erro] || 'Não salvou. Confira os dados.'; botao.disabled = false; return; }
+      toast(x ? (x.status === 'pendente' && status === 'ativa' ? 'Parceira aprovada' : 'Parceira salva') : 'Parceira adicionada');
+      abrirParceira(alvo, r.id);
+    } catch (e) {
+      botao.disabled = false;
+      erro.hidden = false;
+      erro.textContent = `Não salvou: ${e.message}`;
+    }
+  };
+  form.addEventListener('submit', (e) => { e.preventDefault(); salvar(el.status.value, $('button[type=submit]', form)); });
+  $('[data-recusar]', form)?.addEventListener('click', (e) => { if (confirm('Recusar este cadastro? Ela vê que não foi aprovado.')) salvar('recusada', e.currentTarget); });
+}
+
+function editorParceira(alvo, x) {
+  const cfg = estado.parceirasDados?.config || {};
+  alvo.innerHTML = `<button class="pn-voltar" type="button" data-voltar>${I.voltar}Voltar para as parceiras</button>
+    <div class="pn-cab"><h1 class="pn-h1">Nova parceira</h1></div>
+    <p class="pn-nota pn-dica-lista">Depois de adicionar, gere o link de acesso e mande para ela criar a senha da área da parceira.</p>
+    ${formParceiraHTML(x, cfg)}`;
+  $('[data-voltar]', alvo).addEventListener('click', () => abrirParceira(alvo, null));
+  ligarFormParceira(alvo, x);
+  $('#f-nome', alvo).focus();
+}
+
+async function detalheParceira(alvo, x) {
+  const cfg = estado.parceirasDados?.config || {};
+  const r = x.resumo || {};
+  const disp = Number(r.comissao_disponivel || 0);
+  const prox = estado.parceirasDados?.proximo_pagamento ? diaDaData(estado.parceirasDados.proximo_pagamento) : '—';
+  const pags = (estado.parceirasDados?.pagamentos || []).filter((g) => g.parceira_id === x.id);
+  alvo.innerHTML = `<button class="pn-voltar" type="button" data-voltar>${I.voltar}Voltar para as parceiras</button>
+    <div class="pn-cab"><h1 class="pn-h1">${esc(x.nome)}</h1>${etiquetaParceira(x.status)}</div>
+    <p class="pn-nota pn-dica-lista">${esc(x.redes || '')}${x.telefone ? ` · ${esc(telefoneBonito(x.telefone))}` : ''} · ${esc(x.email)} · ${x.origem === 'manual' ? 'adicionada por você' : 'cadastro pelo link'} em ${dataCurta(x.criado_em)}</p>
+    ${x.status === 'pendente' ? '<p class="pn-modo"><b>Cadastro esperando você.</b> Confira o perfil dela, defina o cupom, o desconto e a comissão, e aprove no fim da página.</p>' : ''}
+
+    ${x.status !== 'pendente' ? `<div class="pn-kpis">
+      <div class="pn-card pn-kpi"><span class="pn-rotulo">Vendas confirmadas</span><strong>${num(r.vendas)}</strong><small>${num(r.vendas_mes)} neste mês · ${num(r.aguardando)} aguardando · ${num(r.canceladas)} cancelada${Number(r.canceladas) === 1 ? '' : 's'}</small></div>
+      <div class="pn-card pn-kpi"><span class="pn-rotulo">Vendido com o cupom</span><strong>${brl(r.vendido)}</strong><small>produtos com desconto, sem frete</small></div>
+      <div class="pn-card pn-kpi pn-kpi-pagar"><span class="pn-rotulo">A pagar agora</span><strong>${brlSinal(disp)}</strong><small>${Number(r.comissao_estornar) > 0 ? `já descontados ${brl(r.comissao_estornar)} de devoluções` : `pagamento dia ${prox}`}</small></div>
+      <div class="pn-card pn-kpi"><span class="pn-rotulo">A liberar</span><strong>${brl(r.comissao_a_liberar)}</strong><small>+ ${brl(r.comissao_aguardando)} se os pedidos em aberto forem pagos</small></div>
+      <div class="pn-card pn-kpi"><span class="pn-rotulo">Já recebeu</span><strong>${brl(r.comissao_recebida)}</strong><small>${num(pags.length)} pagamento${pags.length === 1 ? '' : 's'}</small></div>
+    </div>
+
+    <section class="pn-card"><h2>Pagamento do mês</h2>
+      ${disp > 0 ? `<p class="pn-texto">Faça o Pix de <b>${brl(disp)}</b> para ${esc(x.nome.split(' ')[0])} e depois registre aqui. As vendas liberadas passam para "paga" e ela vê o pagamento na área dela.</p>
+        ${x.pix ? `<p class="pn-pc-url">Pix: ${esc(x.pix)}</p>` : '<p class="pn-nota">Ela ainda não informou a chave Pix. Peça para ela, ou anote nos dados abaixo.</p>'}
+        <div class="pn-acoes">${x.pix ? `<button class="btn btn-claro pn-btn-p" type="button" data-copiar-pix>${I.copiar}Copiar Pix</button>` : ''}<button class="btn btn-preto pn-btn-p" type="button" data-pagar>Registrar pagamento de ${brl(disp)}</button></div>`
+        : disp < 0 ? `<p class="pn-texto">Há ${brl(-disp)} a descontar de vendas devolvidas depois de pagas. Sai do próximo pagamento, quando houver comissão liberada.</p>`
+          : `<p class="pn-texto">Nada liberado para pagar agora. ${Number(r.comissao_a_liberar) > 0 ? `${brl(r.comissao_a_liberar)} ainda estão no prazo de troca e liberam ${num(cfg.diasLiberacao ?? 30)} dias depois de cada pagamento.` : ''}</p>`}
+    </section>` : ''}
+
+    <section class="pn-card"><h2>Acesso e divulgação</h2>
+      <p class="pn-texto">${x.tem_senha ? 'Ela já tem senha da área da parceira.' : '<b>Ela ainda não criou a senha.</b> Gere o link de acesso e mande para ela.'} Se ela esquecer a senha, gere um link novo: vale 7 dias e funciona uma vez.</p>
+      <div class="pn-acoes"><button class="btn btn-claro pn-btn-p" type="button" data-gerar-link>Gerar link de acesso</button>
+        ${x.cupom ? `<button class="btn btn-claro pn-btn-p" type="button" data-copiar-divulgacao>${I.copiar}Copiar link de divulgação</button>` : ''}</div>
+      <div id="link-acesso-parceira" class="pn-link-senha" hidden></div>
+      ${x.cupom ? `<p class="pn-nota">Link de divulgação dela: ${esc(linkCupomParceira(x.cupom).replace(/^https?:\/\//, ''))}. Quem abre por ele já entra com o cupom.</p>` : ''}
+    </section>
+
+    ${x.status !== 'pendente' ? `<section class="pn-card"><h2>Vendas com o cupom</h2><div id="vendas-parceira"><p class="pn-texto">Carregando as vendas…</p></div></section>` : ''}
+
+    ${pags.length ? `<section class="pn-card"><h2>Pagamentos</h2><div class="pn-pc-pags">${pags.map((g) => `<div class="pn-pc-pag">
+        <span><b>${brl(g.valor)}</b><small>${dataHora(g.pago_em)}${g.referencia ? ` · ${esc(g.referencia)}` : ''} · ${num(g.pedidos)} venda${g.pedidos === 1 ? '' : 's'}</small></span>
+        <span class="pn-pc-num"><button class="pn-link" type="button" data-desfazer="${esc(g.id)}" data-valor="${esc(g.valor)}" data-nome="${esc(x.nome)}">Desfazer</button></span>
+      </div>`).join('')}</div></section>` : ''}
+
+    ${formParceiraHTML(x, cfg)}
+    ${Number(r.vendas) + Number(r.aguardando) + Number(r.canceladas) === 0 && !pags.length ? '<div class="pn-acoes pn-espaco"><button class="pn-link pn-perigo" type="button" data-excluir-parceira>Excluir parceira</button></div>' : ''}`;
+
+  $('[data-voltar]', alvo).addEventListener('click', () => abrirParceira(alvo, null));
+  ligarFormParceira(alvo, x);
+  $$('[data-desfazer]', alvo).forEach((b) => b.addEventListener('click', () => desfazerPagamento(alvo, b)));
+  $('[data-copiar-pix]', alvo)?.addEventListener('click', () => copiarTexto(x.pix, 'Chave Pix copiada'));
+  $('[data-copiar-divulgacao]', alvo)?.addEventListener('click', () => copiarTexto(linkCupomParceira(x.cupom), 'Link de divulgação copiado'));
+  $('[data-pagar]', alvo)?.addEventListener('click', async (e) => {
+    const ref = prompt('Referência do pagamento (ela vê na área dela):', mesReferencia());
+    if (ref === null) return;
+    if (!confirm(`Confirma que já fez o Pix de ${brl(disp)} para ${x.nome}?`)) return;
+    const botao = e.currentTarget;
+    botao.disabled = true;
+    try {
+      const res = await Banco.pagarParceira(x.id, ref.trim(), null);
+      if (!res.ok) {
+        botao.disabled = false;
+        toast(res.erro === 'negativo' ? 'As devoluções são maiores que o liberado. Nada a pagar agora.' : res.erro === 'nada' ? 'Nada liberado para pagar.' : 'Não registrou.');
+        return abaParceiras(alvo);
+      }
+      toast(`Pagamento de ${brl(res.valor)} registrado`);
+      abaParceiras(alvo);
+    } catch (ex) {
+      botao.disabled = false;
+      toast(`Não registrou: ${ex.message}`);
+    }
+  });
+  $('[data-gerar-link]', alvo).addEventListener('click', async (e) => {
+    const botao = e.currentTarget;
+    botao.disabled = true;
+    try {
+      const res = await Banco.linkParceira(x.id);
+      if (!res.ok) throw new Error('parceira não encontrada');
+      const link = urlSite(`/parceira?nova=${res.codigo}`);
+      const texto = `Oi, ${x.nome.split(' ')[0]}! Este é o seu acesso à área de parceira da Paola Corpus Fit. Crie sua senha por este link (vale 7 dias): ${link}`;
+      const caixa = $('#link-acesso-parceira', alvo);
+      caixa.hidden = false;
+      caixa.innerHTML = `<p class="pn-nota">Link criado. Vale 7 dias e funciona uma vez.</p><p class="pn-pc-url">${esc(link)}</p>
+        <div class="pn-acoes"><button class="btn btn-claro pn-btn-p" type="button" data-copiar-acesso>${I.copiar}Copiar mensagem</button>
+        ${x.telefone ? `<a class="btn btn-preto pn-btn-p" href="${esc(zapParaNumero(x.telefone, texto))}" target="_blank" rel="noopener">${I.whats}Mandar no WhatsApp dela</a>` : ''}</div>`;
+      $('[data-copiar-acesso]', caixa).addEventListener('click', () => copiarTexto(texto, 'Mensagem copiada'));
+    } catch (ex) {
+      toast(`Não gerou o link: ${ex.message}`);
+    }
+    botao.disabled = false;
+  });
+  $('[data-excluir-parceira]', alvo)?.addEventListener('click', async () => {
+    if (!confirm(`Excluir ${x.nome}? Ela perde o acesso e o cupom deixa de existir.`)) return;
+    try {
+      const res = await Banco.excluirParceira(x.id);
+      if (!res.ok) { toast('Ela já tem vendas ou pagamentos: em vez de excluir, pause.'); return; }
+      toast('Parceira excluída');
+      abrirParceira(alvo, null);
+    } catch (ex) { toast(`Não excluiu: ${ex.message}`); }
+  });
+
+  const caixaVendas = $('#vendas-parceira', alvo);
+  if (!caixaVendas) return;
+  try {
+    const vendas = await Banco.parceiraVendas(x.id);
+    if (!caixaVendas.isConnected) return;
+    caixaVendas.innerHTML = vendas.length ? `<div class="pn-pc-pags">${vendas.map((v) => `<div class="pn-pc-pag">
+        <span><b><button class="pn-link" type="button" data-ir-pedido="${esc(v.id)}">${esc(v.numero)}</button> · ${esc(v.nome)}</b>
+          <small>${dataHora(v.em)} · ${esc([v.cidade, v.uf].filter(Boolean).join('/'))} · ${esc(v.pagamento || '')} · ${esc((STATUS[v.status] || [v.status])[0])}</small>
+          <small>Produtos ${brl(v.produtos)}${Number(v.desconto) > 0 ? ` (desconto ${brl(v.desconto)})` : ''}${v.situacao === 'a_liberar' && v.libera_em ? ` · libera ${dataCurta(v.libera_em)}` : ''}</small></span>
+        <span class="pn-pc-num"><b>${brl(v.comissao)}</b>${etiquetaComissao(v.situacao)}</span>
+      </div>`).join('')}</div>` : '<p class="pn-texto">Nenhuma venda com o cupom ainda.</p>';
+    $$('[data-ir-pedido]', caixaVendas).forEach((b) => b.addEventListener('click', () => {
+      estado.abrirPedido = b.dataset.irPedido;
+      estado.filtro = 'todos';
+      location.hash = '#pedidos';
+    }));
+  } catch (e) {
+    caixaVendas.innerHTML = `<p class="pn-texto">Não deu para carregar as vendas: ${esc(e.message)}</p>`;
+  }
 }
 
 // ---------------- Frete pelo CEP ----------------

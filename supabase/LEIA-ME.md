@@ -124,6 +124,34 @@ Não precisa de cadastro nos Correios nem em outra transportadora. A cliente dig
 - **Quem garante o valor:** o banco refaz a conta ao registrar o pedido (`uf_do_cep` e `frete_do_pedido`), pela mesma tabela. Se o site mandou outro total, por exemplo com uma página aberta antes de a tabela mudar, o pedido entra marcado para conferir e não é cobrado online. O frete de cada pedido fica na coluna `frete` e aparece no painel e no acompanhamento.
 - **Limites:** o valor é por faixa, não por peso nem por cidade. Um pedido com mais peças paga o mesmo frete, e o interior de um estado paga o mesmo que a capital. Revise a tabela quando os Correios reajustarem os preços, normalmente uma vez por ano. O prazo conta a partir da postagem.
 
+## Parcerias (cupons de influenciadoras)
+
+Cada parceira tem um cupom. A cliente ganha **desconto** (% sobre os produtos, sem o frete) e a parceira ganha **comissão** (% sobre os produtos já com o desconto, sem o frete). Tudo fica na aba **Parceiras** do painel. O banco é a seção "Parcerias" do `schema.sql`.
+
+- **Como a cliente usa:** pelo link de divulgação da parceira (`paolacorpusfit.com.br/?cupom=NOME`), que guarda o cupom no navegador por 30 dias, ou digitando em "Tem cupom de desconto?" no carrinho. O desconto aparece no carrinho, na finalização, no pedido, na mensagem e no acompanhamento. O frete e o frete grátis contam com os produtos já com desconto. O Pix dá os 5% em cima do total já com o cupom.
+- **Quem confere:** o banco refaz o desconto no `registrar_pedido`. Só vale cupom de parceira **ativa**. Se o site mandar um cupom que não vale mais, o total não bate e o pedido fica para conferir, sem cobrança online.
+- **Comissão:** é calculada pelo próprio pedido (trigger `pedido_comissao`) e acompanha a edição dos itens no painel, até ser paga. Situações:
+  - aguardando: pedido não pago;
+  - a liberar: pago há menos de X dias;
+  - liberada;
+  - paga;
+  - cancelada;
+  - descontar: o pedido caiu depois de a comissão ser paga, e o valor sai do próximo pagamento.
+- **Área da parceira:** `paolacorpusfit.com.br/parceira`, com login próprio, separado do painel e da conta das clientes (tabelas `parceiras` e `parceiras_sessoes`, funções `parceira_*`). Ela vê:
+  - o cupom e o link para copiar;
+  - as vendas confirmadas, as que aguardam pagamento, a comissão a liberar, a disponível e a já recebida, e os pagamentos;
+  - em cada venda: primeiro nome com a inicial do sobrenome, cidade, forma de pagamento, etapa e comissão. **Nunca** o valor do pedido, endereço ou contato.
+  - A página se atualiza sozinha a cada 20 segundos e avisa "Nova venda".
+- **Entrada de parceiras:**
+  - pelo **link de cadastro** (`/parceira?cadastro=1`): ela entra como "para aprovar" e a Paola aprova definindo cupom, desconto e comissão;
+  - ou **adicionada à mão** no painel. Nesse caso, a Paola gera o **link de acesso** (vale 7 dias, uma vez) para ela criar a senha. O mesmo link serve para quem esqueceu a senha.
+- **Pagamento mensal:**
+  - no dia definido nas regras, a ficha de cada parceira mostra "A pagar agora";
+  - a Paola faz o Pix e toca em "Registrar pagamento", e as vendas liberadas viram "paga";
+  - "Desfazer" apaga um pagamento registrado por engano.
+- **Regras** (aba Parceiras > Regras do programa, gravadas em `loja.parcerias`): cadastro aberto ou fechado, dias para liberar a comissão (padrão 30), dia do pagamento (padrão 10), desconto e comissão padrão para novos cadastros.
+- **Parceira com vendas não pode ser excluída:** pause, e o cupom para de dar desconto. As comissões já ganhas continuam valendo.
+
 ## Gestão do pedido no painel
 
 Cada pedido tem um próximo passo só (confirmar, preparar, enviar, entregar). O que foge disso aparece como pendência, numa fila própria em Início ("Precisam de atenção"), e o pedido com pendência fica fora de preparar, de enviar e do lote de etiquetas até alguém resolver.

@@ -374,6 +374,12 @@ declare
   v_informado numeric := coalesce((p ->> 'total')::numeric, 0);
   v_conferir boolean := false;
   v_pix numeric := coalesce((select (c.dados -> 'loja' ->> 'pix')::numeric from public.loja_config c where c.id = 1), 0);
+  -- Cupom de parceira (seção Parcerias): desconto em % sobre os produtos, sem o frete
+  v_cupom text := upper(trim(coalesce(p ->> 'cupom', '')));
+  v_parceira uuid;
+  v_cupom_pct int := 0;
+  v_comissao_pct int := 0;
+  v_desconto numeric := 0;
 begin
   if pg_column_size(p) > 20000 or jsonb_typeof(v_itens) <> 'array' or jsonb_array_length(v_itens) not between 1 and 20 then
     raise exception 'pedido invalido';
@@ -401,6 +407,19 @@ begin
     );
   end loop;
 
+  -- Só cupom de parceira ativa vale. Cupom que o site mostrou mas não vale mais deixa o total diferente: o pedido fica para conferir
+  if v_cupom ~ '^[A-Z0-9]{3,20}$' then
+    select x.id, x.desconto, x.comissao into v_parceira, v_cupom_pct, v_comissao_pct
+      from public.parceiras x where x.cupom = v_cupom and x.status = 'ativa';
+    if v_parceira is not null then
+      v_desconto := round(v_total * v_cupom_pct / 100.0, 2);
+      v_total := v_total - v_desconto;
+    else
+      v_cupom_pct := 0;
+      v_comissao_pct := 0;
+    end if;
+  end if;
+
   v_frete := public.frete_do_pedido(p ->> 'cep', v_total);
   if v_frete is null then
     -- CEP sem faixa na tabela: entra o frete que o site mostrou e a loja confere antes de cobrar
@@ -415,7 +434,8 @@ begin
     v_conferir := true;
   end if;
 
-  insert into public.pedidos (id, numero, nome, telefone, cep, rua, num, complemento, bairro, cidade, uf, pagamento, itens, frete, total, valor, conferir)
+  insert into public.pedidos (id, numero, nome, telefone, cep, rua, num, complemento, bairro, cidade, uf, pagamento, itens, frete, total, valor, conferir,
+    parceira_id, cupom, cupom_pct, desconto_cupom, comissao_pct)
   values (
     (p ->> 'id')::uuid,
     left(p ->> 'numero', 30),
@@ -425,7 +445,9 @@ begin
     left(p ->> 'bairro', 80), left(p ->> 'cidade', 80), upper(left(p ->> 'uf', 2)), left(p ->> 'pagamento', 20),
     v_limpos, v_frete, v_total,
     case when p ->> 'pagamento' = 'Pix' then round(v_total * (1 - v_pix), 2) else v_total end,
-    v_conferir
+    v_conferir,
+    v_parceira, case when v_parceira is not null then v_cupom end,
+    coalesce(v_cupom_pct, 0), v_desconto, coalesce(v_comissao_pct, 0)
   )
   on conflict (id) do nothing;
 end;
@@ -459,6 +481,8 @@ language sql stable security definer set search_path = '' as $$
     'itens', coalesce((select jsonb_agg(jsonb_build_object('nome', i ->> 'nome', 'tam', i ->> 'tam', 'qtd', i -> 'qtd')) from jsonb_array_elements(p.itens) i), '[]'::jsonb),
     'total', p.total,
     'frete', p.frete,
+    'cupom', p.cupom,
+    'desconto_cupom', p.desconto_cupom,
     -- O que foi cobrado de fato (com o desconto do Pix) e o que aconteceu com o dinheiro
     'valor', p.valor,
     'pago', p.status in ('pago', 'preparando', 'enviado', 'entregue') or (p.mercadopago ->> 'pago_em') is not null,
@@ -894,3 +918,544 @@ grant execute on function public.cliente_criar(text, text, text, text), public.c
   public.cliente_sacola(text), public.cliente_guardar_sacola(text, jsonb) to anon, authenticated;
 grant execute on function public.cliente_link_senha(text) to authenticated;
 grant execute on function public.cliente_codigo_senha(text) to service_role;
+
+-- ---------- Parcerias (cupons de influenciadoras) ----------
+-- Cada parceira tem um cupom: a cliente ganha desconto (% sobre os produtos, sem o frete) e a parceira ganha comissão
+-- (% sobre os produtos já com o desconto, sem o frete). A parceira entra na área dela (parceira.html) com login próprio,
+-- separado do painel e da conta das clientes, e vê as vendas do cupom: primeiro nome e cidade da cliente, forma de pagamento,
+-- etapa do pedido e a comissão. Nunca o valor do pedido, endereço ou contato.
+-- A comissão fica "a liberar" por X dias depois do pagamento (prazo de troca e devolução) e depois "liberada".
+-- Uma vez por mês a Paola paga o que está liberado e registra no painel. Pedido cancelado ou com o dinheiro devolvido não gera
+-- comissão; se já tinha sido pago à parceira, o valor é descontado do próximo pagamento.
+-- Regras (dias, dia do pagamento, padrões) ficam em loja_config.dados.loja.parcerias, editadas no painel.
+create table if not exists public.parceiras (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null check (length(nome) between 2 and 120),
+  email text not null unique check (email = lower(email) and length(email) between 5 and 120),
+  telefone text check (length(telefone) <= 15),
+  redes text check (length(redes) <= 200),
+  pix text check (length(pix) <= 140),
+  cupom text unique check (cupom ~ '^[A-Z0-9]{3,20}$'),
+  desconto int not null default 10 check (desconto between 0 and 50),
+  comissao int not null default 10 check (comissao between 0 and 50),
+  status text not null default 'pendente' check (status in ('pendente', 'ativa', 'pausada', 'recusada')),
+  origem text not null default 'cadastro' check (origem in ('cadastro', 'manual')),
+  observacao text check (length(observacao) <= 500),
+  criado_em timestamptz not null default now(),
+  aprovada_em timestamptz,
+  senha_hash text,
+  tentativas int not null default 0,
+  bloqueada_ate timestamptz,
+  senha_nova_sha256 text,
+  senha_nova_ate timestamptz
+);
+create table if not exists public.parceiras_sessoes (
+  sessao_sha256 text primary key,
+  parceira_id uuid not null references public.parceiras (id) on delete cascade,
+  criado_em timestamptz not null default now(),
+  expira_em timestamptz not null
+);
+create index if not exists parceiras_sessoes_parceira on public.parceiras_sessoes (parceira_id);
+create table if not exists public.parceiras_pagamentos (
+  id uuid primary key default gen_random_uuid(),
+  parceira_id uuid not null references public.parceiras (id) on delete restrict,
+  valor numeric(10, 2) not null,
+  pedidos int not null default 0,
+  referencia text check (length(referencia) <= 60),
+  observacao text check (length(observacao) <= 300),
+  pago_em timestamptz not null default now()
+);
+create index if not exists parceiras_pagamentos_parceira on public.parceiras_pagamentos (parceira_id, pago_em desc);
+
+-- No pedido: de quem é o cupom, o desconto dado e a comissão (fotografados na hora da compra).
+-- comissao_pagamento_id: em qual pagamento à parceira a comissão entrou. comissao_estorno_id: em qual pagamento ela foi
+-- descontada, quando o pedido caiu depois de pago à parceira. Desfazer um pagamento solta os pedidos sozinho (set null).
+alter table public.pedidos add column if not exists parceira_id uuid references public.parceiras (id) on delete restrict;
+alter table public.pedidos add column if not exists cupom text;
+alter table public.pedidos add column if not exists cupom_pct int not null default 0;
+alter table public.pedidos add column if not exists desconto_cupom numeric(10, 2) not null default 0;
+alter table public.pedidos add column if not exists comissao_pct int not null default 0;
+alter table public.pedidos add column if not exists comissao numeric(10, 2) not null default 0;
+alter table public.pedidos add column if not exists comissao_pagamento_id uuid references public.parceiras_pagamentos (id) on delete set null;
+alter table public.pedidos add column if not exists comissao_estorno_id uuid references public.parceiras_pagamentos (id) on delete set null;
+create index if not exists pedidos_parceira on public.pedidos (parceira_id) where parceira_id is not null;
+
+-- A comissão sempre sai do próprio pedido: produtos já com o desconto (total - frete) x %. Editou os itens, ela acompanha.
+-- Depois de paga à parceira, não muda mais
+create or replace function public.pedido_comissao() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if new.parceira_id is null then
+    new.comissao := 0;
+  elsif tg_op = 'UPDATE' and old.comissao_pagamento_id is not null and new.comissao_pagamento_id is not null then
+    new.comissao := old.comissao;
+  else
+    new.comissao := round(greatest(coalesce(new.total, 0) - coalesce(new.frete, 0), 0) * coalesce(new.comissao_pct, 0) / 100.0, 2);
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.pedido_comissao() from public, anon, authenticated;
+drop trigger if exists pedido_comissao on public.pedidos;
+create trigger pedido_comissao before insert or update of total, frete, comissao_pct, parceira_id, comissao on public.pedidos
+  for each row execute function public.pedido_comissao();
+
+-- Regras do programa, com padrões seguros
+create or replace function public.parcerias_config() returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select jsonb_build_object(
+    'cadastroAberto', coalesce((x.c ->> 'cadastroAberto')::boolean, true),
+    'diasLiberacao', least(greatest(coalesce((x.c ->> 'diasLiberacao')::int, 30), 0), 90),
+    'diaPagamento', least(greatest(coalesce((x.c ->> 'diaPagamento')::int, 10), 1), 28),
+    'descontoPadrao', least(greatest(coalesce((x.c ->> 'descontoPadrao')::int, 10), 0), 50),
+    'comissaoPadrao', least(greatest(coalesce((x.c ->> 'comissaoPadrao')::int, 10), 0), 50)
+  )
+  from (select coalesce((select l.dados -> 'loja' -> 'parcerias' from public.loja_config l where l.id = 1), '{}'::jsonb) as c) x;
+$$;
+
+-- Próximo dia de pagamento (horário de Brasília)
+create or replace function public.parcerias_proximo_pagamento() returns date
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  v_hoje date := (now() at time zone 'America/Sao_Paulo')::date;
+  v_dia int := (public.parcerias_config() ->> 'diaPagamento')::int;
+  v_data date := make_date(extract(year from v_hoje)::int, extract(month from v_hoje)::int, v_dia);
+begin
+  if v_data < v_hoje then
+    v_data := (v_data + interval '1 month')::date;
+  end if;
+  return v_data;
+end;
+$$;
+
+-- Cada venda do cupom com a situação da comissão:
+-- aguardando (pedido não pago), a_liberar, liberada, paga, cancelada, estornar (caiu depois de paga à parceira) e estornada
+create or replace function public.parceira_linhas(p_parceira uuid)
+returns table (
+  id uuid, numero text, criado_em timestamptz, status text, pagamento text, nome text, cidade text, uf text,
+  total numeric, frete numeric, desconto_cupom numeric, comissao numeric, pago_em timestamptz, situacao text, libera_em timestamptz,
+  comissao_pagamento_id uuid, comissao_estorno_id uuid
+)
+language sql stable security definer set search_path = '' as $$
+  with cfg as (select (public.parcerias_config() ->> 'diasLiberacao')::int as dias),
+  base as (
+    select p.id, p.numero, p.criado_em, p.status, p.pagamento, p.nome, p.cidade, p.uf, p.total, p.frete, p.desconto_cupom, p.comissao,
+      p.comissao_pagamento_id, p.comissao_estorno_id,
+      coalesce(
+        case when (p.mercadopago ->> 'pago_em') ~ '^\d{4}-\d{2}-\d{2}' then (p.mercadopago ->> 'pago_em')::timestamptz end,
+        (select min((h ->> 'em')::timestamptz) from jsonb_array_elements(p.historico) h
+          where h ->> 'status' in ('pago', 'preparando', 'enviado', 'entregue'))
+      ) as pago_quando,
+      (p.status = 'cancelado' or coalesce(p.mercadopago ->> 'status', '') in ('refunded', 'charged_back')) as caiu
+    from public.pedidos p
+    where p.parceira_id = p_parceira
+  )
+  select b.id, b.numero, b.criado_em, b.status, b.pagamento, b.nome, b.cidade, b.uf, b.total, b.frete, b.desconto_cupom, b.comissao,
+    b.pago_quando,
+    case
+      when b.caiu and b.comissao_pagamento_id is not null and b.comissao_estorno_id is null then 'estornar'
+      when b.caiu and b.comissao_estorno_id is not null then 'estornada'
+      when b.caiu then 'cancelada'
+      when b.comissao_pagamento_id is not null then 'paga'
+      when b.status = 'novo' or b.pago_quando is null then 'aguardando'
+      when b.pago_quando + make_interval(days => cfg.dias) > now() then 'a_liberar'
+      else 'liberada'
+    end,
+    case when b.pago_quando is not null then b.pago_quando + make_interval(days => cfg.dias) end,
+    b.comissao_pagamento_id, b.comissao_estorno_id
+  from base b cross join cfg
+  order by b.criado_em desc;
+$$;
+
+-- Números da parceira. "vendido" (produtos com desconto, sem frete) só vai para o painel da loja
+create or replace function public.parceira_resumo(p_parceira uuid) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select jsonb_build_object(
+    'vendas', count(*) filter (where l.situacao in ('a_liberar', 'liberada', 'paga')),
+    'vendas_mes', count(*) filter (where l.situacao in ('a_liberar', 'liberada', 'paga')
+      and l.pago_em >= (date_trunc('month', now() at time zone 'America/Sao_Paulo') at time zone 'America/Sao_Paulo')),
+    'aguardando', count(*) filter (where l.situacao = 'aguardando'),
+    'canceladas', count(*) filter (where l.situacao in ('cancelada', 'estornar', 'estornada')),
+    'vendido', coalesce(sum(l.total - l.frete) filter (where l.situacao in ('a_liberar', 'liberada', 'paga')), 0),
+    'comissao_aguardando', coalesce(sum(l.comissao) filter (where l.situacao = 'aguardando'), 0),
+    'comissao_a_liberar', coalesce(sum(l.comissao) filter (where l.situacao = 'a_liberar'), 0),
+    'comissao_liberada', coalesce(sum(l.comissao) filter (where l.situacao = 'liberada'), 0),
+    'comissao_estornar', coalesce(sum(l.comissao) filter (where l.situacao = 'estornar'), 0),
+    'comissao_disponivel', coalesce(sum(l.comissao) filter (where l.situacao = 'liberada'), 0)
+      - coalesce(sum(l.comissao) filter (where l.situacao = 'estornar'), 0),
+    'comissao_recebida', coalesce((select sum(g.valor) from public.parceiras_pagamentos g where g.parceira_id = p_parceira), 0)
+  )
+  from public.parceira_linhas(p_parceira) l;
+$$;
+
+-- O que a parceira vê de si mesma
+create or replace function public.parceira_dados(p_parceira uuid) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select jsonb_build_object('nome', x.nome, 'email', x.email, 'telefone', x.telefone, 'redes', x.redes, 'pix', x.pix,
+    'cupom', x.cupom, 'desconto', x.desconto, 'comissao', x.comissao, 'status', x.status, 'tem_senha', x.senha_hash is not null)
+  from public.parceiras x where x.id = p_parceira;
+$$;
+
+-- Sessão da parceira: mesmo esquema da conta da cliente (o banco guarda só a impressão digital do código)
+create or replace function public.parceira_abrir_sessao(p_parceira uuid) returns text
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_codigo text := replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '');
+begin
+  delete from public.parceiras_sessoes s where s.parceira_id = p_parceira and s.expira_em < now();
+  delete from public.parceiras_sessoes s where s.parceira_id = p_parceira and s.sessao_sha256 in (
+    select x.sessao_sha256 from public.parceiras_sessoes x where x.parceira_id = p_parceira order by x.criado_em desc offset 4
+  );
+  insert into public.parceiras_sessoes (sessao_sha256, parceira_id, expira_em)
+  values (public.cliente_digital(v_codigo), p_parceira, now() + interval '90 days');
+  return v_codigo;
+end;
+$$;
+
+create or replace function public.parceira_da_sessao(p_sessao text) returns uuid
+language sql stable security definer set search_path = '' as $$
+  select s.parceira_id from public.parceiras_sessoes s
+  where length(coalesce(p_sessao, '')) = 64 and s.sessao_sha256 = public.cliente_digital(p_sessao) and s.expira_em > now();
+$$;
+
+-- Cupom digitado ou vindo do link da parceira: só vale com a parceira ativa
+create or replace function public.cupom_validar(p_codigo text) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select coalesce(
+    (select jsonb_build_object('ok', true, 'cupom', x.cupom, 'desconto', x.desconto, 'parceira', split_part(x.nome, ' ', 1))
+      from public.parceiras x where x.cupom = upper(trim(coalesce(p_codigo, ''))) and x.status = 'ativa'),
+    jsonb_build_object('ok', false)
+  );
+$$;
+
+-- Cadastro pelo link: entra como "pendente" até a loja aprovar e definir o cupom e as porcentagens
+create or replace function public.parceira_cadastrar(p jsonb) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_cfg jsonb := public.parcerias_config();
+  v_nome text := left(trim(coalesce(p ->> 'nome', '')), 120);
+  v_email text := lower(trim(coalesce(p ->> 'email', '')));
+  v_tel text := left(regexp_replace(coalesce(p ->> 'telefone', ''), '\D', '', 'g'), 15);
+  v_redes text := left(trim(coalesce(p ->> 'redes', '')), 200);
+  v_pix text := nullif(left(trim(coalesce(p ->> 'pix', '')), 140), '');
+  v_cupom text := nullif(upper(trim(coalesce(p ->> 'cupom', ''))), '');
+  v_id uuid;
+begin
+  if not (v_cfg ->> 'cadastroAberto')::boolean then
+    return jsonb_build_object('ok', false, 'erro', 'fechado');
+  end if;
+  if length(v_nome) < 2 then return jsonb_build_object('ok', false, 'erro', 'nome'); end if;
+  if length(v_email) > 120 or v_email !~ '^[^\s@]+@[^\s@]+\.[^\s@]{2,}$' then return jsonb_build_object('ok', false, 'erro', 'email'); end if;
+  if length(v_tel) < 10 then return jsonb_build_object('ok', false, 'erro', 'telefone'); end if;
+  if length(v_redes) < 3 then return jsonb_build_object('ok', false, 'erro', 'redes'); end if;
+  if length(coalesce(p ->> 'senha', '')) not between 6 and 72 then return jsonb_build_object('ok', false, 'erro', 'senha'); end if;
+  if v_cupom is not null and v_cupom !~ '^[A-Z0-9]{3,20}$' then return jsonb_build_object('ok', false, 'erro', 'cupom'); end if;
+  if exists (select 1 from public.parceiras x where x.email = v_email) then return jsonb_build_object('ok', false, 'erro', 'existe'); end if;
+  if v_cupom is not null and exists (select 1 from public.parceiras x where x.cupom = v_cupom) then
+    return jsonb_build_object('ok', false, 'erro', 'cupom_existe');
+  end if;
+  -- Freio contra cadastro em massa
+  if (select count(*) from public.parceiras x where x.criado_em > now() - interval '1 hour') >= 20 then
+    return jsonb_build_object('ok', false, 'erro', 'cheio');
+  end if;
+  insert into public.parceiras (nome, email, telefone, redes, pix, cupom, desconto, comissao, status, origem, senha_hash)
+  values (v_nome, v_email, v_tel, v_redes, v_pix, v_cupom, (v_cfg ->> 'descontoPadrao')::int, (v_cfg ->> 'comissaoPadrao')::int,
+    'pendente', 'cadastro', extensions.crypt(p ->> 'senha', extensions.gen_salt('bf', 10)))
+  on conflict do nothing
+  returning id into v_id;
+  if v_id is null then
+    return jsonb_build_object('ok', false, 'erro', 'existe');
+  end if;
+  return jsonb_build_object('ok', true, 'sessao', public.parceira_abrir_sessao(v_id), 'parceira', public.parceira_dados(v_id));
+end;
+$$;
+
+create or replace function public.parceira_entrar(p_email text, p_senha text) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_email text := lower(trim(coalesce(p_email, '')));
+  x public.parceiras%rowtype;
+  v_existe boolean;
+begin
+  select * into x from public.parceiras y where y.email = v_email for update;
+  v_existe := found;
+  if not v_existe or x.senha_hash is null then
+    -- Gasta o mesmo tempo de uma senha errada
+    perform extensions.crypt(left(coalesce(p_senha, ''), 72), extensions.gen_salt('bf', 10));
+    return jsonb_build_object('ok', false, 'erro', case when v_existe then 'sem_senha' else 'invalido' end);
+  end if;
+  if x.bloqueada_ate is not null and x.bloqueada_ate > now() then
+    return jsonb_build_object('ok', false, 'erro', 'bloqueada', 'minutos', ceil(extract(epoch from x.bloqueada_ate - now()) / 60));
+  end if;
+  if length(coalesce(p_senha, '')) between 1 and 72 and x.senha_hash = extensions.crypt(p_senha, x.senha_hash) then
+    update public.parceiras set tentativas = 0, bloqueada_ate = null where id = x.id;
+    return jsonb_build_object('ok', true, 'sessao', public.parceira_abrir_sessao(x.id), 'parceira', public.parceira_dados(x.id));
+  end if;
+  update public.parceiras
+    set tentativas = case when x.tentativas >= 4 then 0 else x.tentativas + 1 end,
+        bloqueada_ate = case when x.tentativas >= 4 then now() + interval '15 minutes' end
+    where id = x.id;
+  return jsonb_build_object('ok', false, 'erro', 'invalido');
+end;
+$$;
+
+create or replace function public.parceira_sair(p_sessao text) returns void
+language sql security definer set search_path = '' as $$
+  delete from public.parceiras_sessoes s where s.sessao_sha256 = public.cliente_digital(p_sessao);
+$$;
+
+-- Tudo o que a área da parceira mostra. Da cliente, só primeiro nome, inicial do sobrenome e cidade
+create or replace function public.parceira_painel(p_sessao text) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  v_id uuid := public.parceira_da_sessao(p_sessao);
+  v_status text;
+  v_cfg jsonb := public.parcerias_config();
+begin
+  if v_id is null then
+    return jsonb_build_object('ok', false, 'erro', 'sessao');
+  end if;
+  select x.status into v_status from public.parceiras x where x.id = v_id;
+  if v_status in ('pendente', 'recusada') then
+    return jsonb_build_object('ok', true, 'parceira', public.parceira_dados(v_id),
+      'regras', jsonb_build_object('diasLiberacao', v_cfg -> 'diasLiberacao', 'diaPagamento', v_cfg -> 'diaPagamento'));
+  end if;
+  return jsonb_build_object(
+    'ok', true,
+    'parceira', public.parceira_dados(v_id),
+    'regras', jsonb_build_object('diasLiberacao', v_cfg -> 'diasLiberacao', 'diaPagamento', v_cfg -> 'diaPagamento'),
+    'proximo_pagamento', public.parcerias_proximo_pagamento(),
+    'resumo', public.parceira_resumo(v_id) - 'vendido',
+    'vendas', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'em', l.criado_em,
+        'cliente', trim(split_part(l.nome, ' ', 1) || coalesce(' ' || nullif(left(split_part(trim(l.nome), ' ', 2), 1), '') || '.', '')),
+        'cidade', l.cidade, 'uf', l.uf,
+        'pagamento', l.pagamento, 'status', l.status,
+        'comissao', l.comissao, 'situacao', l.situacao, 'libera_em', l.libera_em, 'pago_em', l.pago_em
+      ) order by l.criado_em desc)
+      from (select * from public.parceira_linhas(v_id) limit 300) l
+    ), '[]'::jsonb),
+    'pagamentos', coalesce((
+      select jsonb_agg(jsonb_build_object('valor', g.valor, 'pedidos', g.pedidos, 'referencia', g.referencia, 'pago_em', g.pago_em) order by g.pago_em desc)
+      from public.parceiras_pagamentos g where g.parceira_id = v_id
+    ), '[]'::jsonb)
+  );
+end;
+$$;
+
+-- Link de acesso: para a parceira adicionada à mão criar a senha, ou para quem esqueceu. Vale 7 dias, uma vez só
+create or replace function public.parceira_codigo_senha(p_parceira uuid) returns text
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_codigo text := replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '');
+begin
+  update public.parceiras
+    set senha_nova_sha256 = public.cliente_digital(v_codigo), senha_nova_ate = now() + interval '7 days'
+    where id = p_parceira;
+  if not found then return null; end if;
+  return v_codigo;
+end;
+$$;
+
+create or replace function public.parceira_nova_senha(p_codigo text, p_senha text) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_id uuid;
+begin
+  if length(coalesce(p_senha, '')) not between 6 and 72 then
+    return jsonb_build_object('ok', false, 'erro', 'senha');
+  end if;
+  select x.id into v_id from public.parceiras x
+    where length(coalesce(p_codigo, '')) = 64 and x.senha_nova_sha256 = public.cliente_digital(p_codigo) and x.senha_nova_ate > now()
+    for update;
+  if v_id is null then
+    return jsonb_build_object('ok', false, 'erro', 'codigo');
+  end if;
+  update public.parceiras
+    set senha_hash = extensions.crypt(p_senha, extensions.gen_salt('bf', 10)),
+        senha_nova_sha256 = null, senha_nova_ate = null, tentativas = 0, bloqueada_ate = null
+    where id = v_id;
+  delete from public.parceiras_sessoes s where s.parceira_id = v_id;
+  return jsonb_build_object('ok', true, 'sessao', public.parceira_abrir_sessao(v_id), 'parceira', public.parceira_dados(v_id));
+end;
+$$;
+
+-- ----- Painel da loja (só administrador) -----
+create or replace function public.admin_parceiras() returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  v_lista jsonb;
+begin
+  if not public.eh_admin() then raise exception 'sem permissao'; end if;
+  select coalesce(jsonb_agg(
+    jsonb_build_object('id', x.id, 'nome', x.nome, 'email', x.email, 'telefone', x.telefone, 'redes', x.redes, 'pix', x.pix,
+      'cupom', x.cupom, 'desconto', x.desconto, 'comissao', x.comissao, 'status', x.status, 'origem', x.origem,
+      'observacao', x.observacao, 'criado_em', x.criado_em, 'aprovada_em', x.aprovada_em, 'tem_senha', x.senha_hash is not null,
+      'resumo', public.parceira_resumo(x.id))
+    order by case x.status when 'pendente' then 0 when 'ativa' then 1 when 'pausada' then 2 else 3 end, x.nome
+  ), '[]'::jsonb) into v_lista
+  from public.parceiras x;
+  return jsonb_build_object(
+    'config', public.parcerias_config(),
+    'proximo_pagamento', public.parcerias_proximo_pagamento(),
+    'parceiras', v_lista,
+    'pagamentos', coalesce((
+      select jsonb_agg(jsonb_build_object('id', g.id, 'parceira_id', g.parceira_id, 'nome', x.nome, 'valor', g.valor, 'pedidos', g.pedidos,
+        'referencia', g.referencia, 'observacao', g.observacao, 'pago_em', g.pago_em) order by g.pago_em desc)
+      from (select * from public.parceiras_pagamentos order by pago_em desc limit 200) g
+      join public.parceiras x on x.id = g.parceira_id
+    ), '[]'::jsonb)
+  );
+end;
+$$;
+
+create or replace function public.admin_parceira_vendas(p_parceira uuid) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  if not public.eh_admin() then raise exception 'sem permissao'; end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object('id', l.id, 'numero', l.numero, 'em', l.criado_em, 'nome', l.nome, 'cidade', l.cidade, 'uf', l.uf,
+      'pagamento', l.pagamento, 'status', l.status, 'produtos', l.total - l.frete, 'desconto', l.desconto_cupom, 'comissao', l.comissao,
+      'situacao', l.situacao, 'libera_em', l.libera_em, 'pago_em', l.pago_em) order by l.criado_em desc)
+    from public.parceira_linhas(p_parceira) l
+  ), '[]'::jsonb);
+end;
+$$;
+
+create or replace function public.admin_parceira_salvar(p jsonb) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_id uuid := case when (p ->> 'id') ~ '^[0-9a-f-]{36}$' then (p ->> 'id')::uuid end;
+  v_nome text := left(trim(coalesce(p ->> 'nome', '')), 120);
+  v_email text := lower(trim(coalesce(p ->> 'email', '')));
+  v_cupom text := nullif(upper(trim(coalesce(p ->> 'cupom', ''))), '');
+  v_status text := coalesce(nullif(p ->> 'status', ''), 'ativa');
+  v_desc int := (p ->> 'desconto')::int;
+  v_com int := (p ->> 'comissao')::int;
+begin
+  if not public.eh_admin() then raise exception 'sem permissao'; end if;
+  if length(v_nome) < 2 then return jsonb_build_object('ok', false, 'erro', 'nome'); end if;
+  if length(v_email) > 120 or v_email !~ '^[^\s@]+@[^\s@]+\.[^\s@]{2,}$' then return jsonb_build_object('ok', false, 'erro', 'email'); end if;
+  if v_cupom is not null and v_cupom !~ '^[A-Z0-9]{3,20}$' then return jsonb_build_object('ok', false, 'erro', 'cupom'); end if;
+  if v_status not in ('pendente', 'ativa', 'pausada', 'recusada') then return jsonb_build_object('ok', false, 'erro', 'status'); end if;
+  if v_status = 'ativa' and v_cupom is null then return jsonb_build_object('ok', false, 'erro', 'sem_cupom'); end if;
+  if v_desc is null or v_desc not between 0 and 50 or v_com is null or v_com not between 0 and 50 then
+    return jsonb_build_object('ok', false, 'erro', 'pct');
+  end if;
+  if exists (select 1 from public.parceiras x where x.email = v_email and x.id is distinct from v_id) then
+    return jsonb_build_object('ok', false, 'erro', 'existe');
+  end if;
+  if v_cupom is not null and exists (select 1 from public.parceiras x where x.cupom = v_cupom and x.id is distinct from v_id) then
+    return jsonb_build_object('ok', false, 'erro', 'cupom_existe');
+  end if;
+  if v_id is null then
+    insert into public.parceiras (nome, email, telefone, redes, pix, cupom, desconto, comissao, status, origem, observacao, aprovada_em)
+    values (v_nome, v_email, nullif(left(regexp_replace(coalesce(p ->> 'telefone', ''), '\D', '', 'g'), 15), ''),
+      nullif(left(trim(coalesce(p ->> 'redes', '')), 200), ''), nullif(left(trim(coalesce(p ->> 'pix', '')), 140), ''),
+      v_cupom, v_desc, v_com, v_status, 'manual', nullif(left(trim(coalesce(p ->> 'observacao', '')), 500), ''),
+      case when v_status = 'ativa' then now() end)
+    returning id into v_id;
+  else
+    update public.parceiras set
+      nome = v_nome, email = v_email,
+      telefone = nullif(left(regexp_replace(coalesce(p ->> 'telefone', ''), '\D', '', 'g'), 15), ''),
+      redes = nullif(left(trim(coalesce(p ->> 'redes', '')), 200), ''),
+      pix = nullif(left(trim(coalesce(p ->> 'pix', '')), 140), ''),
+      cupom = v_cupom, desconto = v_desc, comissao = v_com, status = v_status,
+      observacao = nullif(left(trim(coalesce(p ->> 'observacao', '')), 500), ''),
+      aprovada_em = coalesce(aprovada_em, case when v_status = 'ativa' then now() end)
+    where id = v_id;
+    if not found then return jsonb_build_object('ok', false, 'erro', 'nao_achou'); end if;
+  end if;
+  return jsonb_build_object('ok', true, 'id', v_id);
+end;
+$$;
+
+create or replace function public.admin_parceira_link(p_parceira uuid) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_codigo text;
+begin
+  if not public.eh_admin() then raise exception 'sem permissao'; end if;
+  v_codigo := public.parceira_codigo_senha(p_parceira);
+  if v_codigo is null then return jsonb_build_object('ok', false, 'erro', 'nao_achou'); end if;
+  return jsonb_build_object('ok', true, 'codigo', v_codigo);
+end;
+$$;
+
+-- Pagamento do mês: tudo o que está liberado, menos o que caiu depois de pago. A Paola faz o Pix e registra aqui
+create or replace function public.admin_parceira_pagar(p_parceira uuid, p_referencia text default null, p_observacao text default null) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_pag uuid;
+  v_liberada numeric;
+  v_estornar numeric;
+  v_n int;
+begin
+  if not public.eh_admin() then raise exception 'sem permissao'; end if;
+  perform 1 from public.parceiras x where x.id = p_parceira for update;
+  if not found then return jsonb_build_object('ok', false, 'erro', 'nao_achou'); end if;
+  create temporary table if not exists pg_temp.pagar_linhas (id uuid, situacao text, comissao numeric) on commit drop;
+  truncate pg_temp.pagar_linhas;
+  insert into pg_temp.pagar_linhas
+    select l.id, l.situacao, l.comissao from public.parceira_linhas(p_parceira) l where l.situacao in ('liberada', 'estornar');
+  select coalesce(sum(comissao) filter (where situacao = 'liberada'), 0), coalesce(sum(comissao) filter (where situacao = 'estornar'), 0),
+    count(*) filter (where situacao = 'liberada')
+    into v_liberada, v_estornar, v_n from pg_temp.pagar_linhas;
+  if v_n = 0 and v_estornar = 0 then return jsonb_build_object('ok', false, 'erro', 'nada'); end if;
+  if v_liberada - v_estornar <= 0 then
+    return jsonb_build_object('ok', false, 'erro', 'negativo', 'liberada', v_liberada, 'estornar', v_estornar);
+  end if;
+  insert into public.parceiras_pagamentos (parceira_id, valor, pedidos, referencia, observacao)
+  values (p_parceira, v_liberada - v_estornar, v_n, nullif(left(trim(coalesce(p_referencia, '')), 60), ''), nullif(left(trim(coalesce(p_observacao, '')), 300), ''))
+  returning id into v_pag;
+  update public.pedidos p set comissao_pagamento_id = v_pag
+    where p.id in (select t.id from pg_temp.pagar_linhas t where t.situacao = 'liberada');
+  update public.pedidos p set comissao_estorno_id = v_pag
+    where p.id in (select t.id from pg_temp.pagar_linhas t where t.situacao = 'estornar');
+  return jsonb_build_object('ok', true, 'id', v_pag, 'valor', v_liberada - v_estornar, 'pedidos', v_n);
+end;
+$$;
+
+-- Engano no registro: apaga o pagamento e os pedidos voltam para "liberada" (ou "estornar") sozinhos
+create or replace function public.admin_parceira_desfazer(p_pagamento uuid) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+begin
+  if not public.eh_admin() then raise exception 'sem permissao'; end if;
+  delete from public.parceiras_pagamentos g where g.id = p_pagamento;
+  if not found then return jsonb_build_object('ok', false, 'erro', 'nao_achou'); end if;
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+-- Só apaga quem nunca vendeu nem recebeu: com histórico, o certo é pausar
+create or replace function public.admin_parceira_excluir(p_parceira uuid) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+begin
+  if not public.eh_admin() then raise exception 'sem permissao'; end if;
+  if exists (select 1 from public.pedidos p where p.parceira_id = p_parceira)
+    or exists (select 1 from public.parceiras_pagamentos g where g.parceira_id = p_parceira) then
+    return jsonb_build_object('ok', false, 'erro', 'tem_historico');
+  end if;
+  delete from public.parceiras x where x.id = p_parceira;
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+alter table public.parceiras enable row level security;
+alter table public.parceiras_sessoes enable row level security;
+alter table public.parceiras_pagamentos enable row level security;
+revoke all on public.parceiras, public.parceiras_sessoes, public.parceiras_pagamentos from anon, authenticated;
+revoke all on function public.parcerias_config(), public.parcerias_proximo_pagamento(), public.parceira_linhas(uuid), public.parceira_resumo(uuid),
+  public.parceira_dados(uuid), public.parceira_abrir_sessao(uuid), public.parceira_da_sessao(text), public.cupom_validar(text),
+  public.parceira_cadastrar(jsonb), public.parceira_entrar(text, text), public.parceira_sair(text), public.parceira_painel(text),
+  public.parceira_codigo_senha(uuid), public.parceira_nova_senha(text, text), public.admin_parceiras(), public.admin_parceira_vendas(uuid),
+  public.admin_parceira_salvar(jsonb), public.admin_parceira_link(uuid), public.admin_parceira_pagar(uuid, text, text),
+  public.admin_parceira_desfazer(uuid), public.admin_parceira_excluir(uuid)
+  from public, anon, authenticated;
+grant execute on function public.cupom_validar(text), public.parceira_cadastrar(jsonb), public.parceira_entrar(text, text),
+  public.parceira_sair(text), public.parceira_painel(text), public.parceira_nova_senha(text, text) to anon, authenticated;
+grant execute on function public.admin_parceiras(), public.admin_parceira_vendas(uuid), public.admin_parceira_salvar(jsonb),
+  public.admin_parceira_link(uuid), public.admin_parceira_pagar(uuid, text, text), public.admin_parceira_desfazer(uuid),
+  public.admin_parceira_excluir(uuid) to authenticated;

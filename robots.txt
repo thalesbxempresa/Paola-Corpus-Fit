@@ -3,5 +3,6 @@ Disallow: /admin.html
 Disallow: /conta.html
 Disallow: /acompanhar.html
 Disallow: /pagamento.html
+Disallow: /parceira.html
 
 Sitemap: https://paolacorpusfit.com.br/sitemap.xml

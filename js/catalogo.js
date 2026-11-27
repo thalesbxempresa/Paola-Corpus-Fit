@@ -191,6 +191,51 @@ const Catalogo = (() => {
     };
   })();
 
+  // Cupom de parceira: o banco diz se vale (só parceira ativa) e quanto é o desconto
+  async function validarCupom(codigo) {
+    if (!ligado) return { ok: false };
+    const r = await rpc('cupom_validar', { p_codigo: String(codigo || '').trim() });
+    if (!r.ok) throw new Error('Cupom indisponível');
+    return r.json();
+  }
+
+  // Área da parceira (parceira.html): login próprio, separado do painel e da conta das clientes
+  const parceira = (() => {
+    const CHAVE_P = 'pcf-parceira';
+    const atual = () => {
+      const c = parse(ler(CHAVE_P));
+      return ligado && c && typeof c.sessao === 'string' && c.sessao.length === 64 ? c : null;
+    };
+    const esquecer = () => { try { localStorage.removeItem(CHAVE_P); } catch (e) { /* ok */ } };
+    const guardar = (r) => {
+      if (r && r.ok && r.sessao) gravar(CHAVE_P, JSON.stringify({ sessao: r.sessao, nome: r.parceira?.nome || '' }));
+      return r;
+    };
+    const chamar = async (nome, corpo) => {
+      const r = await rpc(nome, corpo);
+      if (!r.ok) throw new Error('Área da parceira indisponível');
+      return r.json();
+    };
+    return {
+      atual,
+      cadastrar: (dados) => chamar('parceira_cadastrar', { p: dados }).then(guardar),
+      entrar: (email, senha) => chamar('parceira_entrar', { p_email: email, p_senha: senha }).then(guardar),
+      novaSenha: (codigo, senha) => chamar('parceira_nova_senha', { p_codigo: codigo, p_senha: senha }).then(guardar),
+      async painel() {
+        const c = atual();
+        if (!c) return { ok: false, erro: 'sessao' };
+        const r = await chamar('parceira_painel', { p_sessao: c.sessao });
+        if (r && r.erro === 'sessao') esquecer();
+        return r;
+      },
+      sair() {
+        const c = atual();
+        esquecer();
+        if (c) rpc('parceira_sair', { p_sessao: c.sessao }, { keepalive: true }).catch(() => {});
+      },
+    };
+  })();
+
   // Versão crua para o painel (sem o tratamento de HTML da loja)
   const doc = () => {
     const salvo = parse(ler(CHAVE));
@@ -206,5 +251,5 @@ const Catalogo = (() => {
     aplicar(padrao);
   };
 
-  return { ligado, FIXOS, pronto, doc, valido, salvarLocal, restaurar, evento, enviarPedido, acompanhar, buscarPedidos, pagar, pagamento: funcaoPagamento, conta };
+  return { ligado, FIXOS, pronto, doc, valido, salvarLocal, restaurar, evento, enviarPedido, acompanhar, buscarPedidos, pagar, pagamento: funcaoPagamento, conta, validarCupom, parceira };
 })();

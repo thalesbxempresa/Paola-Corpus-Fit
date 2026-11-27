@@ -24,6 +24,8 @@ const LOJA = {
   pagarNoSite: true,
   // Mostrar para a cliente quantas peças há no tamanho escolhido (liga no painel, em Produtos > Estoque)
   mostrarEstoque: false,
+  // Programa de parceiras (painel > Parceiras). O banco lê as mesmas regras em parcerias_config()
+  parcerias: { cadastroAberto: true, diasLiberacao: 30, diaPagamento: 10, descontoPadrao: 10, comissaoPadrao: 10 },
   // Frete pelo CEP (painel > Loja > Frete; regras em js/frete.js). O que vale é a tabela do banco; esta é só a de reserva.
   // PAC de balcão dos Correios, 1 kg, caixa 30 x 25 x 8 cm, do CEP 28740-000, consultas de 23/11/2026.
   // Em cada faixa, o maior valor e o maior prazo consultados (capitais: RJ; SP e SC; BA; PB; PA; AM e RR)
